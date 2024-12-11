@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import "forge-std/Test.sol";
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
 import {BaseDynamicFeeMock} from "test/mocks/BaseDynamicFeeMock.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
@@ -33,8 +33,46 @@ contract BaseDynamicFeeTest is Test, Deployers {
         vm.label(Currency.unwrap(currency1), "currency1");
     }
 
-    /// @notice Unit test for a single swap, not zero for one.
-    function test_swap_single_notZeroForOne() public {
+    /// @notice Unit test for a single swap zero for one exact in.
+    function test_swap_zeroForOne_exactIn() public {
+        uint256 balanceBefore0 = currency0.balanceOf(address(this));
+        uint256 balanceBefore1 = currency1.balanceOf(address(this));
+
+        uint256 amountToSwap = 1e15;
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: -int256(amountToSwap),
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
+        });
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
+        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + 949098356561266, "amount 1");
+    }
+
+    /// @notice Unit test for a single swap zero for one exact out.
+    function test_swap_zeroForOne_exactOut() public {
+        uint256 balanceBefore0 = currency0.balanceOf(address(this));
+        uint256 balanceBefore1 = currency1.balanceOf(address(this));
+
+        uint256 amountToSwap = 1e15;
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: true,
+            amountSpecified: int256(amountToSwap),
+            sqrtPriceLimitX96: MIN_PRICE_LIMIT
+        });
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - 1053685264211582, "amount 0");
+        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + amountToSwap, "amount 1");
+    }
+
+    /// @notice Unit test for a single swap one for zero exact in.
+    function test_swap_oneForZero_exactIn() public {
         uint256 balanceBefore0 = currency0.balanceOf(address(this));
         uint256 balanceBefore1 = currency1.balanceOf(address(this));
 
@@ -52,8 +90,8 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(currency1.balanceOf(address(this)), balanceBefore1 - amountToSwap, "amount 1");
     }
 
-    /// @notice Unit test for a single swap, zero for one.
-    function test_swap_single_zeroForOne() public {
+    /// @notice Unit test for a single swap one for zero exact out.
+    function test_swap_oneForZero_exactOut() public {
         uint256 balanceBefore0 = currency0.balanceOf(address(this));
         uint256 balanceBefore1 = currency1.balanceOf(address(this));
 
@@ -61,13 +99,13 @@ contract BaseDynamicFeeTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
+            zeroForOne: false,
+            amountSpecified: int256(amountToSwap),
+            sqrtPriceLimitX96: MAX_PRICE_LIMIT
         });
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + 949098356561266, "amount 1");
+        assertEq(currency0.balanceOf(address(this)), balanceBefore0 + amountToSwap, "amount 0");
+        assertEq(currency1.balanceOf(address(this)), balanceBefore1 - 1053685264211582, "amount 1");
     }
 }

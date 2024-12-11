@@ -33,6 +33,10 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
  * NOTE: Swaps in the other direction do not get the positive price difference
  * compared to the initial price before the first block swap.
  *
+ * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
+ * not give any warranties and will not be liable for any losses incurred through any use of this code
+ * base.
+ *
  * _Available since v0.1.0_
  */
 contract AntiSandwichHook is DynamicAfterFee {

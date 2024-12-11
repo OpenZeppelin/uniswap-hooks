@@ -14,8 +14,12 @@ import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 /**
  * @dev Base implementation for no-op hooks.
  *
- * IMPORTANT: Given that this contract overrides default logic of the `PoolManager`, liquidity
- * must be provided by the hook itself (i.e. the hook must hold the liquidity/tokens).
+ * NOTE: Given that this contract overrides default logic of the `PoolManager`, liquidity must be
+ * provided by the hook itself (i.e. the hook must hold the liquidity/tokens).
+ *
+ * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
+ * not give any warranties and will not be liable for any losses incurred through any use of this code
+ * base.
  *
  * _Available since v0.1.0_
  */

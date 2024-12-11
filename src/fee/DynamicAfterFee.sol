@@ -17,6 +17,10 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
  * the {afterSwap} function is called. Refer to the {AntiSandwichHook} contract as an example
  * implementation of this pattern.
  *
+ * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
+ * not give any warranties and will not be liable for any losses incurred through any use of this code
+ * base.
+ *
  * _Available since v0.1.0_
  */
 abstract contract DynamicAfterFee is BaseHook {

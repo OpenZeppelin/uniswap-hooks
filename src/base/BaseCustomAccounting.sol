@@ -15,6 +15,10 @@ import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 /**
  * @dev Base implementation for custom accounting, including support for swaps and liquidity management.
  *
+ * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
+ * not give any warranties and will not be liable for any losses incurred through any use of this code
+ * base.
+ *
  * _Available since v0.1.0_
  */
 abstract contract BaseCustomAccounting is BaseHook {

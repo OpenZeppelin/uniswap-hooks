@@ -11,6 +11,10 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 /**
  * @dev Base implementation to apply a dynamic fee via the PoolManager's {updateDynamicLPFee} function.
  *
+ * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
+ * not give any warranties and will not be liable for any losses incurred through any use of this code
+ * base.
+ *
  * _Available since v0.1.0_
  */
 abstract contract BaseDynamicFee is BaseHook {

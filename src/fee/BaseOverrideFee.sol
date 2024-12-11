@@ -13,6 +13,10 @@ import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
 /**
  * @dev Base implementation for automatic dynamic fees applied before swaps.
  *
+ * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
+ * not give any warranties and will not be liable for any losses incurred through any use of this code
+ * base.
+ *
  * _Available since v0.1.0_
  */
 abstract contract BaseOverrideFee is BaseHook {

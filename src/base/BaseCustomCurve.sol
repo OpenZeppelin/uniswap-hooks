@@ -20,8 +20,12 @@ import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
  * to be taken or settled, and a return delta is created based on their outputs. This return delta is then
  * consumed by the `PoolManager`.
  *
- * IMPORTANT: This base contract acts similarly to {BaseNoOp}, which means that the hook must hold the liquidity
+ * NOTE: This base contract acts similarly to {BaseNoOp}, which means that the hook must hold the liquidity
  * for swaps.
+ *
+ * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
+ * not give any warranties and will not be liable for any losses incurred through any use of this code
+ * base.
  *
  * _Available since v0.1.0_
  */

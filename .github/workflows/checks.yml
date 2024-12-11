@@ -29,6 +29,7 @@ jobs:
       - name: Check format
         run: forge fmt --check
         id: format
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
@@ -44,3 +45,15 @@ jobs:
       - uses: codecov/codecov-action@v4
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  slither:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up environment
+        uses: ./.github/actions/setup
+
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          node-version: 18.15
+          slither-version: 0.10.4

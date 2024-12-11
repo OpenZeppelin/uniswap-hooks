@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/general/AntiSandwichHook.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {DynamicAfterFee} from "src/fee/DynamicAfterFee.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
@@ -115,9 +115,8 @@ contract AntiSandwichHook is DynamicAfterFee {
 
             // deep copy only values that are used and change in fair delta calculation
             _lastCheckpoint.state.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));
-            (uint256 feeGrowthGlobal0, uint256 feeGrowthGlobal1) = poolManager.getFeeGrowthGlobals(poolId);
-            _lastCheckpoint.state.feeGrowthGlobal0X128 = feeGrowthGlobal0;
-            _lastCheckpoint.state.feeGrowthGlobal1X128 = feeGrowthGlobal1;
+            (_lastCheckpoint.state.feeGrowthGlobal0X128, _lastCheckpoint.state.feeGrowthGlobal1X128) =
+                poolManager.getFeeGrowthGlobals(poolId);
             _lastCheckpoint.state.liquidity = poolManager.getLiquidity(poolId);
         }
 

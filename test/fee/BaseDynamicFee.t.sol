@@ -247,7 +247,6 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(_fetchPoolLPFee(key), 123);
     }
 
-    // TODO: use fuzz for zeroForOne
     function test_swap_fuzz_succeeds(
         bool zeroForOne,
         uint24 lpFee,

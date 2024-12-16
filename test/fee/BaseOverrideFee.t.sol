@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import "forge-std/Test.sol";
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
 import {BaseOverrideFeeMock} from "test/mocks/BaseOverrideFeeMock.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
@@ -12,62 +12,251 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
+import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {ProtocolFeeLibrary} from "v4-core/src/libraries/ProtocolFeeLibrary.sol";
+import {PoolId} from "v4-core/src/types/PoolId.sol";
+import {Pool} from "v4-core/src/libraries/Pool.sol";
 
 contract BaseOverrideFeeTest is Test, Deployers {
-    BaseOverrideFeeMock hook;
-    PoolKey noHookKey;
+    using StateLibrary for IPoolManager;
+    using ProtocolFeeLibrary for uint16;
+
+    BaseOverrideFeeMock dynamicFeesHooks;
+
+    event Swap(
+        PoolId indexed poolId,
+        address indexed sender,
+        int128 amount0,
+        int128 amount1,
+        uint160 sqrtPriceX96,
+        uint128 liquidity,
+        int24 tick,
+        uint24 fee
+    );
 
     function setUp() public {
         deployFreshManagerAndRouters();
-        deployMintAndApprove2Currencies();
 
-        hook = BaseOverrideFeeMock(address(uint160(Hooks.BEFORE_SWAP_FLAG)));
-        deployCodeTo("test/mocks/BaseOverrideFeeMock.sol:BaseOverrideFeeMock", abi.encode(manager), address(hook));
-
-        (key,) = initPoolAndAddLiquidity(
-            currency0, currency1, IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
+        dynamicFeesHooks = BaseOverrideFeeMock(address(uint160(Hooks.BEFORE_SWAP_FLAG)));
+        deployCodeTo(
+            "test/mocks/BaseOverrideFeeMock.sol:BaseOverrideFeeMock", abi.encode(manager), address(dynamicFeesHooks)
         );
-        (noHookKey,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 100, SQRT_PRICE_1_1);
+
+        deployMintAndApprove2Currencies();
+        (key,) = initPoolAndAddLiquidity(
+            currency0, currency1, IHooks(address(dynamicFeesHooks)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
+        );
 
         vm.label(Currency.unwrap(currency0), "currency0");
         vm.label(Currency.unwrap(currency1), "currency1");
     }
 
-    /// @notice Unit test for a single swap, not zero for one.
-    function test_swap_single_notZeroForOne() public {
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
+    function test_setFee_afterInitialize_succeeds() public {
+        key.tickSpacing = 30;
+        dynamicFeesHooks.setFee(123);
 
-        uint256 amountToSwap = 1e15;
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 + 949098356561266, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 - amountToSwap, "amount 1");
+        manager.initialize(key, SQRT_PRICE_1_1);
+        assertEq(_fetchPoolLPFee(key), 0);
     }
 
-    /// @notice Unit test for a single swap, zero for one.
-    function test_swap_single_zeroForOne() public {
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
+    function test_updateDynamicLPFee_callerNotHook_reverts() public {
+        vm.expectRevert(IPoolManager.UnauthorizedDynamicLPFeeUpdate.selector);
+        manager.updateDynamicLPFee(key, 123);
+    }
 
-        uint256 amountToSwap = 1e15;
+    function test_swap_feeTooLarge_reverts() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        uint24 fee = 1000001;
+        dynamicFeesHooks.setFee(fee);
+
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
+
+        vm.expectRevert(abi.encodeWithSelector(LPFeeLibrary.LPFeeTooLarge.selector, fee));
+        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
+
+        assertEq(_fetchPoolLPFee(key), 0);
+    }
+
+    function test_swap_100PercentLPFeeExactInput_succeeds() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        dynamicFeesHooks.setFee(1000000);
+
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectEmit(true, true, true, true, address(manager));
+        emit Swap(key.toId(), address(swapRouter), -100, 0, SQRT_PRICE_1_1, 1e18, -1, 1000000);
+
+        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
+
+        assertEq(_fetchPoolLPFee(key), 0);
+    }
+
+    function test_swap_50PercentLPFeeExactInput_succeeds() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        dynamicFeesHooks.setFee(500000);
+
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectEmit(true, true, true, true, address(manager));
+        emit Swap(key.toId(), address(swapRouter), -100, 49, 79228162514264333632135824623, 1e18, -1, 500000);
+
+        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
+
+        assertEq(_fetchPoolLPFee(key), 0);
+    }
+
+    function test_swap_50PercentLPFeeExactOutput_succeeds() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        dynamicFeesHooks.setFee(500000);
+
+        IPoolManager.SwapParams memory params =
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectEmit(true, true, true, true, address(manager));
+        emit Swap(key.toId(), address(swapRouter), -202, 100, 79228162514264329670727698909, 1e18, -1, 500000);
+
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + 949098356561266, "amount 1");
+        assertEq(_fetchPoolLPFee(key), 0);
+    }
+
+    function test_swap_feeIsMax_reverts() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        dynamicFeesHooks.setFee(1000000);
+
+        IPoolManager.SwapParams memory params =
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectRevert(Pool.InvalidFeeForExactOut.selector);
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+    }
+
+    function test_swap_99PercentFeeExactOutput_succeeds() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        dynamicFeesHooks.setFee(999999);
+
+        vm.prank(feeController);
+        manager.setProtocolFee(key, 1000);
+
+        IPoolManager.SwapParams memory params =
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectRevert(Pool.InvalidFeeForExactOut.selector);
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+    }
+
+    function test_swap_100PercentFeeExactInputWithProtocol_succeeds() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        dynamicFeesHooks.setFee(1000000);
+
+        vm.prank(feeController);
+        manager.setProtocolFee(key, 1000);
+
+        IPoolManager.SwapParams memory params =
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1000, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectEmit(true, true, true, true, address(manager));
+        emit Swap(key.toId(), address(swapRouter), -1000, 0, SQRT_PRICE_1_1, 1e18, -1, 1000000);
+
+        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        uint256 expectedProtocolFee = (uint256(-params.amountSpecified) * 1000) / 1e6;
+        assertEq(manager.protocolFeesAccrued(currency0), expectedProtocolFee);
+    }
+
+    function test_swap_emitsSwapFee_succeeds() public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        dynamicFeesHooks.setFee(123);
+
+        vm.prank(feeController);
+        manager.setProtocolFee(key, 1000);
+
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectEmit(true, true, true, true, address(manager));
+        emit Swap(key.toId(), address(swapRouter), -100, 98, 79228162514264329749955861424, 1e18, -1, 1123);
+
+        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
+
+        assertEq(_fetchPoolLPFee(key), 0);
+    }
+
+    function test_swap_fuzz_succeeds(
+        bool zeroForOne,
+        uint24 lpFee,
+        uint16 protocolFee0,
+        uint16 protocolFee1,
+        int256 amountSpecified
+    ) public {
+        assertEq(_fetchPoolLPFee(key), 0);
+
+        lpFee = uint16(bound(lpFee, 0, 1000000));
+        protocolFee0 = uint16(bound(protocolFee0, 0, 1000));
+        protocolFee1 = uint16(bound(protocolFee1, 0, 1000));
+        vm.assume(amountSpecified != 0);
+
+        uint24 protocolFee = (uint24(protocolFee1) << 12) | uint24(protocolFee0);
+        dynamicFeesHooks.setFee(lpFee);
+
+        vm.prank(feeController);
+        manager.setProtocolFee(key, protocolFee);
+
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: amountSpecified,
+            sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT
+        });
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        BalanceDelta delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+
+        uint24 swapFee = uint16(protocolFee).calculateSwapFee(lpFee);
+
+        uint256 expectedProtocolFee;
+        if (zeroForOne) {
+            expectedProtocolFee = (uint256(uint128(-delta.amount0())) * protocolFee0) / 1e6;
+
+            if (lpFee == 0) {
+                assertEq(protocolFee0, swapFee);
+                if (((uint256(uint128(-delta.amount0())) * protocolFee0) % 1e6) != 0) expectedProtocolFee++;
+            }
+
+            assertEq(manager.protocolFeesAccrued(currency0), expectedProtocolFee);
+        } else {
+            expectedProtocolFee = (uint256(uint128(-delta.amount1())) * protocolFee1) / 1e6;
+
+            if (lpFee == 0) {
+                assertEq(protocolFee0, swapFee);
+                if (((uint256(uint128(-delta.amount1())) * protocolFee1) % 1e6) != 0) expectedProtocolFee++;
+            }
+
+            assertEq(manager.protocolFeesAccrued(currency1), expectedProtocolFee);
+        }
+    }
+
+    function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {
+        PoolId id = _key.toId();
+        (,,, lpFee) = manager.getSlot0(id);
     }
 }

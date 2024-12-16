@@ -270,9 +270,9 @@ contract BaseDynamicFeeTest is Test, Deployers {
         manager.setProtocolFee(key, protocolFee);
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
+            zeroForOne: zeroForOne,
             amountSpecified: amountSpecified,
-            sqrtPriceLimitX96: SQRT_PRICE_1_2
+            sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT
         });
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
@@ -281,13 +281,26 @@ contract BaseDynamicFeeTest is Test, Deployers {
 
         uint24 swapFee = uint16(protocolFee).calculateSwapFee(lpFee);
 
-        uint256 expectedProtocolFee = (uint256(uint128(-delta.amount0())) * protocolFee0) / 1e6;
-        if (lpFee == 0) {
-            assertEq(protocolFee0, swapFee);
-            if (((uint256(uint128(-delta.amount0())) * protocolFee0) % 1e6) != 0) expectedProtocolFee++;
-        }
+        uint256 expectedProtocolFee;
+        if (zeroForOne) {
+            expectedProtocolFee = (uint256(uint128(-delta.amount0())) * protocolFee0) / 1e6;
 
-        assertEq(manager.protocolFeesAccrued(currency0), expectedProtocolFee);
+            if (lpFee == 0) {
+                assertEq(protocolFee0, swapFee);
+                if (((uint256(uint128(-delta.amount0())) * protocolFee0) % 1e6) != 0) expectedProtocolFee++;
+            }
+
+            assertEq(manager.protocolFeesAccrued(currency0), expectedProtocolFee);
+        } else {
+            expectedProtocolFee = (uint256(uint128(-delta.amount1())) * protocolFee1) / 1e6;
+
+            if (lpFee == 0) {
+                assertEq(protocolFee0, swapFee);
+                if (((uint256(uint128(-delta.amount1())) * protocolFee1) % 1e6) != 0) expectedProtocolFee++;
+            }
+
+            assertEq(manager.protocolFeesAccrued(currency1), expectedProtocolFee);
+        }
     }
 
     function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {

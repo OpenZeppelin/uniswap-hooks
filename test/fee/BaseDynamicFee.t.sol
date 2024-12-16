@@ -51,84 +51,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         vm.label(Currency.unwrap(currency1), "currency1");
     }
 
-    /// @notice Unit test for a single swap zero for one exact in.
-    function test_swap_zeroForOne_exactIn() public {
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
-
-        uint256 amountToSwap = 1e15;
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
-
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + 999000999000999, "amount 1");
-    }
-
-    /// @notice Unit test for a single swap zero for one exact out.
-    function test_swap_zeroForOne_exactOut() public {
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
-
-        uint256 amountToSwap = 1e15;
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 - 1001001001001002, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 + amountToSwap, "amount 1");
-    }
-
-    /// @notice Unit test for a single swap one for zero exact in.
-    function test_swap_oneForZero_exactIn() public {
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
-
-        uint256 amountToSwap = 1e15;
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 + 999000999000999, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 - amountToSwap, "amount 1");
-    }
-
-    /// @notice Unit test for a single swap one for zero exact out.
-    function test_swap_oneForZero_exactOut() public {
-        uint256 balanceBefore0 = currency0.balanceOf(address(this));
-        uint256 balanceBefore1 = currency1.balanceOf(address(this));
-
-        uint256 amountToSwap = 1e15;
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-
-        assertEq(currency0.balanceOf(address(this)), balanceBefore0 + amountToSwap, "amount 0");
-        assertEq(currency1.balanceOf(address(this)), balanceBefore1 - 1001001001001002, "amount 1");
-    }
-
-    function test_updateDynamicLPFee_afterInitialize_failsWithTooLargeFee() public {
+    function test_setFee_afterInitializeFeeTooLarge_reverts() public {
         key.tickSpacing = 30;
         uint24 fee = 1000001;
         dynamicFeesHooks.setFee(fee);
@@ -143,7 +66,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         manager.initialize(key, SQRT_PRICE_1_1);
     }
 
-    function test_updateDynamicLPFee_afterInitialize_initializesFee() public {
+    function test_setFee_afterInitialize_succeeds() public {
         key.tickSpacing = 30;
         dynamicFeesHooks.setFee(123);
 
@@ -151,12 +74,12 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(_fetchPoolLPFee(key), 123);
     }
 
-    function test_updateDynamicLPFee_revertsIfCallerIsntHook() public {
+    function test_updateDynamicLPFee_callerNotHook_reverts() public {
         vm.expectRevert(IPoolManager.UnauthorizedDynamicLPFeeUpdate.selector);
         manager.updateDynamicLPFee(key, 123);
     }
 
-    function test_updateDynamicLPFee_revertsIfPoolHasStaticFee() public {
+    function test_setFee_poolHasStaticFee_reverts() public {
         key.fee = 3000; // static fee
         dynamicFeesHooks.setFee(123);
 
@@ -171,7 +94,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         manager.initialize(key, SQRT_PRICE_1_1);
     }
 
-    function test_updateDynamicLPFee_beforeSwap_failsWithTooLargeFee() public {
+    function test_setFee_feeTooLarge_reverts() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         uint24 fee = 1000001;
@@ -181,7 +104,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         dynamicFeesHooks.poke(key);
     }
 
-    function test_updateDynamicLPFee_beforeSwap_succeeds_gas() public {
+    function test_setFee_poke_succeeds() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(123);
@@ -194,12 +117,11 @@ contract BaseDynamicFeeTest is Test, Deployers {
         emit Swap(key.toId(), address(swapRouter), -100, 98, 79228162514264329749955861424, 1e18, -1, 123);
 
         swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
-        vm.snapshotGasLastCall("update dynamic fee in before swap");
 
         assertEq(_fetchPoolLPFee(key), 123);
     }
 
-    function test_swap_100PercentLPFee_AmountIn_NoProtocol() public {
+    function test_swap_100PercentLPFeeExactInput_succeeds() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(1000000);
@@ -215,7 +137,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(_fetchPoolLPFee(key), 1000000);
     }
 
-    function test_swap_50PercentLPFee_AmountIn_NoProtocol() public {
+    function test_swap_50PercentLPFeeExactInput_succeeds() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(500000);
@@ -231,7 +153,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(_fetchPoolLPFee(key), 500000);
     }
 
-    function test_swap_50PercentLPFee_AmountOut_NoProtocol() public {
+    function test_swap_50PercentLPFeeExactOutput_succeeds() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(500000);
@@ -250,7 +172,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(_fetchPoolLPFee(key), 500000);
     }
 
-    function test_swap_revertsWith_InvalidFeeForExactOut_whenFeeIsMax() public {
+    function test_swap_feeIsMax_reverts() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(1000000);
@@ -265,7 +187,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
     }
 
-    function test_swap_99PercentFee_AmountOut_WithProtocol() public {
+    function test_swap_99PercentFeeExactOutput_succeeds() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(999999);
@@ -283,7 +205,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
     }
 
-    function test_swap_100PercentFee_AmountIn_WithProtocol() public {
+    function test_swap_100PercentFeeExactInputWithProtocol_succeeds() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(1000000);
@@ -305,7 +227,7 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(manager.protocolFeesAccrued(currency0), expectedProtocolFee);
     }
 
-    function test_emitsSwapFee() public {
+    function test_swap_emitsSwapFee_succeeds() public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         dynamicFeesHooks.setFee(123);
@@ -325,9 +247,14 @@ contract BaseDynamicFeeTest is Test, Deployers {
         assertEq(_fetchPoolLPFee(key), 123);
     }
 
-    function test_fuzz_ProtocolAndLPFee(uint24 lpFee, uint16 protocolFee0, uint16 protocolFee1, int256 amountSpecified)
-        public
-    {
+    // TODO: use fuzz for zeroForOne
+    function test_swap_fuzz_succeeds(
+        bool zeroForOne,
+        uint24 lpFee,
+        uint16 protocolFee0,
+        uint16 protocolFee1,
+        int256 amountSpecified
+    ) public {
         assertEq(_fetchPoolLPFee(key), 0);
 
         lpFee = uint16(bound(lpFee, 0, 1000000));

@@ -4,10 +4,16 @@ pragma solidity ^0.8.20;
 import "src/fee/BaseDynamicFee.sol";
 
 contract BaseDynamicFeeMock is BaseDynamicFee {
+    uint24 public fee;
+
     constructor(IPoolManager _poolManager) BaseDynamicFee(_poolManager) {}
 
-    function _getFee(PoolKey calldata) internal pure override returns (uint24) {
-        return 50000;
+    function _getFee(PoolKey calldata) internal view override returns (uint24) {
+        return fee;
+    }
+
+    function setFee(uint24 _fee) public {
+        fee = _fee;
     }
 
     // Exclude from coverage report

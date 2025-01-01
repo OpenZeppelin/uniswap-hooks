@@ -43,7 +43,6 @@ abstract contract BaseNoOp is BaseHook {
             poolManager.mint(address(this), input.toId(), amountTaken);
             return (BaseHook.beforeSwap.selector, toBeforeSwapDelta(amountTaken.toInt128(), 0), 0);
         } else {
-            // TODO: return or revert?
             return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
     }

@@ -8,15 +8,12 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 contract DynamicAfterFeeMock is DynamicAfterFee {
     constructor(IPoolManager _poolManager) DynamicAfterFee(_poolManager) {}
 
-    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
-        internal
-        override
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
-        PoolId poolId = key.toId();
-        _targetDeltas[poolId] = BalanceDelta.wrap(0);
+    function getTargetDelta(PoolId poolId) public view returns (BalanceDelta) {
+        return _targetDeltas[poolId];
+    }
 
-        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+    function setTargetDelta(PoolId poolId, BalanceDelta delta) public {
+        _targetDeltas[poolId] = delta;
     }
 
     function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
@@ -27,7 +24,7 @@ contract DynamicAfterFeeMock is DynamicAfterFee {
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
-            beforeSwap: true,
+            beforeSwap: false,
             afterSwap: true,
             beforeDonate: false,
             afterDonate: false,

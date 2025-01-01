@@ -9,7 +9,7 @@ evm_version     = "cancun"                              # The EVM version to use
 ffi             = true                                  # Enable the foreign function interface (ffi) cheatcode.
 
 [fuzz]
-runs           = 100        # The number of times to run the fuzzing tests
+runs           = 256        # The number of times to run the fuzzing tests
 
 [invariant]
 runs           = 8          # The number of calls to make in the invariant tests
@@ -17,17 +17,17 @@ depth          = 8          # The number of times to run the invariant tests
 fail_on_revert = true       # Fail the test if the contract reverts
 
 [profile.shallow.fuzz]
-runs           = 20         # The number of times to run the fuzzing tests
+runs           = 128        # The number of times to run the fuzzing tests
 
 [profile.deep.fuzz]
-runs           = 150        # The number of times to run the fuzzing tests
+runs           = 512        # The number of times to run the fuzzing tests
 
 [profile.deep.invariant]
 runs           = 12         # The number of times to run the invariant tests
 depth          = 12         # The number of calls to make in the invariant tests
 
 [profile.super_deep.fuzz]
-runs           = 500        # The number of times to run the fuzzing tests
+runs           = 1024       # The number of times to run the fuzzing tests
 
 [profile.super_deep.invariant]
 runs           = 16         # The number of calls to make in the invariant tests

@@ -50,6 +50,9 @@ abstract contract DynamicAfterFee is BaseHook {
             int128 feeAmount = 0;
 
             if (BalanceDelta.unwrap(targetDelta) != 0) {
+                // Reset storage target delta to 0 and use one stored in memory
+                _targetDeltas[poolId] = BalanceDelta.wrap(0);
+
                 if (delta.amount0() == targetDelta.amount0() && delta.amount1() > targetDelta.amount1()) {
                     feeAmount = delta.amount1() - targetDelta.amount1();
                     poolManager.donate(key, 0, uint256(uint128(feeAmount)), "");
@@ -61,9 +64,6 @@ abstract contract DynamicAfterFee is BaseHook {
                     // feeAmount is positive and int128, so we can safely cast to uint128 and then to uint256
                     poolManager.donate(key, uint256(uint128(feeAmount)), 0, "");
                 }
-
-                // Reset target delta to 0 after applying it
-                _targetDeltas[poolId] = BalanceDelta.wrap(0);
             }
 
             return (this.afterSwap.selector, feeAmount);

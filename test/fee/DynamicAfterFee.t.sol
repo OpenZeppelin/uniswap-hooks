@@ -136,7 +136,6 @@ contract DynamicAfterFeeTest is Test, Deployers {
     function test_swap_fuzz_succeeds(bool zeroForOne, uint24 lpFee, uint128 amountSpecified) public {
         assertEq(BalanceDelta.unwrap(dynamicFeesHook.getTargetDelta(key.toId())), 0);
 
-        zeroForOne = false;
         lpFee = uint24(bound(lpFee, 10000, 1000000));
         amountSpecified = uint128(bound(amountSpecified, 1, 6017734268818166));
 

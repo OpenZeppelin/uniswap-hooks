@@ -100,6 +100,10 @@ abstract contract BaseHook is IHooks {
      * @dev Force the onlyPoolManager modifier by exposing a virtual function after the onlyPoolManager check.
      */
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
+        return _unlockCallback(data);
+    }
+
+    function _unlockCallback(bytes calldata data) internal virtual returns (bytes memory) {
         (bool success, bytes memory returnData) = address(this).call(data);
         if (success) return returnData;
         if (returnData.length == 0) revert LockFailure();

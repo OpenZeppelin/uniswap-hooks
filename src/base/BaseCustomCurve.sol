@@ -41,7 +41,9 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     /**
      * @dev Set the pool manager.
      */
-    constructor(IPoolManager _poolManager) BaseCustomAccounting(_poolManager) {}
+    constructor(IPoolManager _poolManager, string memory _name, string memory _symbol)
+        BaseCustomAccounting(_poolManager, _name, _symbol)
+    {}
 
     /**
      * @dev Force liquidity to only be added directly to the hook.

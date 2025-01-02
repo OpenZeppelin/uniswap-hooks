@@ -39,11 +39,17 @@ abstract contract BaseCustomAccounting is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+        // Determine if the swap is exact input or exact output
         bool exactInput = params.amountSpecified < 0;
+
+        // Determine which currency is specified and which is unspecified
         (Currency specified, Currency unspecified) =
             (params.zeroForOne == exactInput) ? (key.currency0, key.currency1) : (key.currency1, key.currency0);
 
+        // Get the positive specified amount
         uint256 specifiedAmount = exactInput ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
+
+        // Get the amount of the unspecified currency to be taken or settled
         uint256 unspecifiedAmount = _getAmount(
             specifiedAmount,
             exactInput ? specified : unspecified,
@@ -51,24 +57,29 @@ abstract contract BaseCustomAccounting is BaseHook {
             params.zeroForOne,
             exactInput
         );
+
+        // New delta must be returned, so store in memory
         BeforeSwapDelta returnDelta;
+
         if (exactInput) {
             specified.take(poolManager, address(this), specifiedAmount, true);
             unspecified.settle(poolManager, address(this), unspecifiedAmount, true);
 
+            // On exact input, amount0 is specified and amount1 is unspecified.
             returnDelta = toBeforeSwapDelta(specifiedAmount.toInt128(), -unspecifiedAmount.toInt128());
         } else {
             unspecified.take(poolManager, address(this), unspecifiedAmount, true);
             specified.settle(poolManager, address(this), specifiedAmount, true);
 
+            // On exact output, amount1 is specified and amount0 is unspecified.
             returnDelta = toBeforeSwapDelta(-specifiedAmount.toInt128(), unspecifiedAmount.toInt128());
         }
 
-        return (BaseHook.beforeSwap.selector, returnDelta, 0);
+        return (this.beforeSwap.selector, returnDelta, 0);
     }
 
     /**
-     * @dev Calculate the amount of tokens to be take or settle.
+     * @dev Calculate the amount of tokens to take or send (settle).
      */
     function _getAmount(uint256 amountIn, Currency input, Currency output, bool zeroForOne, bool exactInput)
         internal

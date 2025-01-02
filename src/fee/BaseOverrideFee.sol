@@ -42,7 +42,7 @@ abstract contract BaseOverrideFee is BaseHook {
         bytes calldata hookData
     ) internal virtual override returns (bytes4, BeforeSwapDelta, uint24) {
         uint24 fee = _getFee(sender, key, params, hookData);
-        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);
+        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);
     }
 
     /**

@@ -44,24 +44,30 @@ abstract contract DynamicAfterFee is BaseHook {
         BalanceDelta delta,
         bytes calldata
     ) internal virtual override returns (bytes4, int128) {
+        // Only apply target delta for exact-input swaps
         if (params.amountSpecified < 0) {
             PoolId poolId = key.toId();
             BalanceDelta targetDelta = _targetDeltas[poolId];
             int128 feeAmount = 0;
 
+            // Skip empty/undefined target delta
             if (BalanceDelta.unwrap(targetDelta) != 0) {
                 // Reset storage target delta to 0 and use one stored in memory
                 _targetDeltas[poolId] = BalanceDelta.wrap(0);
 
                 if (delta.amount0() == targetDelta.amount0() && delta.amount1() > targetDelta.amount1()) {
                     feeAmount = delta.amount1() - targetDelta.amount1();
+
+                    // feeAmount is positive and int128, so we can safely cast to uint128 given that uint128
+                    // has a larger maximum value.
                     poolManager.donate(key, 0, uint256(uint128(feeAmount)), "");
                 }
 
-                // Apply target delta to only exact-input swaps
                 if (delta.amount1() == targetDelta.amount1() && delta.amount0() > targetDelta.amount0()) {
                     feeAmount = delta.amount0() - targetDelta.amount0();
-                    // feeAmount is positive and int128, so we can safely cast to uint128 and then to uint256
+
+                    // feeAmount is positive and int128, so we can safely cast to uint128 given that uint128
+                    // has a larger maximum value.
                     poolManager.donate(key, uint256(uint128(feeAmount)), 0, "");
                 }
             }

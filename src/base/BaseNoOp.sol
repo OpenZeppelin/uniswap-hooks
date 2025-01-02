@@ -41,9 +41,9 @@ abstract contract BaseNoOp is BaseHook {
             uint256 amountTaken = uint256(-params.amountSpecified);
             Currency input = params.zeroForOne ? key.currency0 : key.currency1;
             poolManager.mint(address(this), input.toId(), amountTaken);
-            return (BaseHook.beforeSwap.selector, toBeforeSwapDelta(amountTaken.toInt128(), 0), 0);
+            return (this.beforeSwap.selector, toBeforeSwapDelta(amountTaken.toInt128(), 0), 0);
         } else {
-            return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+            return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
     }
 

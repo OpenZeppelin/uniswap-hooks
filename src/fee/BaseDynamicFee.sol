@@ -38,7 +38,7 @@ abstract contract BaseDynamicFee is BaseHook {
         returns (bytes4)
     {
         poolManager.updateDynamicLPFee(key, _getFee(key));
-        return BaseHook.afterInitialize.selector;
+        return this.afterInitialize.selector;
     }
 
     /**

@@ -65,7 +65,7 @@ abstract contract DynamicAfterFee is BaseHook {
                 // Reset target delta to 0 after applying it
                 _targetDeltas[poolId] = BalanceDelta.wrap(0);
             }
-            
+
             return (this.afterSwap.selector, feeAmount);
         } else {
             return (this.afterSwap.selector, 0);

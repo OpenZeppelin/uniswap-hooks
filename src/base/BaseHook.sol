@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/base/BaseHook.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
@@ -92,8 +92,8 @@ abstract contract BaseHook is IHooks {
     /**
      * @dev Validate the hook address against the expected permissions.
      */
-    function validateHookAddress(BaseHook _this) internal pure virtual {
-        Hooks.validateHookPermissions(_this, getHookPermissions());
+    function validateHookAddress(BaseHook hook) internal pure virtual {
+        Hooks.validateHookPermissions(hook, getHookPermissions());
     }
 
     /**

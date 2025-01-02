@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/fee/DynamicAfterFee.sol)
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {BaseHook} from "src/base/BaseHook.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
@@ -65,7 +65,7 @@ abstract contract DynamicAfterFee is BaseHook {
                 // Reset target delta to 0 after applying it
                 _targetDeltas[poolId] = BalanceDelta.wrap(0);
             }
-
+            
             return (this.afterSwap.selector, feeAmount);
         } else {
             return (this.afterSwap.selector, 0);

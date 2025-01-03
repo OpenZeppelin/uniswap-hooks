@@ -23,6 +23,13 @@ import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 /**
  * @dev Base implementation for custom accounting, including support for swaps and liquidity management.
  *
+ * To enable custom accounting, liquidity must be deposited via this contract directly, which is managed
+ * in a similar way to the Uniswap `PoolManager`.
+ *
+ * NOTE: This base hook is designed to work with a single pool key. If you want to use the same custom
+ * accounting hook for two pools, you must have two storage instances of this contract and initialize
+ * them via the `PoolManager` with their respective pool keys.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -39,8 +46,8 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     error TooMuchSlippage();
 
     struct AddLiquidityParams {
-        uint256 amount0;
-        uint256 amount1;
+        uint256 amount0Desired;
+        uint256 amount1Desired;
         uint256 amount0Min;
         uint256 amount1Min;
         address to;
@@ -65,13 +72,120 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     }
 
     /**
-     * @dev Set the pool manager.
+     * @dev Set the pool manager and hook's token parameters.
      */
     constructor(IPoolManager _poolManager, string memory _name, string memory _symbol)
         BaseHook(_poolManager)
         ERC20(_name, _symbol)
     {}
 
+    /**
+     * @notice Adds liquidity to the hook's pool.
+     *
+     * To cover all possible scenarios, `msg.sender` should have already given the hook an allowance
+     * of at least amount0Desired/amount1Desired on token0/token1.
+     *
+     * Always adds assets at the ideal ratio, according to the price when the transaction is executed.
+     */
+    function addLiquidity(AddLiquidityParams calldata params)
+        external
+        virtual
+        ensure(params.deadline)
+        returns (uint128 liquidity)
+    {
+        PoolId poolId = poolKey.toId();
+
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+
+        if (sqrtPriceX96 == 0) revert PoolNotInitialized();
+
+        liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            TickMath.getSqrtPriceAtTick(TickMath.minUsableTick(poolKey.tickSpacing)),
+            TickMath.getSqrtPriceAtTick(TickMath.maxUsableTick(poolKey.tickSpacing)),
+            params.amount0Desired,
+            params.amount1Desired
+        );
+
+        BalanceDelta addedDelta = _modifyLiquidity(
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: TickMath.minUsableTick(poolKey.tickSpacing),
+                tickUpper: TickMath.maxUsableTick(poolKey.tickSpacing),
+                liquidityDelta: uint256(liquidity).toInt256(),
+                salt: 0
+            })
+        );
+
+        _mint(params.to, liquidity);
+
+        if (uint128(-addedDelta.amount0()) < params.amount0Min || uint128(-addedDelta.amount1()) < params.amount1Min) {
+            revert TooMuchSlippage();
+        }
+    }
+
+    /**
+     * @notice Removes liquidity from the hook's pool.
+     *
+     * `msg.sender` should have already given the hook allowance of at least liquidity on the pool.
+     */
+    function removeLiquidity(RemoveLiquidityParams calldata params)
+        external
+        virtual
+        ensure(params.deadline)
+        returns (BalanceDelta delta)
+    {
+        PoolId poolId = poolKey.toId();
+
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+
+        if (sqrtPriceX96 == 0) revert PoolNotInitialized();
+
+        delta = _modifyLiquidity(
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: TickMath.minUsableTick(poolKey.tickSpacing),
+                tickUpper: TickMath.maxUsableTick(poolKey.tickSpacing),
+                liquidityDelta: -int256(params.liquidity),
+                salt: 0
+            })
+        );
+
+        _burn(msg.sender, params.liquidity);
+    }
+
+    /**
+     * @dev Call the Uniswap `PoolManager` to unlock and call back the hook.
+     */
+    function _modifyLiquidity(IPoolManager.ModifyLiquidityParams memory params)
+        internal
+        virtual
+        returns (BalanceDelta delta)
+    {
+        delta = abi.decode(poolManager.unlock(abi.encode(CallbackData(msg.sender, params))), (BalanceDelta));
+    }
+
+    /**
+     * @dev Callback when pool liquidity is modified, either adding or removing.
+     */
+    function _unlockCallback(bytes calldata rawData) internal virtual override returns (bytes memory) {
+        CallbackData memory data = abi.decode(rawData, (CallbackData));
+        BalanceDelta delta;
+
+        if (data.params.liquidityDelta < 0) {
+            delta = _removeLiquidity(data.params);
+            poolManager.take(poolKey.currency0, data.sender, uint256(uint128(delta.amount0())));
+            poolManager.take(poolKey.currency1, data.sender, uint256(uint128(delta.amount1())));
+        } else {
+            delta = _addLiquidity(data.params);
+            poolKey.currency0.settle(poolManager, data.sender, uint256(int256(-delta.amount0())), false);
+            poolKey.currency1.settle(poolManager, data.sender, uint256(int256(-delta.amount1())), false);
+        }
+        return abi.encode(delta);
+    }
+
+    /**
+     * @dev Initialize the hook's pool key. The stored key should act immutably so that
+     * it can safely be used across the hook's functions.
+     */
     function _beforeInitialize(address, PoolKey calldata key, uint160)
         internal
         override
@@ -86,7 +200,8 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     // TODO: fix this swap below
 
     /**
-     * @dev Call the custom swap logic and create a return delta to be consumed by the `PoolManager`.
+     * @dev Call the custom swap logic and create a return delta to be consumed by the `PoolManager`
+     * using the hook-owned liquidity.
      */
     function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         internal
@@ -133,86 +248,14 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function addLiquidity(AddLiquidityParams calldata params)
-        external
-        ensure(params.deadline)
-        returns (uint128 liquidity)
-    {
-        PoolId poolId = poolKey.toId();
-
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
-
-        if (sqrtPriceX96 == 0) revert PoolNotInitialized();
-
-        liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            sqrtPriceX96,
-            TickMath.getSqrtPriceAtTick(TickMath.minUsableTick(poolKey.tickSpacing)),
-            TickMath.getSqrtPriceAtTick(TickMath.maxUsableTick(poolKey.tickSpacing)),
-            params.amount0,
-            params.amount1
-        );
-
-        BalanceDelta addedDelta = modifyLiquidity(
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: TickMath.minUsableTick(poolKey.tickSpacing),
-                tickUpper: TickMath.maxUsableTick(poolKey.tickSpacing),
-                liquidityDelta: uint256(liquidity).toInt256(),
-                salt: 0
-            })
-        );
-
-        _mint(params.to, liquidity);
-
-        if (uint128(-addedDelta.amount0()) < params.amount0Min || uint128(-addedDelta.amount1()) < params.amount1Min) {
-            revert TooMuchSlippage();
-        }
-    }
-
-    function removeLiquidity(RemoveLiquidityParams calldata params)
-        public
+    /**
+     * @dev Remove liquidity stored in the Uniswap `PoolManager` owned by the hook.
+     */
+    function _removeLiquidity(IPoolManager.ModifyLiquidityParams memory params)
+        internal
         virtual
-        ensure(params.deadline)
         returns (BalanceDelta delta)
     {
-        PoolId poolId = poolKey.toId();
-
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
-
-        if (sqrtPriceX96 == 0) revert PoolNotInitialized();
-
-        delta = modifyLiquidity(
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: TickMath.minUsableTick(poolKey.tickSpacing),
-                tickUpper: TickMath.maxUsableTick(poolKey.tickSpacing),
-                liquidityDelta: -int256(params.liquidity),
-                salt: 0
-            })
-        );
-
-        _burn(msg.sender, params.liquidity);
-    }
-
-    function modifyLiquidity(IPoolManager.ModifyLiquidityParams memory params) internal returns (BalanceDelta delta) {
-        delta = abi.decode(poolManager.unlock(abi.encode(CallbackData(msg.sender, params))), (BalanceDelta));
-    }
-
-    function _unlockCallback(bytes calldata rawData) internal override returns (bytes memory) {
-        CallbackData memory data = abi.decode(rawData, (CallbackData));
-        BalanceDelta delta;
-
-        if (data.params.liquidityDelta < 0) {
-            delta = _removeLiquidity(data.params);
-            poolManager.take(poolKey.currency0, data.sender, uint256(uint128(delta.amount0())));
-            poolManager.take(poolKey.currency1, data.sender, uint256(uint128(delta.amount1())));
-        } else {
-            (delta,) = poolManager.modifyLiquidity(poolKey, data.params, bytes(""));
-            poolKey.currency0.settle(poolManager, data.sender, uint256(int256(-delta.amount0())), false);
-            poolKey.currency1.settle(poolManager, data.sender, uint256(int256(-delta.amount1())), false);
-        }
-        return abi.encode(delta);
-    }
-
-    function _removeLiquidity(IPoolManager.ModifyLiquidityParams memory params) internal returns (BalanceDelta delta) {
         PoolId poolId = poolKey.toId();
 
         uint256 liquidityToRemove =
@@ -223,7 +266,18 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     }
 
     /**
-     * @dev Calculate the amount of tokens to take or send (settle).
+     * @dev Add hook-owned liquidity to the pool via the Uniswap `PoolManager`.
+     */
+    function _addLiquidity(IPoolManager.ModifyLiquidityParams memory params)
+        internal
+        virtual
+        returns (BalanceDelta delta)
+    {
+        (delta,) = poolManager.modifyLiquidity(poolKey, params, bytes(""));
+    }
+
+    /**
+     * @dev Calculate the amount of tokens to take or send (settle) for a swap.
      */
     function _getAmount(uint256 amountIn, Currency input, Currency output, bool zeroForOne, bool exactInput)
         internal

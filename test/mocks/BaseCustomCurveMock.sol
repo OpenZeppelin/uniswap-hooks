@@ -39,7 +39,7 @@ contract BaseCustomCurveMock is BaseCustomCurve {
     {
         amount0 = params.amount0Desired;
         amount1 = params.amount1Desired;
-        liquidity = amount0 + amount1;
+        liquidity = (amount0 + amount1) / 2;
     }
 
     function _calculateOut(RemoveLiquidityParams memory params)
@@ -47,9 +47,9 @@ contract BaseCustomCurveMock is BaseCustomCurve {
         override
         returns (uint256 amount0, uint256 amount1, uint256 liquidity)
     {
-        amount0 = liquidity / 2;
-        amount1 = liquidity / 2;
-        liquidity = amount0 + amount1;
+        amount0 = params.liquidity / 2;
+        amount1 = params.liquidity / 2;
+        liquidity = params.liquidity;
     }
 
     // Exclude from coverage report

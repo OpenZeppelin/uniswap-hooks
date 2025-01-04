@@ -12,6 +12,7 @@ import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {BalanceDelta, toBalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
+import {console2 as console} from "forge-std/console2.sol";
 
 /**
  * @dev Base implementation for custom curves.
@@ -75,7 +76,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         returns (bytes memory, uint256)
     {
         (uint256 amount0, uint256 amount1, uint256 liquidity) = _calculateIn(params);
-        return (abi.encode(amount0, amount1), liquidity);
+        return (abi.encode(amount0.toInt128(), amount1.toInt128()), liquidity);
     }
 
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
@@ -85,7 +86,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         returns (bytes memory, uint256)
     {
         (uint256 amount0, uint256 amount1, uint256 liquidity) = _calculateOut(params);
-        return (abi.encode(amount0, amount1), liquidity);
+        return (abi.encode(-amount0.toInt128(), -amount1.toInt128()), liquidity);
     }
 
     function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
@@ -141,6 +142,9 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
 
     function _unlockCallback(bytes calldata rawData) internal virtual override returns (bytes memory) {
         CallbackDataCustom memory data = abi.decode(rawData, (CallbackDataCustom));
+        console.log(data.amount0);
+        console.log(data.amount1);
+
         int128 amount0;
         int128 amount1;
 
@@ -149,27 +153,27 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         // When adding liquidity, mint ERC-6909 claim tokens and transfer tokens from receiver to pool.
 
         if (data.amount0 < 0) {
-            poolKey.currency0.settle(poolManager, address(this), uint256(int256(data.amount0)), true);
-            poolKey.currency0.take(poolManager, data.sender, uint256(int256(data.amount0)), false);
+            poolKey.currency0.settle(poolManager, address(this), uint256(int256(-data.amount0)), true);
+            poolKey.currency0.take(poolManager, data.sender, uint256(int256(-data.amount0)), false);
             amount0 = data.amount0;
         }
 
         if (data.amount1 < 0) {
-            poolKey.currency1.settle(poolManager, address(this), uint256(int256(data.amount1)), true);
-            poolKey.currency1.take(poolManager, data.sender, uint256(int256(data.amount1)), false);
+            poolKey.currency1.settle(poolManager, address(this), uint256(int256(-data.amount1)), true);
+            poolKey.currency1.take(poolManager, data.sender, uint256(int256(-data.amount1)), false);
             amount1 = data.amount1;
         }
 
         if (data.amount0 > 0) {
-            poolKey.currency0.settle(poolManager, data.sender, uint256(int256(-data.amount0)), false);
+            poolKey.currency0.settle(poolManager, data.sender, uint256(int256(data.amount0)), false);
             poolKey.currency0.take(poolManager, address(this), uint256(int256(data.amount0)), true);
             amount0 = -data.amount0;
         }
 
         if (data.amount1 > 0) {
-            poolKey.currency1.settle(poolManager, data.sender, uint256(int256(-data.amount1)), false);
+            poolKey.currency1.settle(poolManager, data.sender, uint256(int256(data.amount1)), false);
             poolKey.currency1.take(poolManager, address(this), uint256(int256(data.amount1)), true);
-            amount1 = data.amount1;
+            amount1 = -data.amount1;
         }
 
         return abi.encode(toBalanceDelta(amount0, amount1));

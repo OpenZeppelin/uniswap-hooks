@@ -45,8 +45,7 @@ contract BaseCustomAccountingTest is Test, Deployers {
     function setUp() public {
         deployFreshManagerAndRouters();
 
-        hook =
-            BaseCustomAccountingMock(address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG)));
+        hook = BaseCustomAccountingMock(address(uint160(Hooks.BEFORE_INITIALIZE_FLAG)));
         deployCodeTo(
             "test/mocks/BaseCustomAccountingMock.sol:BaseCustomAccountingMock", abi.encode(manager), address(hook)
         );
@@ -393,7 +392,7 @@ contract BaseCustomAccountingTest is Test, Deployers {
 
     function test_removeLiquidity_notInitialized_reverts() public {
         BaseCustomAccountingMock uninitializedHook =
-            BaseCustomAccountingMock(0x1000000000000000000000000000000000002800);
+            BaseCustomAccountingMock(0x1000000000000000000000000000000000002000);
         deployCodeTo(
             "test/mocks/BaseCustomAccountingMock.sol:BaseCustomAccountingMock",
             abi.encode(manager),
@@ -408,7 +407,7 @@ contract BaseCustomAccountingTest is Test, Deployers {
 
     function test_addLiquidity_notInitialized_reverts() public {
         BaseCustomAccountingMock uninitializedHook =
-            BaseCustomAccountingMock(0x1000000000000000000000000000000000002800);
+            BaseCustomAccountingMock(0x1000000000000000000000000000000000002000);
         deployCodeTo(
             "test/mocks/BaseCustomAccountingMock.sol:BaseCustomAccountingMock",
             abi.encode(manager),

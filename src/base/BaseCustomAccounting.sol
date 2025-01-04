@@ -22,8 +22,8 @@ import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 
 /**
- * @dev Base implementation for custom accounting and liquidity, which must be deposited directly via
- * the hook.
+ * @dev Base implementation for custom accounting and hook-owned liquidity, which must be deposited
+ * directly via the hook.
  *
  * NOTE: This base hook is designed to work with a single pool key. If you want to use the same custom
  * accounting hook for two pools, you must have two storage instances of this contract and initialize
@@ -107,9 +107,9 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
-        (IPoolManager.ModifyLiquidityParams memory modify, uint256 liquidity) = _getAddLiquidity(sqrtPriceX96, params);
+        (bytes memory modifyParams, uint256 liquidity) = _getAddLiquidity(sqrtPriceX96, params);
 
-        delta = _modifyLiquidity(modify);
+        delta = _modifyLiquidity(modifyParams);
 
         _mint(params.to, liquidity);
 
@@ -133,9 +133,9 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
-        (IPoolManager.ModifyLiquidityParams memory modify, uint256 liquidity) = _getRemoveLiquidity(params);
+        (bytes memory modifyParams, uint256 liquidity) = _getRemoveLiquidity(params);
 
-        delta = _modifyLiquidity(modify);
+        delta = _modifyLiquidity(modifyParams);
 
         _burn(msg.sender, liquidity);
     }
@@ -143,12 +143,13 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     /**
      * @dev Call the Uniswap `PoolManager` to unlock and call back the hook.
      */
-    function _modifyLiquidity(IPoolManager.ModifyLiquidityParams memory params)
-        internal
-        virtual
-        returns (BalanceDelta delta)
-    {
-        delta = abi.decode(poolManager.unlock(abi.encode(CallbackData(msg.sender, params))), (BalanceDelta));
+    function _modifyLiquidity(bytes memory params) internal virtual returns (BalanceDelta delta) {
+        delta = abi.decode(
+            poolManager.unlock(
+                abi.encode(CallbackData(msg.sender, abi.decode(params, (IPoolManager.ModifyLiquidityParams))))
+            ),
+            (BalanceDelta)
+        );
     }
 
     /**
@@ -161,6 +162,7 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
         // Apply liquidity modification parameters
         (delta,) = poolManager.modifyLiquidity(poolKey, data.params, "");
 
+        // If liquidity delta is negative, remove liquidity from the pool. Otherwise, add liquidity to the pool.
         if (data.params.liquidityDelta < 0) {
             // Get tokens from the pool
             poolKey.currency0.take(poolManager, data.sender, uint256(int256(delta.amount0())), false);
@@ -191,7 +193,7 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     function _getAddLiquidity(uint160 sqrtPriceX96, AddLiquidityParams memory params)
         internal
         virtual
-        returns (IPoolManager.ModifyLiquidityParams memory modify, uint256 liquidity)
+        returns (bytes memory modify, uint256 liquidity)
     {
         liquidity = LiquidityAmounts.getLiquidityForAmounts(
             sqrtPriceX96,
@@ -202,12 +204,14 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
         );
 
         return (
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: params.tickLower,
-                tickUpper: params.tickUpper,
-                liquidityDelta: liquidity.toInt256(),
-                salt: 0
-            }),
+            abi.encode(
+                IPoolManager.ModifyLiquidityParams({
+                    tickLower: params.tickLower,
+                    tickUpper: params.tickUpper,
+                    liquidityDelta: liquidity.toInt256(),
+                    salt: 0
+                })
+            ),
             liquidity
         );
     }
@@ -215,17 +219,19 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal
         virtual
-        returns (IPoolManager.ModifyLiquidityParams memory modify, uint256 liquidity)
+        returns (bytes memory, uint256 liquidity)
     {
         liquidity = FullMath.mulDiv(params.liquidity, poolManager.getLiquidity(poolKey.toId()), totalSupply());
 
         return (
-            IPoolManager.ModifyLiquidityParams({
-                tickLower: params.tickLower,
-                tickUpper: params.tickUpper,
-                liquidityDelta: -liquidity.toInt256(),
-                salt: 0
-            }),
+            abi.encode(
+                IPoolManager.ModifyLiquidityParams({
+                    tickLower: params.tickLower,
+                    tickUpper: params.tickUpper,
+                    liquidityDelta: -liquidity.toInt256(),
+                    salt: 0
+                })
+            ),
             liquidity
         );
     }
@@ -237,7 +243,7 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,
-            beforeAddLiquidity: true,
+            beforeAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterAddLiquidity: false,
             afterRemoveLiquidity: false,

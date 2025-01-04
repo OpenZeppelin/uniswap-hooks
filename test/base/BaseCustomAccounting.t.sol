@@ -35,19 +35,18 @@ contract BaseCustomAccountingTest is Test, Deployers {
     BaseCustomAccountingMock hook;
 
     uint256 constant MAX_DEADLINE = 12329839823;
+
+    // Minimum and maximum ticks for a spacing of 60
+    int24 constant MIN_TICK = -887220;
+    int24 constant MAX_TICK = 887220;
+
     PoolId id;
 
     function setUp() public {
         deployFreshManagerAndRouters();
 
-        hook = BaseCustomAccountingMock(
-            address(
-                uint160(
-                    Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG
-                        | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-                )
-            )
-        );
+        hook =
+            BaseCustomAccountingMock(address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG)));
         deployCodeTo(
             "test/mocks/BaseCustomAccountingMock.sol:BaseCustomAccountingMock", abi.encode(manager), address(hook)
         );
@@ -57,12 +56,6 @@ contract BaseCustomAccountingTest is Test, Deployers {
 
         ERC20(Currency.unwrap(currency0)).approve(address(hook), type(uint256).max);
         ERC20(Currency.unwrap(currency1)).approve(address(hook), type(uint256).max);
-
-        hook.addLiquidity(
-            BaseCustomAccounting.AddLiquidityParams(
-                100 ether, 100 ether, 99 ether, 99 ether, address(this), block.timestamp + 1000
-            )
-        );
 
         vm.label(Currency.unwrap(currency0), "currency0");
         vm.label(Currency.unwrap(currency1), "currency1");
@@ -78,12 +71,18 @@ contract BaseCustomAccountingTest is Test, Deployers {
         assertEq(address(_hooks), address(hook));
     }
 
+    function test_initialize_already_reverts() public {
+        vm.expectRevert();
+        initPool(currency0, currency1, IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1);
+    }
+
     function test_addLiquidity_succeeds() public {
         uint256 prevBalance0 = key.currency0.balanceOf(address(this));
         uint256 prevBalance1 = key.currency1.balanceOf(address(this));
 
-        BaseCustomAccounting.AddLiquidityParams memory addLiquidityParams =
-            BaseCustomAccounting.AddLiquidityParams(10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE);
+        BaseCustomAccounting.AddLiquidityParams memory addLiquidityParams = BaseCustomAccounting.AddLiquidityParams(
+            10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+        );
 
         hook.addLiquidity(addLiquidityParams);
 
@@ -94,12 +93,17 @@ contract BaseCustomAccountingTest is Test, Deployers {
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
 
-        // Include liquidity provided in set up
-        assertEq(liquidityTokenBal, 110 ether + 5);
+        assertEq(liquidityTokenBal, 10 ether);
     }
 
     function test_addLiquidity_fuzz_succeeds(uint112 amount) public {
-        hook.addLiquidity(BaseCustomAccounting.AddLiquidityParams(amount, amount, 0, 0, address(this), MAX_DEADLINE));
+        vm.assume(amount > 0);
+
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                amount, amount, 0, 0, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
+        );
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
@@ -111,22 +115,21 @@ contract BaseCustomAccountingTest is Test, Deployers {
         uint256 prevBalance1 = key.currency1.balanceOf(address(this));
 
         hook.addLiquidity(
-            BaseCustomAccounting.AddLiquidityParams(10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE)
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
         );
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
         assertEq(manager.getLiquidity(id), liquidityTokenBal);
-        assertEq(liquidityTokenBal, 110 ether + 5);
+        assertEq(liquidityTokenBal, 10 ether);
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
 
-        // Set rate to 100% to return all
-        hook.setRate(10000);
-
         vm.expectEmit(true, true, true, true, address(manager));
         emit Swap(
-            id, address(swapRouter), -1 ether, 990990990990990990, 78514395284406100317958588947, 110 ether + 5, -182, 0
+            id, address(swapRouter), -1 ether, 909090909090909090, 72025602285694852357767227579, 10 ether, -1907, 0
         );
 
         IPoolManager.SwapParams memory params =
@@ -137,35 +140,45 @@ contract BaseCustomAccountingTest is Test, Deployers {
         swapRouter.swap(key, params, settings, ZERO_BYTES);
 
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 10 ether - 1 ether);
-        assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 9009009009009009010);
+        assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 9090909090909090910);
 
         hook.addLiquidity(
-            BaseCustomAccounting.AddLiquidityParams(5 ether, 5 ether, 4 ether, 4 ether, address(this), MAX_DEADLINE)
+            BaseCustomAccounting.AddLiquidityParams(
+                5 ether, 5 ether, 4 ether, 4 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
         );
 
         liquidityTokenBal = hook.balanceOf(address(this));
 
         assertEq(manager.getLiquidity(id), liquidityTokenBal);
-        assertEq(liquidityTokenBal, 114954954954954954960);
+        assertEq(liquidityTokenBal, 14545454545454545454);
     }
 
     function test_addLiquidity_expired_revert() public {
         vm.expectRevert(BaseCustomAccounting.ExpiredPastDeadline.selector);
-        hook.addLiquidity(BaseCustomAccounting.AddLiquidityParams(0, 0, 0, 0, address(this), block.timestamp - 1));
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(0, 0, 0, 0, address(this), block.timestamp - 1, MIN_TICK, MAX_TICK)
+        );
     }
 
     function test_addLiquidity_tooMuchSlippage_reverts() public {
         vm.expectRevert(BaseCustomAccounting.TooMuchSlippage.selector);
         hook.addLiquidity(
             BaseCustomAccounting.AddLiquidityParams(
-                10 ether, 10 ether, 100000 ether, 100000 ether, address(this), MAX_DEADLINE
+                10 ether, 10 ether, 100000 ether, 100000 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
             )
         );
     }
 
     function test_swap_twoSwaps_succeeds() public {
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                2 ether, 2 ether, 0, 0, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
+        );
+
         IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 1 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -174,13 +187,19 @@ contract BaseCustomAccountingTest is Test, Deployers {
     }
 
     function test_removeLiquidity_initialRemove_succeeds() public {
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                100 ether, 100 ether, 99 ether, 99 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
+        );
+
         uint256 prevBalance0 = key.currency0.balanceOf(address(this));
         uint256 prevBalance1 = key.currency1.balanceOf(address(this));
 
         hook.approve(address(hook), type(uint256).max);
 
         BaseCustomAccounting.RemoveLiquidityParams memory removeLiquidityParams =
-            BaseCustomAccounting.RemoveLiquidityParams(1 ether, MAX_DEADLINE);
+            BaseCustomAccounting.RemoveLiquidityParams(1 ether, MAX_DEADLINE, MIN_TICK, MAX_TICK);
 
         hook.removeLiquidity(removeLiquidityParams);
 
@@ -193,12 +212,14 @@ contract BaseCustomAccountingTest is Test, Deployers {
     }
 
     function test_removeLiquidity_fuzz_succeeds(uint256 amount) public {
+        vm.assume(amount > 0);
+
         if (amount > hook.balanceOf(address(this))) {
             vm.expectRevert();
-            hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(amount, MAX_DEADLINE));
+            hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(amount, MAX_DEADLINE, MIN_TICK, MAX_TICK));
         } else {
             uint256 prevLiquidityTokenBal = hook.balanceOf(address(this));
-            hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(amount, MAX_DEADLINE));
+            hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(amount, MAX_DEADLINE, MIN_TICK, MAX_TICK));
 
             uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
@@ -209,7 +230,9 @@ contract BaseCustomAccountingTest is Test, Deployers {
 
     function test_removeLiquidity_noLiquidity_reverts() public {
         vm.expectRevert();
-        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(1000000 ether, MAX_DEADLINE));
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(1000000 ether, MAX_DEADLINE, MIN_TICK, MAX_TICK)
+        );
     }
 
     function test_removeLiquidity_partial_succeeds() public {
@@ -217,19 +240,21 @@ contract BaseCustomAccountingTest is Test, Deployers {
         uint256 prevBalance1 = key.currency1.balanceOf(address(this));
 
         hook.addLiquidity(
-            BaseCustomAccounting.AddLiquidityParams(10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE)
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
         );
 
-        assertEq(hook.balanceOf(address(this)), 110 ether + 5);
+        assertEq(hook.balanceOf(address(this)), 10 ether);
         assertEq(key.currency0.balanceOfSelf(), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOfSelf(), prevBalance1 - 10 ether);
 
-        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(5 ether, MAX_DEADLINE));
+        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(5 ether, MAX_DEADLINE, MIN_TICK, MAX_TICK));
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
         assertEq(manager.getLiquidity(id), liquidityTokenBal);
-        assertEq(liquidityTokenBal, 105 ether + 5);
+        assertEq(liquidityTokenBal, 5 ether);
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 5 ether - 1);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 5 ether - 1);
     }
@@ -239,37 +264,49 @@ contract BaseCustomAccountingTest is Test, Deployers {
         uint256 prevBalance1 = key.currency1.balanceOf(address(this));
 
         hook.addLiquidity(
-            BaseCustomAccounting.AddLiquidityParams(10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE)
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 9 ether, 9 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
         );
 
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
-        assertEq(hook.balanceOf(address(this)), 110 ether + 5);
+        assertEq(hook.balanceOf(address(this)), 10 ether);
 
         hook.addLiquidity(
-            BaseCustomAccounting.AddLiquidityParams(5 ether, 2.5 ether, 2 ether, 2 ether, address(this), MAX_DEADLINE)
+            BaseCustomAccounting.AddLiquidityParams(
+                5 ether, 2.5 ether, 2 ether, 2 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
         );
 
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 12.5 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 12.5 ether);
-        assertEq(hook.balanceOf(address(this)), 112.5 ether + 5);
+        assertEq(hook.balanceOf(address(this)), 12.5 ether);
 
-        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(5 ether, MAX_DEADLINE));
+        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(5 ether, MAX_DEADLINE, MIN_TICK, MAX_TICK));
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
         assertEq(manager.getLiquidity(id), liquidityTokenBal);
-        assertEq(liquidityTokenBal, 107.5 ether + 5);
+        assertEq(liquidityTokenBal, 7.5 ether);
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 7.5 ether - 1);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 7.5 ether - 1);
     }
 
     function test_removeLiquidity_allFuzz_succeeds(uint112 amount) public {
-        hook.addLiquidity(BaseCustomAccounting.AddLiquidityParams(amount, amount, 0, 0, address(this), MAX_DEADLINE));
+        vm.assume(amount > 0);
+
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                amount, amount, 0, 0, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
+        );
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
-        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(liquidityTokenBal, MAX_DEADLINE));
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(liquidityTokenBal, MAX_DEADLINE, MIN_TICK, MAX_TICK)
+        );
 
         assertEq(manager.getLiquidity(id), 0);
     }
@@ -296,7 +333,7 @@ contract BaseCustomAccountingTest is Test, Deployers {
         vm.prank(address(1));
         hook.addLiquidity(
             BaseCustomAccounting.AddLiquidityParams(
-                100 ether, 100 ether, 99 ether, 99 ether, address(this), MAX_DEADLINE
+                100 ether, 100 ether, 99 ether, 99 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
             )
         );
 
@@ -304,7 +341,7 @@ contract BaseCustomAccountingTest is Test, Deployers {
         vm.prank(address(2));
         hook.addLiquidity(
             BaseCustomAccounting.AddLiquidityParams(
-                100 ether, 100 ether, 99 ether, 99 ether, address(this), MAX_DEADLINE
+                100 ether, 100 ether, 99 ether, 99 ether, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
             )
         );
 
@@ -317,7 +354,9 @@ contract BaseCustomAccountingTest is Test, Deployers {
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         // Test contract removes liquidity, succeeds
-        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(hook.balanceOf(address(this)), MAX_DEADLINE));
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(hook.balanceOf(address(this)), MAX_DEADLINE, MIN_TICK, MAX_TICK)
+        );
 
         // PoolManager does not have any liquidity left over
         assertEq(manager.getLiquidity(id), 0);
@@ -326,7 +365,11 @@ contract BaseCustomAccountingTest is Test, Deployers {
     function test_removeLiquidity_swapRemoveAllFuzz_succeeds(uint112 amount) public {
         vm.assume(amount > 4);
 
-        hook.addLiquidity(BaseCustomAccounting.AddLiquidityParams(amount, amount, 0, 0, address(this), MAX_DEADLINE));
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                amount, amount, 0, 0, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
+        );
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: true,
@@ -341,8 +384,42 @@ contract BaseCustomAccountingTest is Test, Deployers {
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
-        hook.removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams(liquidityTokenBal, MAX_DEADLINE));
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(liquidityTokenBal, MAX_DEADLINE, MIN_TICK, MAX_TICK)
+        );
 
         assertEq(manager.getLiquidity(id), 0);
+    }
+
+    function test_removeLiquidity_notInitialized_reverts() public {
+        BaseCustomAccountingMock uninitializedHook =
+            BaseCustomAccountingMock(0x1000000000000000000000000000000000002800);
+        deployCodeTo(
+            "test/mocks/BaseCustomAccountingMock.sol:BaseCustomAccountingMock",
+            abi.encode(manager),
+            address(uninitializedHook)
+        );
+
+        vm.expectRevert(BaseCustomAccounting.PoolNotInitialized.selector);
+        uninitializedHook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(1 ether, MAX_DEADLINE, MIN_TICK, MAX_TICK)
+        );
+    }
+
+    function test_addLiquidity_notInitialized_reverts() public {
+        BaseCustomAccountingMock uninitializedHook =
+            BaseCustomAccountingMock(0x1000000000000000000000000000000000002800);
+        deployCodeTo(
+            "test/mocks/BaseCustomAccountingMock.sol:BaseCustomAccountingMock",
+            abi.encode(manager),
+            address(uninitializedHook)
+        );
+
+        vm.expectRevert(BaseCustomAccounting.PoolNotInitialized.selector);
+        uninitializedHook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                1 ether, 1 ether, 0, 0, address(this), MAX_DEADLINE, MIN_TICK, MAX_TICK
+            )
+        );
     }
 }

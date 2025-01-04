@@ -10,6 +10,7 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
+import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 
 /**
  * @dev Base implementation for no-op hooks.
@@ -25,6 +26,7 @@ import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
  */
 abstract contract BaseNoOp is BaseHook {
     using SafeCast for uint256;
+    using CurrencySettler for Currency;
 
     /**
      * @dev Set the pool manager.
@@ -37,11 +39,19 @@ abstract contract BaseNoOp is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+        // No-op is only possible on exact-input swaps
         if (params.amountSpecified < 0) {
-            uint256 amountTaken = uint256(-params.amountSpecified);
-            Currency input = params.zeroForOne ? key.currency0 : key.currency1;
-            poolManager.mint(address(this), input.toId(), amountTaken);
-            return (this.beforeSwap.selector, toBeforeSwapDelta(amountTaken.toInt128(), 0), 0);
+            // Determine which currency is specified
+            Currency specified = params.zeroForOne ? key.currency0 : key.currency1;
+
+            // Get the positive specified amount
+            uint256 specifiedAmount = uint256(-params.amountSpecified);
+
+            // Mint ERC-6909 claim token for the specified currency and amount
+            specified.take(poolManager, address(this), specifiedAmount, true);
+
+            // Return delta that nets out specified amount to 0.
+            return (this.beforeSwap.selector, toBeforeSwapDelta(specifiedAmount.toInt128(), 0), 0);
         } else {
             return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }

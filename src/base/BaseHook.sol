@@ -69,7 +69,7 @@ abstract contract BaseHook is IHooks {
     /**
      * @dev Restrict the function to only be callable by the hook itself.
      */
-    modifier selfOnly() {
+    modifier onlySelf() {
         if (msg.sender != address(this)) revert NotSelf();
         _;
     }

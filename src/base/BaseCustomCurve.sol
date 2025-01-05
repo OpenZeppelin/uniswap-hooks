@@ -48,11 +48,9 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     error OnlyDirectLiquidity();
 
     /**
-     * @dev Set the pool manager.
+     * @dev Set the PoolManager address.
      */
-    constructor(IPoolManager _poolManager, string memory _name, string memory _symbol)
-        BaseCustomAccounting(_poolManager, _name, _symbol)
-    {}
+    constructor(IPoolManager _poolManager) BaseCustomAccounting(_poolManager) {}
 
     /**
      * @dev Force liquidity to only be added directly to the hook.
@@ -75,7 +73,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         override
         returns (bytes memory, uint256)
     {
-        (uint256 amount0, uint256 amount1, uint256 liquidity) = _calculateIn(params);
+        (uint256 amount0, uint256 amount1, uint256 liquidity) = _getAmountIn(params);
         return (abi.encode(amount0.toInt128(), amount1.toInt128()), liquidity);
     }
 
@@ -85,7 +83,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         override
         returns (bytes memory, uint256)
     {
-        (uint256 amount0, uint256 amount1, uint256 liquidity) = _calculateOut(params);
+        (uint256 amount0, uint256 amount1, uint256 liquidity) = _getAmountOut(params);
         return (abi.encode(-amount0.toInt128(), -amount1.toInt128()), liquidity);
     }
 
@@ -205,12 +203,12 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         virtual
         returns (uint256 amountIn);
 
-    function _calculateOut(RemoveLiquidityParams memory params)
+    function _getAmountOut(RemoveLiquidityParams memory params)
         internal
         virtual
         returns (uint256 amount0, uint256 amount1, uint256 liquidity);
 
-    function _calculateIn(AddLiquidityParams memory params)
+    function _getAmountIn(AddLiquidityParams memory params)
         internal
         virtual
         returns (uint256 amount0, uint256 amount1, uint256 liquidity);

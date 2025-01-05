@@ -7,19 +7,11 @@ import {BaseHook} from "src/base/BaseHook.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {BeforeSwapDelta, toBeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
-import {ERC6909} from "v4-core/src/ERC6909.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {TickMath} from "v4-core/src/libraries/TickMath.sol";
-import {LiquidityAmounts} from "v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
-import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
-import {FullMath} from "v4-core/src/libraries/FullMath.sol";
-import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 
 /**
  * @dev Base implementation for custom accounting and hook-owned liquidity, which must be deposited
@@ -38,11 +30,9 @@ import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary
  *
  * _Available since v0.1.0_
  */
-abstract contract BaseCustomAccounting is BaseHook, ERC20 {
+abstract contract BaseCustomAccounting is BaseHook {
     using CurrencySettler for Currency;
-    using SafeCast for uint256;
     using StateLibrary for IPoolManager;
-    using TransientStateLibrary for IPoolManager;
 
     error ExpiredPastDeadline();
     error PoolNotInitialized();
@@ -82,12 +72,9 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     }
 
     /**
-     * @dev Set the pool poolManager and hook's token parameters.
+     * @dev Set the pool `PoolManager` address.
      */
-    constructor(IPoolManager _poolManager, string memory _name, string memory _symbol)
-        BaseHook(_poolManager)
-        ERC20(_name, _symbol)
-    {}
+    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     /**
      * @notice Adds liquidity to the hook's pool.
@@ -111,7 +98,7 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
 
         delta = _modifyLiquidity(modifyParams);
 
-        _mint(params.to, liquidity);
+        _mint(params, delta, liquidity);
 
         if (uint128(-delta.amount0()) < params.amount0Min || uint128(-delta.amount1()) < params.amount1Min) {
             revert TooMuchSlippage();
@@ -137,7 +124,7 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
 
         delta = _modifyLiquidity(modifyParams);
 
-        _burn(msg.sender, liquidity);
+        _burn(params, delta, liquidity);
     }
 
     /**
@@ -193,48 +180,16 @@ abstract contract BaseCustomAccounting is BaseHook, ERC20 {
     function _getAddLiquidity(uint160 sqrtPriceX96, AddLiquidityParams memory params)
         internal
         virtual
-        returns (bytes memory modify, uint256 liquidity)
-    {
-        liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            sqrtPriceX96,
-            TickMath.getSqrtPriceAtTick(params.tickLower),
-            TickMath.getSqrtPriceAtTick(params.tickUpper),
-            params.amount0Desired,
-            params.amount1Desired
-        );
-
-        return (
-            abi.encode(
-                IPoolManager.ModifyLiquidityParams({
-                    tickLower: params.tickLower,
-                    tickUpper: params.tickUpper,
-                    liquidityDelta: liquidity.toInt256(),
-                    salt: 0
-                })
-            ),
-            liquidity
-        );
-    }
+        returns (bytes memory modify, uint256 liquidity);
 
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal
         virtual
-        returns (bytes memory, uint256 liquidity)
-    {
-        liquidity = FullMath.mulDiv(params.liquidity, poolManager.getLiquidity(poolKey.toId()), totalSupply());
+        returns (bytes memory modify, uint256 liquidity);
 
-        return (
-            abi.encode(
-                IPoolManager.ModifyLiquidityParams({
-                    tickLower: params.tickLower,
-                    tickUpper: params.tickUpper,
-                    liquidityDelta: -liquidity.toInt256(),
-                    salt: 0
-                })
-            ),
-            liquidity
-        );
-    }
+    function _mint(AddLiquidityParams memory params, BalanceDelta delta, uint256 liquidity) internal virtual;
+
+    function _burn(RemoveLiquidityParams memory params, BalanceDelta delta, uint256 liquidity) internal virtual;
 
     /**
      * @dev Set the hook permissions, specifically `beforeSwap` and `beforeSwapReturnDelta`.

@@ -10,7 +10,7 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
+import {CurrencySettler} from "src/lib/CurrencySettler.sol";
 
 /**
  * @dev Base implementation for no-op hooks.

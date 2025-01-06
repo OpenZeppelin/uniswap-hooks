@@ -4,12 +4,11 @@
 pragma solidity ^0.8.24;
 
 import {BaseHook} from "src/base/BaseHook.sol";
+import {CurrencySettler} from "src/lib/CurrencySettler.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
-import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 
@@ -34,9 +33,25 @@ abstract contract BaseCustomAccounting is BaseHook {
     using CurrencySettler for Currency;
     using StateLibrary for IPoolManager;
 
+    /**
+     * @dev An liquidity modification order was attempted to be executed after the deadline.
+     */
     error ExpiredPastDeadline();
+
+    /**
+     * @dev Pool was not initialized.
+     */
     error PoolNotInitialized();
+
+    /**
+     * @dev Liquidity modification delta resulted in too much slippage.
+     */
     error TooMuchSlippage();
+
+    /**
+     * @dev Liquidity was attempted to be added or removed via the `PoolManager` instead of the hook.
+     */
+    error LiquidityOnlyViaHook();
 
     struct AddLiquidityParams {
         uint256 amount0Desired;
@@ -61,10 +76,15 @@ abstract contract BaseCustomAccounting is BaseHook {
         IPoolManager.ModifyLiquidityParams params;
     }
 
+    /**
+     * @notice The hook's pool key.
+     */
     PoolKey public poolKey;
 
     /**
      * @dev Ensure the deadline of a liquidity modification request is not expired.
+     *
+     * @param deadline Deadline of the request, passed in by the caller.
      */
     modifier ensure(uint256 deadline) {
         if (deadline < block.timestamp) revert ExpiredPastDeadline();
@@ -79,10 +99,12 @@ abstract contract BaseCustomAccounting is BaseHook {
     /**
      * @notice Adds liquidity to the hook's pool.
      *
-     * To cover all possible scenarios, `msg.sender` should have already given the hook an allowance
-     * of at least amount0Desired/amount1Desired on token0/token1.
+     * @dev To cover all possible scenarios, `msg.sender` should have already given the hook an allowance
+     * of at least amount0Desired/amount1Desired on token0/token1. Always adds assets at the ideal ratio,
+     * according to the price when the transaction is executed.
      *
-     * Always adds assets at the ideal ratio, according to the price when the transaction is executed.
+     * @param params The parameters for the liquidity addition.
+     * @return delta The balance delta of the liquidity addition from the `PoolManager`.
      */
     function addLiquidity(AddLiquidityParams calldata params)
         external
@@ -108,7 +130,10 @@ abstract contract BaseCustomAccounting is BaseHook {
     /**
      * @notice Removes liquidity from the hook's pool.
      *
-     * `msg.sender` should have already given the hook allowance of at least liquidity on the pool.
+     * @dev `msg.sender` should have already given the hook allowance of at least liquidity on the pool.
+     *
+     * @param params The parameters for the liquidity removal.
+     * @return delta The balance delta of the liquidity removal from the `PoolManager`.
      */
     function removeLiquidity(RemoveLiquidityParams calldata params)
         external
@@ -128,7 +153,10 @@ abstract contract BaseCustomAccounting is BaseHook {
     }
 
     /**
-     * @dev Call the Uniswap `PoolManager` to unlock and call back the hook.
+     * @dev Calls the `PoolManager` to unlock and call back the hook's `_unlockCallback` function.
+     *
+     * @param params The encoded parameters for the liquidity modification based on the `ModifyLiquidityParams` struct.
+     * @return delta The balance delta of the liquidity modification from the `PoolManager`.
      */
     function _modifyLiquidity(bytes memory params) internal virtual returns (BalanceDelta delta) {
         delta = abi.decode(
@@ -140,7 +168,15 @@ abstract contract BaseCustomAccounting is BaseHook {
     }
 
     /**
-     * @dev Callback when pool liquidity is modified, either adding or removing.
+     * @dev Callback from the `PoolManager` when liquidity is modified, either adding or removing.
+     *
+     * NOTE: This function assumes that both delta amounts are negative when removing liquidity, and positive
+     * when adding liquidity. In case it's needed to support a negative and positive delta for a single
+     * liquidity modification, this function should be overridden or the amount values adjusted
+     * accordingly.
+     *
+     * @param rawData The encoded `CallbackData` struct.
+     * @return delta The balance delta of the liquidity modification from the `PoolManager`.
      */
     function _unlockCallback(bytes calldata rawData) internal virtual override returns (bytes memory) {
         CallbackData memory data = abi.decode(rawData, (CallbackData));
@@ -151,11 +187,11 @@ abstract contract BaseCustomAccounting is BaseHook {
 
         // If liquidity delta is negative, remove liquidity from the pool. Otherwise, add liquidity to the pool.
         if (data.params.liquidityDelta < 0) {
-            // Get tokens from the pool
+            // Get tokens from the pool and send to the sender
             poolKey.currency0.take(poolManager, data.sender, uint256(int256(delta.amount0())), false);
             poolKey.currency1.take(poolManager, data.sender, uint256(int256(delta.amount1())), false);
         } else {
-            // Send tokens to the pool to net out settlement
+            // Send tokens from the sender to the pool
             poolKey.currency0.settle(poolManager, data.sender, uint256(int256(-delta.amount0())), false);
             poolKey.currency1.settle(poolManager, data.sender, uint256(int256(-delta.amount1())), false);
         }
@@ -166,40 +202,92 @@ abstract contract BaseCustomAccounting is BaseHook {
      * @dev Initialize the hook's pool key. The stored key should act immutably so that
      * it can safely be used across the hook's functions.
      */
-    function _beforeInitialize(address, PoolKey calldata key, uint160)
-        internal
-        override
-        onlyPoolManager
-        returns (bytes4)
-    {
+    function _beforeInitialize(address, PoolKey calldata key, uint160) internal override returns (bytes4) {
         // Store the pool key to be used in other functions
         poolKey = key;
         return this.beforeInitialize.selector;
     }
 
+    /**
+     * @dev Revert when liquidity is attempted to be added via the `PoolManager`.
+     */
+    function _beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4)
+    {
+        revert LiquidityOnlyViaHook();
+    }
+
+    /**
+     * @dev Revert when liquidity is attempted to be removed via the `PoolManager`.
+     */
+    function _beforeRemoveLiquidity(
+        address,
+        PoolKey calldata,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) internal virtual override returns (bytes4) {
+        revert LiquidityOnlyViaHook();
+    }
+
+    /**
+     * @dev Get the liquidity modification to apply for a given liquidity addition,
+     * and the amount of liquidity units would be minted to the sender.
+     *
+     * @param sqrtPriceX96 The current square root price of the pool.
+     * @param params The parameters for the liquidity addition.
+     * @return modify The encoded parameters for the liquidity addition, which must follow the
+     * `ModifyLiquidityParams` struct in the default implementation.
+     * @return liquidity The liquidity units to mint.
+     */
     function _getAddLiquidity(uint160 sqrtPriceX96, AddLiquidityParams memory params)
         internal
         virtual
         returns (bytes memory modify, uint256 liquidity);
 
+    /**
+     * @dev Get the liquidity modification to apply for a given liquidity removal,
+     * and the amount of liquidity units would be burned from the sender.
+     *
+     * @param params The parameters for the liquidity removal.
+     * @return modify The encoded parameters for the liquidity removal, which must follow the
+     * `ModifyLiquidityParams` struct in the default implementation.
+     * @return liquidity The liquidity units to burn.
+     */
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal
         virtual
         returns (bytes memory modify, uint256 liquidity);
 
+    /**
+     * @dev Mint liquidity units to the sender.
+     *
+     * @param params The parameters for the liquidity addition.
+     * @param delta The balance delta of the liquidity addition from the `PoolManager`.
+     * @param liquidity The liquidity units to mint.
+     */
     function _mint(AddLiquidityParams memory params, BalanceDelta delta, uint256 liquidity) internal virtual;
 
+    /**
+     * @dev Burn liquidity units from the sender.
+     *
+     * @param params The parameters for the liquidity removal.
+     * @param delta The balance delta of the liquidity removal from the `PoolManager`.
+     * @param liquidity The liquidity units to burn.
+     */
     function _burn(RemoveLiquidityParams memory params, BalanceDelta delta, uint256 liquidity) internal virtual;
 
     /**
-     * @dev Set the hook permissions, specifically `beforeSwap` and `beforeSwapReturnDelta`.
+     * @dev Set the hook permissions, specifically `beforeInitialize`.
      */
     function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,
-            beforeAddLiquidity: false,
-            beforeRemoveLiquidity: false,
+            beforeAddLiquidity: true,
+            beforeRemoveLiquidity: true,
             afterAddLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: false,

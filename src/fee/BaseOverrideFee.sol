@@ -35,6 +35,9 @@ abstract contract BaseOverrideFee is BaseHook {
         bytes calldata hookData
     ) internal virtual returns (uint24);
 
+    /**
+     * @dev Set the fee before the swap is processed using the override fee flag.
+     */
     function _beforeSwap(
         address sender,
         PoolKey calldata key,
@@ -46,7 +49,7 @@ abstract contract BaseOverrideFee is BaseHook {
     }
 
     /**
-     * @dev Set the hook permissions, specifically {afterSwap}.
+     * @dev Set the hook permissions, specifically {beforeSwap}.
      */
     function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({

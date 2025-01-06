@@ -49,9 +49,11 @@ abstract contract BaseOverrideFee is BaseHook {
     }
 
     /**
-     * @dev Set the hook permissions, specifically {beforeSwap}.
+     * @dev Set the hook permissions, specifically `beforeSwap`.
+     *
+     * @return permissions The hook permissions.
      */
-    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
+    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: false,

@@ -49,7 +49,7 @@ contract AntiSandwichHook is DynamicAfterFee {
         Pool.State state;
     }
 
-    mapping(PoolId => Checkpoint) private _lastCheckpoints;
+    mapping(PoolId id => Checkpoint) private _lastCheckpoints;
 
     constructor(IPoolManager _poolManager) DynamicAfterFee(_poolManager) {}
 
@@ -123,7 +123,12 @@ contract AntiSandwichHook is DynamicAfterFee {
         return super._afterSwap(sender, key, params, delta, hookData);
     }
 
-    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
+    /**
+     * @dev Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwapReturnDelta`.
+     *
+     * @return permissions The hook permissions.
+     */
+    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: false,

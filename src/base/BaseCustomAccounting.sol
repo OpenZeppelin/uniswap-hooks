@@ -168,6 +168,7 @@ abstract contract BaseCustomAccounting is BaseHook {
      * @param params The encoded parameters for the liquidity modification based on the `ModifyLiquidityParams` struct.
      * @return delta The balance delta of the liquidity modification from the `PoolManager`.
      */
+    // slither-disable-next-line dead-code
     function _modifyLiquidity(bytes memory params) internal virtual returns (BalanceDelta delta) {
         delta = abi.decode(
             poolManager.unlock(
@@ -188,22 +189,24 @@ abstract contract BaseCustomAccounting is BaseHook {
      * @param rawData The encoded `CallbackData` struct.
      * @return delta The balance delta of the liquidity modification from the `PoolManager`.
      */
+    // slither-disable-next-line dead-code
     function _unlockCallback(bytes calldata rawData) internal virtual override returns (bytes memory) {
         CallbackData memory data = abi.decode(rawData, (CallbackData));
         BalanceDelta delta;
+        PoolKey memory key = poolKey;
 
         // Apply liquidity modification parameters
-        (delta,) = poolManager.modifyLiquidity(poolKey, data.params, "");
+        (delta,) = poolManager.modifyLiquidity(key, data.params, "");
 
         // If liquidity delta is negative, remove liquidity from the pool. Otherwise, add liquidity to the pool.
         if (data.params.liquidityDelta < 0) {
             // Get tokens from the pool and send to the sender
-            poolKey.currency0.take(poolManager, data.sender, uint256(int256(delta.amount0())), false);
-            poolKey.currency1.take(poolManager, data.sender, uint256(int256(delta.amount1())), false);
+            key.currency0.take(poolManager, data.sender, uint256(int256(delta.amount0())), false);
+            key.currency1.take(poolManager, data.sender, uint256(int256(delta.amount1())), false);
         } else {
             // Send tokens from the sender to the pool
-            poolKey.currency0.settle(poolManager, data.sender, uint256(int256(-delta.amount0())), false);
-            poolKey.currency1.settle(poolManager, data.sender, uint256(int256(-delta.amount1())), false);
+            key.currency0.settle(poolManager, data.sender, uint256(int256(-delta.amount0())), false);
+            key.currency1.settle(poolManager, data.sender, uint256(int256(-delta.amount1())), false);
         }
         return abi.encode(delta);
     }
@@ -291,8 +294,10 @@ abstract contract BaseCustomAccounting is BaseHook {
 
     /**
      * @dev Set the hook permissions, specifically `beforeInitialize`.
+     *
+     * @return permissions The hook permissions.
      */
-    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
+    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,

@@ -89,8 +89,10 @@ abstract contract BaseHook is IHooks {
      * @dev Get the hook permissions to signal which hook functions are to be implemented.
      *
      * Used at deployment to validate the address correctly represents the expected permissions.
+     *
+     * @return permissions The hook permissions.
      */
-    function getHookPermissions() public pure virtual returns (Hooks.Permissions memory);
+    function getHookPermissions() public pure virtual returns (Hooks.Permissions memory permissions);
 
     /**
      * @dev Validate the hook address against the expected permissions.
@@ -101,11 +103,18 @@ abstract contract BaseHook is IHooks {
 
     /**
      * @dev Force the `onlyPoolManager` modifier by exposing a virtual function after the `onlyPoolManager` check.
+     *
+     * @param data The calldata to use when unlocking the callback.
      */
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         return _unlockCallback(data);
     }
 
+    /**
+     * @dev Unlock the callback and call itself with the given calldata.
+     *
+     * @param data The calldata to use, which must be a supported function by the hook.
+     */
     function _unlockCallback(bytes calldata data) internal virtual returns (bytes memory) {
         (bool success, bytes memory returnData) = address(this).call(data);
         if (success) return returnData;

@@ -147,8 +147,8 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     function _unlockCallback(bytes calldata rawData) internal virtual override returns (bytes memory) {
         CallbackDataCustom memory data = abi.decode(rawData, (CallbackDataCustom));
 
-        int128 amount0;
-        int128 amount1;
+        int128 amount0 = 0;
+        int128 amount1 = 0;
 
         // If liquidity amount is negative, remove liquidity from the pool. Otherwise, add liquidity to the pool.
         // When removing liquidity, burn ERC-6909 claim tokens and transfer tokens from pool to receiver.
@@ -237,8 +237,10 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     /**
      * @dev Set the hook permissions, specifically `beforeInitialize`, `beforeAddLiquidity`, `beforeRemoveLiquidity`,
      * `beforeSwap`, and `beforeSwapReturnDelta`
+     *
+     * @return permissions The hook permissions.
      */
-    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory) {
+    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,

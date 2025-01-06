@@ -19,7 +19,7 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
  */
 abstract contract BaseDynamicFee is BaseHook {
     /**
-     * @dev Set the pool manager.
+     * @dev Set the `PoolManager` address.
      */
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 

@@ -16,6 +16,9 @@ import {BeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
  * This contract defines all hook entry points, as well as security and permission helpers.
  * Based on the https://github.com/Uniswap/v4-periphery/blob/main/src/base/hooks/BaseHook.sol[Uniswap v4 periphery implementation].
  *
+ * NOTE: Hook entry points must be overiden and implemented by the inheriting hook to be used. Their respective
+ * flags must be set to true in the `getHookPermissions` function as well.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -46,7 +49,7 @@ abstract contract BaseHook is IHooks {
     error HookNotImplemented();
 
     /**
-     * @notice Thrown when calling unlockCallback where the caller is not PoolManager
+     * @notice Thrown when calling unlockCallback where the caller is not `PoolManager`.
      */
     error NotPoolManager();
 
@@ -59,7 +62,7 @@ abstract contract BaseHook is IHooks {
     }
 
     /**
-     * @notice Only allow calls from the PoolManager contract
+     * @notice Only allow calls from the `PoolManager` contract
      */
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -97,7 +100,7 @@ abstract contract BaseHook is IHooks {
     }
 
     /**
-     * @dev Force the onlyPoolManager modifier by exposing a virtual function after the onlyPoolManager check.
+     * @dev Force the `onlyPoolManager` modifier by exposing a virtual function after the `onlyPoolManager` check.
      */
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
         return _unlockCallback(data);
@@ -125,6 +128,10 @@ abstract contract BaseHook is IHooks {
         return _beforeInitialize(sender, key, sqrtPriceX96);
     }
 
+    /**
+     * @dev Hook implementation for `beforeInitialize`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _beforeInitialize(address, PoolKey calldata, uint160) internal virtual returns (bytes4) {
         revert HookNotImplemented();
     }
@@ -141,6 +148,10 @@ abstract contract BaseHook is IHooks {
         return _afterInitialize(sender, key, sqrtPriceX96, tick);
     }
 
+    /**
+     * @dev Hook implementation for `afterInitialize`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _afterInitialize(address, PoolKey calldata, uint160, int24) internal virtual returns (bytes4) {
         revert HookNotImplemented();
     }
@@ -157,6 +168,10 @@ abstract contract BaseHook is IHooks {
         return _beforeAddLiquidity(sender, key, params, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `beforeAddLiquidity`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
         internal
         virtual
@@ -177,6 +192,10 @@ abstract contract BaseHook is IHooks {
         return _beforeRemoveLiquidity(sender, key, params, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `beforeRemoveLiquidity`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _beforeRemoveLiquidity(
         address,
         PoolKey calldata,
@@ -200,6 +219,10 @@ abstract contract BaseHook is IHooks {
         return _afterAddLiquidity(sender, key, params, delta0, delta1, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `afterAddLiquidity`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _afterAddLiquidity(
         address,
         PoolKey calldata,
@@ -225,6 +248,10 @@ abstract contract BaseHook is IHooks {
         return _afterRemoveLiquidity(sender, key, params, delta0, delta1, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `afterRemoveLiquidity`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _afterRemoveLiquidity(
         address,
         PoolKey calldata,
@@ -248,6 +275,10 @@ abstract contract BaseHook is IHooks {
         return _beforeSwap(sender, key, params, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `beforeSwap`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _beforeSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
         internal
         virtual
@@ -269,6 +300,10 @@ abstract contract BaseHook is IHooks {
         return _afterSwap(sender, key, params, delta, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `afterSwap`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         virtual
@@ -290,6 +325,10 @@ abstract contract BaseHook is IHooks {
         return _beforeDonate(sender, key, amount0, amount1, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `beforeDonate`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         internal
         virtual
@@ -311,6 +350,10 @@ abstract contract BaseHook is IHooks {
         return _afterDonate(sender, key, amount0, amount1, hookData);
     }
 
+    /**
+     * @dev Hook implementation for `afterDonate`, to be overriden by the inheriting hook. The
+     * flag must be set to true in the `getHookPermissions` function.
+     */
     function _afterDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         internal
         virtual

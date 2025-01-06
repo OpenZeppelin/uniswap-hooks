@@ -30,7 +30,7 @@ abstract contract DynamicAfterFee is BaseHook {
     mapping(PoolId => BalanceDelta) internal _targetDeltas;
 
     /**
-     * @dev Set the pool manager.
+     * @dev Set the `PoolManager` address.
      */
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 

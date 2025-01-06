@@ -21,7 +21,7 @@ import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
  */
 abstract contract BaseOverrideFee is BaseHook {
     /**
-     * @dev Set the pool manager.
+     * @dev Set the `PoolManager` address.
      */
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 

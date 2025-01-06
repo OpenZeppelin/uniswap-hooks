@@ -21,6 +21,8 @@ if ! command -v forge &> /dev/null; then
   echo "export PATH=$PATH" >> $HOME/.bashrc
 fi
 
+forge install
+
 hardhat docgen
 
 node scripts/gen-nav.js "$OUTDIR" > "$OUTDIR/../nav.adoc"

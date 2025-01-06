@@ -13,15 +13,18 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 
 /**
- * @dev Base implementation for custom accounting and hook-owned liquidity, which must be deposited
- * directly via the hook.
+ * @dev Base implementation for custom accounting and hook-owned liquidity.
+ *
+ * To enable hook-owned liquidity, tokens must be deposited via the hook to allow control and flexibility
+ * over the liquidity. The implementation inheriting this hook must implement the respective functions
+ * to calculate the liquidity modification parameters and the amount of liquidity units to mint or burn.
+ *
+ * Aditionally, the implementator must consider that the hook is the sole owner of the liquidity and
+ * manage fees over liquidity units accordingly.
  *
  * NOTE: This base hook is designed to work with a single pool key. If you want to use the same custom
- * accounting hook for two pools, you must have two storage instances of this contract and initialize
- * them via the `PoolManager` with their respective pool keys.
- *
- * NOTICE: TODO: add support for fees, consider that liquidity is implemented with the hook as the sole
- * owner.
+ * accounting hook for multiple pools, you must have multiple storage instances of this contract and
+ * initialize them via the `PoolManager` with their respective pool keys.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -116,12 +119,16 @@ abstract contract BaseCustomAccounting is BaseHook {
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
+        // Get the liquidity modification parameters and the amount of liquidity units to mint
         (bytes memory modifyParams, uint256 liquidity) = _getAddLiquidity(sqrtPriceX96, params);
 
+        // Apply the liquidity modification
         delta = _modifyLiquidity(modifyParams);
 
+        // Mint the liquidity units to the sender
         _mint(params, delta, liquidity);
 
+        // Check for slippage
         if (uint128(-delta.amount0()) < params.amount0Min || uint128(-delta.amount1()) < params.amount1Min) {
             revert TooMuchSlippage();
         }
@@ -145,10 +152,13 @@ abstract contract BaseCustomAccounting is BaseHook {
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
+        // Get the liquidity modification parameters and the amount of liquidity units to burn
         (bytes memory modifyParams, uint256 liquidity) = _getRemoveLiquidity(params);
 
+        // Apply the liquidity modification
         delta = _modifyLiquidity(modifyParams);
 
+        // Burn the liquidity units from the sender
         _burn(params, delta, liquidity);
     }
 

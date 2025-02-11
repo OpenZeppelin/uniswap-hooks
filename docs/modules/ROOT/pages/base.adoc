@@ -156,8 +156,142 @@ Building on the custom accounting foundation, xref:api:base.adoc#BaseCustomCurve
 
 By overriding the xref:api:base.adoc#BaseHook-_beforeSwap-address-struct-PoolKey-struct-IPoolManager-SwapParams-bytes-[`_beforeSwap`] function, the inheriting contract can implement its own swap logic and curves. Because the hook still owns the liquidity, it can route tokens around in ways that diverge from the standard invariant, perhaps adopting stable-swap curves, bonding curves, or other designs that better suit specialized use cases. The contract also redefines how liquidity additions and removals occur internally, but it does so in a manner that remains compatible with the rest of the Uniswap v4 engine's architecture and routers.
 
+[source,solidity]
+----
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {BaseCustomCurve} from "src/base/BaseCustomCurve.sol";
+import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
+import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
+
+contract CustomCurve is BaseCustomCurve, ERC20 {
+    constructor(IPoolManager _manager) BaseCustomCurve(_manager) ERC20("CustomCurveHook", "CCH") {}
+
+    /// @inheritdoc BaseCustomCurve
+    function _getAmountIn(AddLiquidityParams memory params)
+        internal
+        pure
+        override
+        returns (uint256 amount0, uint256 amount1, uint256 liquidity)
+    {
+        amount0 = params.amount0Desired;
+        amount1 = params.amount1Desired;
+        liquidity = (amount0 + amount1) / 2;
+    }
+
+    /// @inheritdoc BaseCustomCurve
+    function _getAmountOut(RemoveLiquidityParams memory params)
+        internal
+        pure
+        override
+        returns (uint256 amount0, uint256 amount1, uint256 liquidity)
+    {
+        amount0 = params.liquidity / 2;
+        amount1 = params.liquidity / 2;
+        liquidity = params.liquidity;
+    }
+
+    function _getAmountOutFromExactInput(uint256 amountIn, Currency, Currency, bool)
+        internal
+        pure
+        returns (uint256 amountOut)
+    {
+        // in constant-sum curve, tokens trade exactly 1:1
+        amountOut = amountIn;
+    }
+
+    function _getAmountInForExactOutput(uint256 amountOut, Currency, Currency, bool)
+        internal
+        pure
+        returns (uint256 amountIn)
+    {
+        // in constant-sum curve, tokens trade exactly 1:1
+        amountIn = amountOut;
+    }
+
+    /// @inheritdoc BaseCustomCurve
+    function _getUnspecifiedAmount(IPoolManager.SwapParams calldata params)
+        internal
+        virtual
+        override
+        returns (uint256 unspecifiedAmount)
+    {
+        bool exactInput = params.amountSpecified < 0;
+        (Currency specified, Currency unspecified) = (params.zeroForOne == exactInput)
+            ? (poolKey.currency0, poolKey.currency1)
+            : (poolKey.currency1, poolKey.currency0);
+        uint256 specifiedAmount = exactInput ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
+        Currency input = exactInput ? specified : unspecified;
+        Currency output = exactInput ? unspecified : specified;
+
+        return exactInput
+            ? _getAmountOutFromExactInput(specifiedAmount, input, output, params.zeroForOne)
+            : _getAmountInForExactOutput(specifiedAmount, input, output, params.zeroForOne);
+    }
+
+    /// @inheritdoc BaseCustomCurve
+    function _mint(AddLiquidityParams memory params, BalanceDelta, uint256 liquidity) internal override {
+        _mint(params.to, liquidity);
+    }
+
+    /// @inheritdoc BaseCustomCurve
+    function _burn(RemoveLiquidityParams memory, BalanceDelta, uint256 liquidity) internal override {
+        _burn(msg.sender, liquidity);
+    }
+}
+----
+
 == Async Swap
 
 xref:api:base.adoc#BaseAsyncSwap[BaseAsyncSwap] offers a way to skip the execution of exact-input swaps by the `PoolManager` in order to support asynchronous swaps and other cases that require non-atomic execution.
 
 When processing exact-input swaps, the hook returns a delta that nets out the input amount to zero, then mints ERC-6909 tokens to the contract's address. This approach effectively bypasses the standard swap logic and allows the hook to manage user positions or tokens until a final settlement stage. The user's input tokens are held by the hook contract, which can later be redeemed or settled according to logic defined by the implementer.
+
+[source,solidity]
+----
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import "src/base/BaseAsyncSwap.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+
+/**
+ * @dev A hook that executes the regular swap logic for only half of the specified amount.
+ */
+contract MyAsyncSwap is BaseAsyncSwap {
+    using CurrencySettler for Currency;
+    using SafeCast for uint256;
+
+    constructor(IPoolManager _poolManager) BaseAsyncSwap(_poolManager) {}
+
+    /// @inheritdoc BaseAsyncSwap
+    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
+        bool isExactInput = params.amountSpecified < 0;
+
+        // Async swaps are only possible on exact-input swaps, so exact-output swaps are executed by the `PoolManager` as normal
+        if (isExactInput) {
+            // Determine which currency is specified
+            Currency specified = params.zeroForOne ? key.currency0 : key.currency1;
+
+            // Set the amount as the half of the specified amount
+            uint256 halfSpecifiedAmount = uint256(-params.amountSpecified) / 2;
+
+            // Mint ERC-6909 claim token for the specified currency and amount
+            specified.take(poolManager, address(this), halfSpecifiedAmount, true);
+
+            // Return delta that nets out specified amount to 0.
+            return (this.beforeSwap.selector, toBeforeSwapDelta(halfSpecifiedAmount.toInt128(), 0), 0);
+        } else {
+            return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        }
+    }
+}
+----

@@ -12,6 +12,7 @@ import {IUnlockCallback} from "v4-core/src/interfaces/callback/IUnlockCallback.s
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {PoolId} from "v4-core/src/types/PoolId.sol";
 
 /**
  * @dev Base implementation for custom accounting and hook-owned liquidity.
@@ -274,6 +275,10 @@ abstract contract BaseCustomAccounting is BaseHook, IUnlockCallback {
 
         // Handle any accrued fees (by default, transfer all fees to the sender)
         _handleAccruedFees(data, callerDelta, feesAccrued);
+
+        emit HookModifyLiquidity(
+            PoolId.unwrap(poolKey.toId()), data.sender, principalDelta.amount0(), principalDelta.amount1()
+        );
 
         // Return both deltas so that slippage checks can be done on the principal delta
         return abi.encode(callerDelta, feesAccrued);

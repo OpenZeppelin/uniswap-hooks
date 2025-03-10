@@ -12,6 +12,7 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {CurrencySettler} from "src/utils/CurrencySettler.sol";
+import {PoolId} from "v4-core/src/types/PoolId.sol";
 
 /**
  * @dev Base implementation for dynamic fees applied after swaps.
@@ -77,7 +78,7 @@ abstract contract BaseDynamicAfterFee is BaseHook {
      * and when set to `true`.
      */
     function _afterSwap(
-        address,
+        address sender,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata params,
         BalanceDelta delta,
@@ -111,6 +112,17 @@ abstract contract BaseDynamicAfterFee is BaseHook {
         if (feeAmount > 0) {
             unspecified.take(poolManager, address(this), feeAmount, true);
             _afterSwapHandler(key, params, delta, targetOutput, feeAmount);
+        }
+
+        // Emit the swap event with the amounts ordered correctly
+        if (unspecified == key.currency0) {
+            emit HookSwap(
+                PoolId.unwrap(key.toId()), sender, delta.amount0() - feeAmount.toInt128(), delta.amount1(), 0, 0
+            );
+        } else {
+            emit HookSwap(
+                PoolId.unwrap(key.toId()), sender, delta.amount0(), delta.amount1() - feeAmount.toInt128(), 0, 0
+            );
         }
 
         return (this.afterSwap.selector, feeAmount.toInt128());

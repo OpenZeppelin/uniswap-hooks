@@ -49,6 +49,33 @@ abstract contract BaseHook is IHooks {
     error NotPoolManager();
 
     /**
+     * @dev Event emitted when a swap is executed.
+     */
+    event HookSwap(
+        bytes32 indexed id,
+        address indexed sender,
+        int128 amount0,
+        int128 amount1,
+        uint128 hookLPfeeAmount0,
+        uint128 hookLPfeeAmount1
+    );
+
+    /**
+     * @dev Event emitted when a fee is collected.
+     */
+    event HookFee(bytes32 indexed id, address indexed sender, uint128 feeAmount0, uint128 feeAmount1);
+
+    /**
+     * @dev Event emitted when a liquidity modification is executed.
+     */
+    event HookModifyLiquidity(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1);
+
+    /**
+     * @dev Event emitted when a bonus is added to a swap.
+     */
+    event HookBonus(bytes32 indexed id, uint128 amount0, uint128 amount1);
+
+    /**
      * @dev Set the pool manager and check that the hook address matches the expected permissions and flags.
      */
     constructor(IPoolManager _poolManager) {

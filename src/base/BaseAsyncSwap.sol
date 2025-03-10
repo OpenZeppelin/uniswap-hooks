@@ -11,6 +11,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-cor
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {CurrencySettler} from "src/utils/CurrencySettler.sol";
+import {PoolId} from "v4-core/src/types/PoolId.sol";
 
 /**
  * @dev Base implementation for async swaps, which skip the v3-like swap implementation of the `PoolManager`
@@ -49,7 +50,7 @@ abstract contract BaseAsyncSwap is BaseHook {
      * @dev Skip the v3-like swap implementation of the `PoolManager` by returning a delta that nets out the
      * specified amount to 0 to enable asynchronous swaps.
      */
-    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+    function _beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
         internal
         virtual
         override
@@ -65,6 +66,13 @@ abstract contract BaseAsyncSwap is BaseHook {
 
             // Mint ERC-6909 claim token for the specified currency and amount
             specified.take(poolManager, address(this), specifiedAmount, true);
+
+            // Emit the swap event with the specified amount signifying the amount taken by the hook
+            if (specified == key.currency0) {
+                emit HookSwap(PoolId.unwrap(key.toId()), sender, specifiedAmount.toInt128(), 0, 0, 0);
+            } else {
+                emit HookSwap(PoolId.unwrap(key.toId()), sender, 0, specifiedAmount.toInt128(), 0, 0);
+            }
 
             // Return delta that nets out specified amount to 0.
             return (this.beforeSwap.selector, toBeforeSwapDelta(specifiedAmount.toInt128(), 0), 0);

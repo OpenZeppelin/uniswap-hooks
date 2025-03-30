@@ -88,3 +88,59 @@ contract DynamicSwapFeeHook is BaseOverrideFee, Ownable {
 xref:api:fee.adoc#BaseDynamicAfterFee[BaseDynamicAfterFee] applies adjustments to the tokens to be received by a user for exact-input swaps. This strategy relies on first capturing the swap context in the xref:api:base.adoc#BaseHook-_beforeSwap-address-struct-PoolKey-struct-IPoolManager-SwapParams-bytes-[`_beforeSwap`] phase and storing a target delta. Once the swap is processed by the `PoolManager`, the hook's xref:api:base.adoc#BaseHook-_afterSwap-address-struct-PoolKey-struct-IPoolManager-SwapParams-BalanceDelta-bytes-[`_afterSwap`] method checks for exact-input swaps and compares the actual user output with the stored target delta. Any positive difference becomes a fee donation to the pool, effectively implementing a dynamic fee that is only finalized once all of the swap's internal calculations are done.
 
 Implementers should carefully consider how to mitigate the risk of attackers exploiting "just-in-time" liquidity additions to gain an outsized share of these fees. As the contract notes, the target deltas are cleared after each swap, so it is recommended to define or reset them each time in xref:api:base.adoc#BaseHook-_beforeSwap-address-struct-PoolKey-struct-IPoolManager-SwapParams-bytes-[`_beforeSwap`] to ensure consistency.
+
+[source,solidity]
+----
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+/**
+ * @dev A hook that sets a target output for the unspecified currency, leaving the exceeded amount as a fee.
+ */
+contract MyDynamicAfterFeeHook is BaseDynamicAfterFee {
+    using CurrencySettler for Currency;
+
+    uint256 public targetOutput;
+    bool public applyTargetOutput;
+
+    constructor(IPoolManager _poolManager) BaseDynamicAfterFee(_poolManager) {}
+
+    function getTargetOutput() public view returns (uint256) {
+        return _targetOutput;
+    }
+
+    function setTargetOutput(uint256 output, bool active) public {
+        targetOutput = output;
+        applyTargetOutput = active;
+    }
+
+    /**
+     * @inheritdoc BaseDynamicAfterFee
+     */
+    function _afterSwapHandler(
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        BalanceDelta,
+        uint256,
+        uint256 feeAmount
+    ) internal override {
+        Currency unspecified = (params.amountSpecified < 0 == params.zeroForOne) ? (key.currency1) : (key.currency0);
+
+        // Burn ERC-6909 and take underlying tokens
+        unspecified.settle(poolManager, address(this), feeAmount, true);
+        unspecified.take(poolManager, address(this), feeAmount, false);
+    }
+
+    /**
+     * @inheritdoc BaseDynamicAfterFee
+     */
+    function _getTargetOutput(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
+        internal
+        view
+        override
+        returns (uint256, bool)
+    {
+        return (targetOutput, applyTargetOutput);
+    }
+}
+----

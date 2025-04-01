@@ -6,7 +6,9 @@ NOTE: This document is better viewed on the docs page.
 Ready-to-use hooks built on top of the base and fee abstract contracts
 
  * {LiquidityPenaltyHook}: Hook resistant to just-in-time liquidity attacks
+ * {LimitOrderHook}: Hook to enable limit order placing on liquidity pools
 
 == Hooks
 
 {{LiquidityPenaltyHook}}
+{{LimitOrderHook}}

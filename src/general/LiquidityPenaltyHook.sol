@@ -58,7 +58,7 @@ contract LiquidityPenaltyHook is BaseHook {
     /**
      * @notice The block number offset before which if the liquidity is removed, the fees will be donated to the pool.
      */
-    uint256 public blockNumberOffset;
+    uint256 public immutable blockNumberOffset;
 
     /**
      * @dev Hook was attempted to be deployed with a block number offset that is too low.

@@ -6,6 +6,7 @@ pragma solidity ^0.8.24;
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {IERC20} from "openzeppelin/token/ERC20/IERC20.sol";
+import {SafeERC20} from "openzeppelin/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @dev Library used to interact with the `PoolManager` to settle any open deltas.
@@ -17,6 +18,8 @@ import {IERC20} from "openzeppelin/token/ERC20/IERC20.sol";
  * NOTE: Deltas are synced before any ERC-20 transfers in {settle} function.
  */
 library CurrencySettler {
+    using SafeERC20 for IERC20;
+
     /**
      * @notice Settle (pay) a currency to the `PoolManager`
      * @param currency Currency to settle
@@ -39,9 +42,9 @@ library CurrencySettler {
         } else {
             poolManager.sync(currency);
             if (payer != address(this)) {
-                IERC20(Currency.unwrap(currency)).transferFrom(payer, address(poolManager), amount);
+                IERC20(Currency.unwrap(currency)).safeTransferFrom(payer, address(poolManager), amount);
             } else {
-                IERC20(Currency.unwrap(currency)).transfer(address(poolManager), amount);
+                IERC20(Currency.unwrap(currency)).safeTransfer(address(poolManager), amount);
             }
             poolManager.settle();
         }

@@ -15,8 +15,7 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {Position} from "v4-core/src/libraries/Position.sol";
-import {LimitOrderHook, OrderId, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
-import {console} from "forge-std/console.sol";
+import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 
 contract LimitOrderHookTest is Test, Deployers {
     using StateLibrary for IPoolManager;
@@ -45,7 +44,7 @@ contract LimitOrderHookTest is Test, Deployers {
     }
 
     function test_orderIdNext() public view {
-        assertTrue(OrderIdLibrary.equals(hook.orderIdNext(), OrderId.wrap(1)));
+        assertTrue(OrderIdLibrary.equals(hook.orderIdNext(), OrderIdLibrary.OrderId.wrap(1)));
     }
 
     function test_zeroLiquidityRevert() public {
@@ -60,7 +59,7 @@ contract LimitOrderHookTest is Test, Deployers {
 
         hook.placeOrder(key, tickLower, zeroForOne, liquidity);
 
-        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderId.wrap(1)));
+        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderIdLibrary.OrderId.wrap(1)));
 
         bytes32 positionId = Position.calculatePositionKey(address(hook), tickLower, tickLower + key.tickSpacing, 0);
         assertEq(manager.getPositionLiquidity(key.toId(), positionId), liquidity);
@@ -73,7 +72,7 @@ contract LimitOrderHookTest is Test, Deployers {
 
         hook.placeOrder(key, tickLower, zeroForOne, liquidity);
 
-        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderId.wrap(1)));
+        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderIdLibrary.OrderId.wrap(1)));
 
         bytes32 positionId = Position.calculatePositionKey(address(hook), tickLower, tickLower + key.tickSpacing, 0);
         assertEq(manager.getPositionLiquidity(key.toId(), positionId), liquidity);
@@ -108,7 +107,7 @@ contract LimitOrderHookTest is Test, Deployers {
 
         hook.placeOrder(key, tickLower, zeroForOne, liquidity);
 
-        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderId.wrap(1)));
+        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderIdLibrary.OrderId.wrap(1)));
 
         bytes32 positionId = Position.calculatePositionKey(address(hook), tickLower, tickLower + key.tickSpacing, 0);
         assertEq(manager.getPositionLiquidity(key.toId(), positionId), liquidity);
@@ -148,7 +147,7 @@ contract LimitOrderHookTest is Test, Deployers {
         hook.placeOrder(key, tickLower, zeroForOne, liquidity);
         vm.stopPrank();
 
-        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderId.wrap(1)));
+        assertTrue(OrderIdLibrary.equals(hook.getOrderId(key, tickLower, zeroForOne), OrderIdLibrary.OrderId.wrap(1)));
 
         bytes32 positionId = Position.calculatePositionKey(address(hook), tickLower, tickLower + key.tickSpacing, 0);
         assertEq(manager.getPositionLiquidity(key.toId(), positionId), liquidity * 2);
@@ -160,15 +159,15 @@ contract LimitOrderHookTest is Test, Deployers {
             uint256 currency0Total,
             uint256 currency1Total,
             uint128 liquidityTotal
-        ) = hook.orderInfos(OrderId.wrap(1));
+        ) = hook.orderInfos(OrderIdLibrary.OrderId.wrap(1));
         assertFalse(filled);
         assertTrue(currency0 == orderCurrency0);
         assertTrue(currency1 == orderCurrency1);
         assertEq(currency0Total, 0);
         assertEq(currency1Total, 0);
         assertEq(liquidityTotal, liquidity * 2);
-        assertEq(hook.getOrderLiquidity(OrderId.wrap(1), address(this)), liquidity);
-        assertEq(hook.getOrderLiquidity(OrderId.wrap(1), vm.addr(1)), liquidity);
+        assertEq(hook.getOrderLiquidity(OrderIdLibrary.OrderId.wrap(1), address(this)), liquidity);
+        assertEq(hook.getOrderLiquidity(OrderIdLibrary.OrderId.wrap(1), vm.addr(1)), liquidity);
     }
 
     function test_cancelOrder() public {
@@ -209,7 +208,8 @@ contract LimitOrderHookTest is Test, Deployers {
         (, int24 tick,,) = manager.getSlot0(key.toId());
         assertEq(tick, tickLower + key.tickSpacing);
 
-        (bool filled,,, uint256 currency0Total, uint256 currency1Total,) = hook.orderInfos(OrderId.wrap(1));
+        (bool filled,,, uint256 currency0Total, uint256 currency1Total,) =
+            hook.orderInfos(OrderIdLibrary.OrderId.wrap(1));
 
         assertTrue(filled);
         assertEq(currency0Total, 0);
@@ -218,9 +218,9 @@ contract LimitOrderHookTest is Test, Deployers {
         bytes32 positionId = Position.calculatePositionKey(address(hook), tickLower, tickLower + key.tickSpacing, 0);
         assertEq(manager.getPositionLiquidity(key.toId(), positionId), 0);
 
-        hook.withdraw(OrderId.wrap(1), address(this));
+        hook.withdraw(OrderIdLibrary.OrderId.wrap(1), address(this));
 
-        (,,, uint256 currency0Amount, uint256 currency1Amount,) = hook.orderInfos(OrderId.wrap(1));
+        (,,, uint256 currency0Amount, uint256 currency1Amount,) = hook.orderInfos(OrderIdLibrary.OrderId.wrap(1));
         assertEq(currency0Amount, 0);
         assertEq(currency1Amount, 0);
     }

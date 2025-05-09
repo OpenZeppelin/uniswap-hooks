@@ -16,6 +16,7 @@ import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {Position} from "v4-core/src/libraries/Position.sol";
 import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract LimitOrderHookTest is Test, Deployers {
     using StateLibrary for IPoolManager;
@@ -87,11 +88,7 @@ contract LimitOrderHookTest is Test, Deployers {
         // swapping is free, there's no liquidity in the pool, so we only need to specify 1 wei
         swapRouter.swap(
             key,
-            IPoolManager.SwapParams({
-                zeroForOne: false,
-                amountSpecified: -1 ether,
-                sqrtPriceLimitX96: SQRT_PRICE_1_1 + 1
-            }),
+            SwapParams({zeroForOne: false, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_1 + 1}),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             bytes("")
         );
@@ -122,7 +119,7 @@ contract LimitOrderHookTest is Test, Deployers {
         // swapping is free, there's no liquidity in the pool, so we only need to specify 1 wei
         swapRouter.swap(
             key,
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_1 - 1}),
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_1 - 1}),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             bytes("")
         );
@@ -195,7 +192,7 @@ contract LimitOrderHookTest is Test, Deployers {
 
         swapRouter.swap(
             key,
-            IPoolManager.SwapParams({
+            SwapParams({
                 zeroForOne: false,
                 amountSpecified: -1e18,
                 sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(tickLower + key.tickSpacing)

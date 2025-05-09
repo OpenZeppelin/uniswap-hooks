@@ -10,6 +10,7 @@ import {LiquidityAmounts} from "v4-periphery/src/libraries/LiquidityAmounts.sol"
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract BaseCustomAccountingMock is BaseCustomAccounting, ERC20 {
     using SafeCast for uint256;
@@ -39,7 +40,7 @@ contract BaseCustomAccountingMock is BaseCustomAccounting, ERC20 {
 
         return (
             abi.encode(
-                IPoolManager.ModifyLiquidityParams({
+                ModifyLiquidityParams({
                     tickLower: params.tickLower,
                     tickUpper: params.tickUpper,
                     liquidityDelta: liquidity.toInt256(),
@@ -60,7 +61,7 @@ contract BaseCustomAccountingMock is BaseCustomAccounting, ERC20 {
 
         return (
             abi.encode(
-                IPoolManager.ModifyLiquidityParams({
+                ModifyLiquidityParams({
                     tickLower: params.tickLower,
                     tickUpper: params.tickUpper,
                     liquidityDelta: -liquidity.toInt256(),

@@ -18,6 +18,7 @@ import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta, toBalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 
 /// @dev The order id library.
 library OrderIdLibrary {
@@ -188,13 +189,12 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /// @dev Hooks into the `afterSwap` hook to get the ticks crossed by the swap and fill the orders that are crossed, filling them.
-    function _afterSwap(
-        address,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        BalanceDelta,
-        bytes calldata
-    ) internal virtual override returns (bytes4, int128) {
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4, int128)
+    {
         (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(key.toId(), key.tickSpacing);
 
         if (lower > upper) return (this.afterSwap.selector, 0);
@@ -429,7 +429,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
         // add the out of range liquidity to the pool
         (BalanceDelta delta,) = poolManager.modifyLiquidity(
             key,
-            IPoolManager.ModifyLiquidityParams({
+            ModifyLiquidityParams({
                 tickLower: placeData.tickLower,
                 tickUpper: placeData.tickLower + key.tickSpacing,
                 liquidityDelta: int256(uint256(placeData.liquidity)),
@@ -473,7 +473,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
         // remove the liquidity from the pool. The fees accrued by the position are included in the `cancelDelta`
         (BalanceDelta cancelDelta, BalanceDelta feesAccrued) = poolManager.modifyLiquidity(
             cancelData.key,
-            IPoolManager.ModifyLiquidityParams({
+            ModifyLiquidityParams({
                 tickLower: cancelData.tickLower,
                 tickUpper: tickUpper,
                 liquidityDelta: cancelData.liquidityDelta,
@@ -568,7 +568,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
             // modify the liquidity to remove the order liquidity from the pool
             (BalanceDelta delta,) = poolManager.modifyLiquidity(
                 key,
-                IPoolManager.ModifyLiquidityParams({
+                ModifyLiquidityParams({
                     tickLower: tickLower,
                     tickUpper: tickLower + key.tickSpacing,
                     liquidityDelta: -int256(uint256(orderInfo.liquidityTotal)),

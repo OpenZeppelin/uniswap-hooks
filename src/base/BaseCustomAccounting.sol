@@ -14,6 +14,7 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {IHookEvents} from "src/interfaces/IHookEvents.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 
 /**
  * @dev Base implementation for custom accounting and hook-owned liquidity.
@@ -93,7 +94,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
     struct CallbackData {
         address sender;
-        IPoolManager.ModifyLiquidityParams params;
+        ModifyLiquidityParams params;
     }
 
     /**
@@ -224,9 +225,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         returns (BalanceDelta callerDelta, BalanceDelta feesAccrued)
     {
         (callerDelta, feesAccrued) = abi.decode(
-            poolManager.unlock(
-                abi.encode(CallbackData(msg.sender, abi.decode(params, (IPoolManager.ModifyLiquidityParams))))
-            ),
+            poolManager.unlock(abi.encode(CallbackData(msg.sender, abi.decode(params, (ModifyLiquidityParams))))),
             (BalanceDelta, BalanceDelta)
         );
     }
@@ -319,7 +318,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
     /**
      * @dev Revert when liquidity is attempted to be added via the `PoolManager`.
      */
-    function _beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+    function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
         virtual
         override
@@ -331,12 +330,12 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
     /**
      * @dev Revert when liquidity is attempted to be removed via the `PoolManager`.
      */
-    function _beforeRemoveLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) internal virtual override returns (bytes4) {
+    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4)
+    {
         revert LiquidityOnlyViaHook();
     }
 

@@ -17,6 +17,7 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {BaseCustomAccountingFeeMock} from "test/mocks/BaseCustomAccountingFeeMock.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract BaseCustomAccountingTest is Test, Deployers {
     using SafeCast for uint256;
@@ -214,8 +215,8 @@ contract BaseCustomAccountingTest is Test, Deployers {
         // Swap to accrue fees
         deal(address(this), 1 ether);
 
-        IPoolManager.SwapParams memory swapParams =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -261,8 +262,8 @@ contract BaseCustomAccountingTest is Test, Deployers {
 
         // Swap to accrue fees
         deal(address(this), 1 ether);
-        IPoolManager.SwapParams memory swapParams =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap{value: 1 ether}(key, swapParams, settings, ZERO_BYTES);
@@ -314,8 +315,8 @@ contract BaseCustomAccountingTest is Test, Deployers {
 
         // Swap to accrue fees
         deal(address(this), 1 ether);
-        IPoolManager.SwapParams memory swapParams =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
         swapRouter.swap{value: 1 ether}(key, swapParams, settings, ZERO_BYTES);
@@ -371,8 +372,8 @@ contract BaseCustomAccountingTest is Test, Deployers {
             id, address(swapRouter), -1 ether, 909090909090909090, 72025602285694852357767227579, 10 ether, -1907, 0
         );
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -428,8 +429,8 @@ contract BaseCustomAccountingTest is Test, Deployers {
             );
         }
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -10 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -10 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -536,8 +537,8 @@ contract BaseCustomAccountingTest is Test, Deployers {
             )
         );
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 1 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 1 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -756,8 +757,8 @@ contract BaseCustomAccountingTest is Test, Deployers {
             )
         );
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100 ether, sqrtPriceLimitX96: SQRT_PRICE_1_4});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 100 ether, sqrtPriceLimitX96: SQRT_PRICE_1_4});
 
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
@@ -792,7 +793,7 @@ contract BaseCustomAccountingTest is Test, Deployers {
             BaseCustomAccounting.AddLiquidityParams(amount, amount, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
         );
 
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+        SwapParams memory params = SwapParams({
             zeroForOne: true,
             amountSpecified: (FullMath.mulDiv(amount, 1, 4)).toInt256(),
             sqrtPriceLimitX96: SQRT_PRICE_1_4

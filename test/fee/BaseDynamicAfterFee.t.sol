@@ -18,6 +18,8 @@ import {V4Quoter} from "v4-periphery/src/lens/V4Quoter.sol";
 import {Deploy} from "v4-periphery/test/shared/Deploy.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
+import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
 
 interface IV4Quoter {
     struct QuoteExactSingleParams {
@@ -185,8 +187,8 @@ contract BaseDynamicAfterFeeTest is Test, Deployers {
         uint256 currentOutput = dynamicFeesHook.getTargetOutput();
         assertEq(currentOutput, 0);
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -211,9 +213,11 @@ contract BaseDynamicAfterFeeTest is Test, Deployers {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                Hooks.Wrap__FailedHookCall.selector,
+                CustomRevert.WrappedError.selector,
                 address(dynamicFeesHook),
-                abi.encodeWithSelector(BaseDynamicAfterFee.TargetOutputExceeds.selector)
+                IHooks.afterSwap.selector,
+                abi.encodeWithSelector(BaseDynamicAfterFee.TargetOutputExceeds.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
         swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
@@ -238,7 +242,7 @@ contract BaseDynamicAfterFeeTest is Test, Deployers {
         uint256 targetAmount = amountUnspecified - deltaFee;
         dynamicFeesHook.setTargetOutput(targetAmount, true);
 
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+        SwapParams memory params = SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: -int128(amountSpecified),
             sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT

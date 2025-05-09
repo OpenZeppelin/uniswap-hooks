@@ -13,6 +13,7 @@ import {CurrencySettler} from "src/utils/CurrencySettler.sol";
 import {BeforeSwapDeltaLibrary, BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {BalanceDelta, toBalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 /**
  * @dev Base implementation for custom curves, inheriting from {BaseCustomAccounting}.
@@ -82,7 +83,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
      * NOTE: In order to take and settle tokens from the pool, the hook must hold the liquidity added
      * via the {addLiquidity} function.
      */
-    function _beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         virtual
         override
@@ -248,10 +249,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
      * @param params The swap parameters.
      * @return unspecifiedAmount The amount of the unspecified currency to be taken or settled.
      */
-    function _getUnspecifiedAmount(IPoolManager.SwapParams calldata params)
-        internal
-        virtual
-        returns (uint256 unspecifiedAmount);
+    function _getUnspecifiedAmount(SwapParams calldata params) internal virtual returns (uint256 unspecifiedAmount);
 
     /**
      * @dev Calculate the amount of fees to be paid to LPs in a swap.
@@ -260,7 +258,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
      * @param unspecifiedAmount The amount of the unspecified currency to be taken or settled.
      * @return swapFeeAmount The amount of fees to be paid to LPs in the swap (in currency0 and currency1).
      */
-    function _getSwapFeeAmount(IPoolManager.SwapParams calldata params, uint256 unspecifiedAmount)
+    function _getSwapFeeAmount(SwapParams calldata params, uint256 unspecifiedAmount)
         internal
         virtual
         returns (uint256 swapFeeAmount);

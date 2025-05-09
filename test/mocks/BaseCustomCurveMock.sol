@@ -7,11 +7,12 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {BaseCustomCurve} from "src/base/BaseCustomCurve.sol";
 import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract BaseCustomCurveMock is BaseCustomCurve, ERC20 {
     constructor(IPoolManager _manager) BaseCustomCurve(_manager) ERC20("Mock", "MOCK") {}
 
-    function _getUnspecifiedAmount(IPoolManager.SwapParams calldata params)
+    function _getUnspecifiedAmount(SwapParams calldata params)
         internal
         virtual
         override
@@ -32,7 +33,7 @@ contract BaseCustomCurveMock is BaseCustomCurve, ERC20 {
         );
     }
 
-    function _getSwapFeeAmount(IPoolManager.SwapParams calldata params, uint256 unspecifiedAmount)
+    function _getSwapFeeAmount(SwapParams calldata params, uint256 unspecifiedAmount)
         internal
         virtual
         override

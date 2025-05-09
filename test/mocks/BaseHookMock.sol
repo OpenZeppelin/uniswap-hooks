@@ -5,6 +5,7 @@ import "src/base/BaseHook.sol";
 
 import {BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract BaseHookMock is BaseHook {
     event BeforeInitialize();
@@ -33,7 +34,7 @@ contract BaseHookMock is BaseHook {
         return this.afterInitialize.selector;
     }
 
-    function _beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+    function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
         virtual
         override
@@ -43,12 +44,12 @@ contract BaseHookMock is BaseHook {
         return this.beforeAddLiquidity.selector;
     }
 
-    function _beforeRemoveLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) internal virtual override returns (bytes4) {
+    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4)
+    {
         emit BeforeRemoveLiquidity();
         return this.beforeRemoveLiquidity.selector;
     }
@@ -56,7 +57,7 @@ contract BaseHookMock is BaseHook {
     function _afterAddLiquidity(
         address,
         PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
+        ModifyLiquidityParams calldata,
         BalanceDelta,
         BalanceDelta,
         bytes calldata
@@ -68,7 +69,7 @@ contract BaseHookMock is BaseHook {
     function _afterRemoveLiquidity(
         address,
         PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
+        ModifyLiquidityParams calldata,
         BalanceDelta,
         BalanceDelta,
         bytes calldata
@@ -77,7 +78,7 @@ contract BaseHookMock is BaseHook {
         return (this.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
-    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
         internal
         virtual
         override
@@ -88,7 +89,7 @@ contract BaseHookMock is BaseHook {
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    function _afterSwap(address, PoolKey calldata, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
+    function _afterSwap(address, PoolKey calldata, SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         virtual
         override

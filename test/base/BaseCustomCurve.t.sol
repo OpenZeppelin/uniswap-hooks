@@ -16,6 +16,7 @@ import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract BaseCustomCurveTest is Test, Deployers {
     using SafeCast for uint256;
@@ -163,8 +164,8 @@ contract BaseCustomCurveTest is Test, Deployers {
         vm.expectEmit(true, true, true, true, address(manager));
         emit Swap(id, address(swapRouter), 0, 0, 79228162514264337593543950336, 0, 0, 0);
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -1 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -229,8 +230,8 @@ contract BaseCustomCurveTest is Test, Deployers {
             )
         );
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 1 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 1 ether, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -440,8 +441,8 @@ contract BaseCustomCurveTest is Test, Deployers {
             )
         );
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100 ether, sqrtPriceLimitX96: SQRT_PRICE_1_4});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 100 ether, sqrtPriceLimitX96: SQRT_PRICE_1_4});
 
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
@@ -466,7 +467,7 @@ contract BaseCustomCurveTest is Test, Deployers {
             BaseCustomAccounting.AddLiquidityParams(amount, amount, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
         );
 
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+        SwapParams memory params = SwapParams({
             zeroForOne: true,
             amountSpecified: (FullMath.mulDiv(amount, 1, 4)).toInt256(),
             sqrtPriceLimitX96: SQRT_PRICE_1_4
@@ -531,8 +532,8 @@ contract BaseCustomCurveTest is Test, Deployers {
         vm.expectEmit(true, true, true, true, address(manager));
         emit Swap(id, address(swapRouter), 0, 0, 79228162514264337593543950336, 0, 0, 0);
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -0.5 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -0.5 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 

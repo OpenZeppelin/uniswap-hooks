@@ -12,6 +12,7 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract AntiSandwichHookTest is Test, Deployers {
     AntiSandwichHook hook;
@@ -43,11 +44,8 @@ contract AntiSandwichHookTest is Test, Deployers {
         uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
+        SwapParams memory params =
+            SwapParams({zeroForOne: false, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MAX_PRICE_LIMIT});
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         assertEq(currency0.balanceOf(address(this)), balanceBefore0 + 999000999000999, "amount 0");
@@ -62,11 +60,8 @@ contract AntiSandwichHookTest is Test, Deployers {
         uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MIN_PRICE_LIMIT});
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         assertEq(currency0.balanceOf(address(this)), balanceBefore0 - amountToSwap, "amount 0");
@@ -78,11 +73,8 @@ contract AntiSandwichHookTest is Test, Deployers {
         uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MIN_PRICE_LIMIT});
         // buy currency0 for currency1, front run
         BalanceDelta delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
@@ -90,7 +82,7 @@ contract AntiSandwichHookTest is Test, Deployers {
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         // sell currency1 for currency0, front run
-        params = IPoolManager.SwapParams({
+        params = SwapParams({
             zeroForOne: false,
             amountSpecified: -int256(delta.amount1()),
             sqrtPriceLimitX96: MAX_PRICE_LIMIT
@@ -101,11 +93,8 @@ contract AntiSandwichHookTest is Test, Deployers {
 
         vm.roll(block.number + 1);
 
-        params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
+        params =
+            SwapParams({zeroForOne: true, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MIN_PRICE_LIMIT});
 
         delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         // 997010963116644 is obtained from `test_swap_successfulSandwich`
@@ -117,11 +106,8 @@ contract AntiSandwichHookTest is Test, Deployers {
         uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
+        SwapParams memory params =
+            SwapParams({zeroForOne: false, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MAX_PRICE_LIMIT});
         // buy currency0 for currency1, front run
         BalanceDelta delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
@@ -129,7 +115,7 @@ contract AntiSandwichHookTest is Test, Deployers {
         swapRouter.swap(key, params, testSettings, ZERO_BYTES);
 
         // sell currency1 for currency0, front run
-        params = IPoolManager.SwapParams({
+        params = SwapParams({
             zeroForOne: true,
             amountSpecified: -int256(delta.amount0()),
             sqrtPriceLimitX96: MIN_PRICE_LIMIT
@@ -140,11 +126,8 @@ contract AntiSandwichHookTest is Test, Deployers {
 
         vm.roll(block.number + 1);
 
-        params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
+        params =
+            SwapParams({zeroForOne: false, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MAX_PRICE_LIMIT});
 
         delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
         // 997010963116644 is obtained from `test_swap_successfulSandwich`
@@ -156,11 +139,8 @@ contract AntiSandwichHookTest is Test, Deployers {
         uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MIN_PRICE_LIMIT});
         // buy currency0 for currency1, front run
         BalanceDelta delta = swapRouter.swap(noHookKey, params, testSettings, ZERO_BYTES);
 
@@ -168,7 +148,7 @@ contract AntiSandwichHookTest is Test, Deployers {
         swapRouter.swap(noHookKey, params, testSettings, ZERO_BYTES);
 
         // sell currency1 for currency0, front run
-        params = IPoolManager.SwapParams({
+        params = SwapParams({
             zeroForOne: false,
             amountSpecified: -int256(delta.amount1()),
             sqrtPriceLimitX96: MAX_PRICE_LIMIT
@@ -177,11 +157,8 @@ contract AntiSandwichHookTest is Test, Deployers {
 
         assertGe(deltaEnd.amount0(), -delta.amount0(), "front runner loss");
 
-        params = IPoolManager.SwapParams({
-            zeroForOne: true,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MIN_PRICE_LIMIT
-        });
+        params =
+            SwapParams({zeroForOne: true, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MIN_PRICE_LIMIT});
 
         swapRouter.swap(noHookKey, params, testSettings, ZERO_BYTES);
     }
@@ -191,11 +168,8 @@ contract AntiSandwichHookTest is Test, Deployers {
         uint256 amountToSwap = 1e15;
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
+        SwapParams memory params =
+            SwapParams({zeroForOne: false, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MAX_PRICE_LIMIT});
         // buy currency0 for currency1, front run
         BalanceDelta delta = swapRouter.swap(noHookKey, params, testSettings, ZERO_BYTES);
 
@@ -203,7 +177,7 @@ contract AntiSandwichHookTest is Test, Deployers {
         swapRouter.swap(noHookKey, params, testSettings, ZERO_BYTES);
 
         // sell currency1 for currency0, front run
-        params = IPoolManager.SwapParams({
+        params = SwapParams({
             zeroForOne: true,
             amountSpecified: -int256(delta.amount0()),
             sqrtPriceLimitX96: MIN_PRICE_LIMIT
@@ -212,11 +186,8 @@ contract AntiSandwichHookTest is Test, Deployers {
 
         assertGe(deltaEnd.amount1(), -delta.amount1(), "front runner loss");
 
-        params = IPoolManager.SwapParams({
-            zeroForOne: false,
-            amountSpecified: -int256(amountToSwap),
-            sqrtPriceLimitX96: MAX_PRICE_LIMIT
-        });
+        params =
+            SwapParams({zeroForOne: false, amountSpecified: -int256(amountToSwap), sqrtPriceLimitX96: MAX_PRICE_LIMIT});
 
         swapRouter.swap(noHookKey, params, testSettings, ZERO_BYTES);
     }

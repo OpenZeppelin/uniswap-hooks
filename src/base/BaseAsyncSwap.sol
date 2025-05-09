@@ -13,6 +13,7 @@ import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
 import {CurrencySettler} from "src/utils/CurrencySettler.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {IHookEvents} from "src/interfaces/IHookEvents.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 /**
  * @dev Base implementation for async swaps, which skip the v3-like swap implementation of the `PoolManager`
@@ -51,7 +52,7 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
      * @dev Skip the v3-like swap implementation of the `PoolManager` by returning a delta that nets out the
      * specified amount to 0 to enable asynchronous swaps.
      */
-    function _beforeSwap(address sender, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         virtual
         override

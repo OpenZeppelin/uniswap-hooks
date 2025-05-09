@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "src/fee/BaseDynamicAfterFee.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
     using CurrencySettler for Currency;
@@ -22,7 +23,7 @@ contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
 
     function _afterSwapHandler(
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         BalanceDelta,
         uint256,
         uint256 feeAmount
@@ -34,7 +35,7 @@ contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
         unspecified.take(poolManager, address(this), feeAmount, false);
     }
 
-    function _getTargetOutput(address, PoolKey calldata, IPoolManager.SwapParams calldata, bytes calldata)
+    function _getTargetOutput(address, PoolKey calldata, SwapParams calldata, bytes calldata)
         internal
         view
         override

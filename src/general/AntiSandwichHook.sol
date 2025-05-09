@@ -18,6 +18,7 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeS
 import {Slot0} from "v4-core/src/types/Slot0.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 /**
  * @dev Sandwich-resistant hook, based on
@@ -74,12 +75,11 @@ contract AntiSandwichHook is BaseDynamicAfterFee {
      * NOTE: This implementation skips calling `super._beforeSwap` in the first swap of the block. Consider
      * execution side effects might be missed if there is more than one definition for this function.
      */
-    function _beforeSwap(
-        address sender,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
-        bytes calldata hookData
-    ) internal override returns (bytes4, BeforeSwapDelta, uint24) {
+    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
+        internal
+        override
+        returns (bytes4, BeforeSwapDelta, uint24)
+    {
         PoolId poolId = key.toId();
         Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];
 
@@ -106,7 +106,7 @@ contract AntiSandwichHook is BaseDynamicAfterFee {
     function _afterSwap(
         address sender,
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         BalanceDelta delta,
         bytes calldata hookData
     ) internal override returns (bytes4, int128) {
@@ -164,7 +164,7 @@ contract AntiSandwichHook is BaseDynamicAfterFee {
      * * For currency1 to currency0 swaps (zeroForOne = false): The price is fixed at the beginning-of-block
      *   price, which prevents attackers from manipulating the price within a block
      */
-    function _getTargetOutput(address, PoolKey calldata key, IPoolManager.SwapParams calldata params, bytes calldata)
+    function _getTargetOutput(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         override
         returns (uint256 targetOutput, bool applyTargetOutput)
@@ -205,7 +205,7 @@ contract AntiSandwichHook is BaseDynamicAfterFee {
      */
     function _afterSwapHandler(
         PoolKey calldata key,
-        IPoolManager.SwapParams calldata params,
+        SwapParams calldata params,
         BalanceDelta,
         uint256,
         uint256 feeAmount

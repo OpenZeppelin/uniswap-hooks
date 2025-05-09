@@ -19,6 +19,7 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {Position} from "v4-core/src/libraries/Position.sol";
 import {FixedPoint128} from "v4-core/src/libraries/FixedPoint128.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract LiquidityPenaltyHookTest is Test, Deployers {
     LiquidityPenaltyHook hook;
@@ -78,12 +79,8 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         int256 liquidity,
         bytes32 salt
     ) internal returns (BalanceDelta) {
-        IPoolManager.ModifyLiquidityParams memory modifyLiquidityParams = IPoolManager.ModifyLiquidityParams({
-            tickLower: tickLower,
-            tickUpper: tickUpper,
-            liquidityDelta: liquidity,
-            salt: salt
-        });
+        ModifyLiquidityParams memory modifyLiquidityParams =
+            ModifyLiquidityParams({tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: liquidity, salt: salt});
         return modifyLiquidityRouter.modifyLiquidity(poolKey, modifyLiquidityParams, "");
     }
 
@@ -116,7 +113,7 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+        SwapParams memory swapParams = SwapParams({
             zeroForOne: false,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: MAX_PRICE_LIMIT
@@ -146,7 +143,7 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+        SwapParams memory swapParams = SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT
@@ -194,25 +191,25 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        IPoolManager.SwapParams memory swapParams1 = IPoolManager.SwapParams({
+        SwapParams memory swapParams1 = SwapParams({
             zeroForOne: false,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: MAX_PRICE_LIMIT
         });
 
-        IPoolManager.SwapParams memory swapParams2 = IPoolManager.SwapParams({
+        SwapParams memory swapParams2 = SwapParams({
             zeroForOne: false,
             amountSpecified: 1e15, //exact output
             sqrtPriceLimitX96: MAX_PRICE_LIMIT
         });
 
-        IPoolManager.SwapParams memory swapParams3 = IPoolManager.SwapParams({
+        SwapParams memory swapParams3 = SwapParams({
             zeroForOne: true,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: MIN_PRICE_LIMIT
         });
 
-        IPoolManager.SwapParams memory swapParams4 = IPoolManager.SwapParams({
+        SwapParams memory swapParams4 = SwapParams({
             zeroForOne: true,
             amountSpecified: 1e15, //exact output
             sqrtPriceLimitX96: MIN_PRICE_LIMIT
@@ -245,7 +242,7 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+        SwapParams memory swapParams = SwapParams({
             zeroForOne: false,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: MAX_PRICE_LIMIT
@@ -321,7 +318,7 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+        SwapParams memory swapParams = SwapParams({
             zeroForOne: true,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: MIN_PRICE_LIMIT
@@ -373,7 +370,7 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+        SwapParams memory swapParams = SwapParams({
             zeroForOne: true,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: MIN_PRICE_LIMIT
@@ -408,7 +405,7 @@ contract LiquidityPenaltyHookTest is Test, Deployers {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        IPoolManager.SwapParams memory swapParams = IPoolManager.SwapParams({
+        SwapParams memory swapParams = SwapParams({
             zeroForOne: true,
             amountSpecified: -1e15, //exact input
             sqrtPriceLimitX96: MIN_PRICE_LIMIT

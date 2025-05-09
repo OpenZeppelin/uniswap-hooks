@@ -16,6 +16,7 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {ProtocolFeeLibrary} from "v4-core/src/libraries/ProtocolFeeLibrary.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {Pool} from "v4-core/src/libraries/Pool.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 contract BaseAsyncSwapTest is Test, Deployers {
     using StateLibrary for IPoolManager;
@@ -50,8 +51,8 @@ contract BaseAsyncSwapTest is Test, Deployers {
     }
 
     function test_swap_exactInput_succeeds() public {
-        IPoolManager.SwapParams memory swapParams =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: true, amountSpecified: -100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -71,8 +72,8 @@ contract BaseAsyncSwapTest is Test, Deployers {
     }
 
     function test_swap_exactOutput_succeeds() public {
-        IPoolManager.SwapParams memory swapParams =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -93,8 +94,8 @@ contract BaseAsyncSwapTest is Test, Deployers {
     }
 
     function test_swap_exactInput_notZeroForOne_succeeds() public {
-        IPoolManager.SwapParams memory swapParams =
-            IPoolManager.SwapParams({zeroForOne: false, amountSpecified: -100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: false, amountSpecified: -100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -114,8 +115,8 @@ contract BaseAsyncSwapTest is Test, Deployers {
     }
 
     function test_swap_exactOutput_notZeroForOne_succeeds() public {
-        IPoolManager.SwapParams memory swapParams =
-            IPoolManager.SwapParams({zeroForOne: false, amountSpecified: 100, sqrtPriceLimitX96: MAX_PRICE_LIMIT});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: false, amountSpecified: 100, sqrtPriceLimitX96: MAX_PRICE_LIMIT});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -137,7 +138,7 @@ contract BaseAsyncSwapTest is Test, Deployers {
     function test_swap_fuzz_succeeds(bool zeroForOne, int120 amountSpecified) public {
         vm.assume(amountSpecified != 0);
 
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+        SwapParams memory params = SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: amountSpecified,
             sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT

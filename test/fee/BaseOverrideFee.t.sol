@@ -17,6 +17,8 @@ import {ProtocolFeeLibrary} from "v4-core/src/libraries/ProtocolFeeLibrary.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {Pool} from "v4-core/src/libraries/Pool.sol";
 import {BaseOverrideFee} from "src/fee/BaseOverrideFee.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
+import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
 
 contract BaseOverrideFeeTest is Test, Deployers {
     using StateLibrary for IPoolManager;
@@ -117,8 +119,8 @@ contract BaseOverrideFeeTest is Test, Deployers {
 
         dynamicFeesHooks.setFee(500000);
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -135,8 +137,8 @@ contract BaseOverrideFeeTest is Test, Deployers {
 
         dynamicFeesHooks.setFee(1000000);
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -152,8 +154,8 @@ contract BaseOverrideFeeTest is Test, Deployers {
         vm.prank(feeController);
         manager.setProtocolFee(key, 1000);
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -169,8 +171,8 @@ contract BaseOverrideFeeTest is Test, Deployers {
         vm.prank(feeController);
         manager.setProtocolFee(key, 1000);
 
-        IPoolManager.SwapParams memory params =
-            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1000, sqrtPriceLimitX96: SQRT_PRICE_1_2});
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -1000, sqrtPriceLimitX96: SQRT_PRICE_1_2});
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
@@ -222,7 +224,7 @@ contract BaseOverrideFeeTest is Test, Deployers {
         vm.prank(feeController);
         manager.setProtocolFee(key, protocolFee);
 
-        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+        SwapParams memory params = SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: amountSpecified,
             sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT
@@ -262,9 +264,11 @@ contract BaseOverrideFeeTest is Test, Deployers {
         // afterInitialize will try to update the fee, and fail
         vm.expectRevert(
             abi.encodeWithSelector(
-                Hooks.Wrap__FailedHookCall.selector,
+                CustomRevert.WrappedError.selector,
                 address(dynamicFeesHooks),
-                abi.encodeWithSelector(BaseOverrideFee.NotDynamicFee.selector)
+                IHooks.afterInitialize.selector,
+                abi.encodeWithSelector(BaseOverrideFee.NotDynamicFee.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
         manager.initialize(key, SQRT_PRICE_1_1);

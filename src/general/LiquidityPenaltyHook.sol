@@ -16,6 +16,7 @@ import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {CurrencySettler} from "src/utils/CurrencySettler.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
+import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 
 /**
  * @dev This hook implements a mechanism penalize liquidity provision based on time of adding and removal of liquidty.
@@ -80,7 +81,7 @@ contract LiquidityPenaltyHook is BaseHook {
     function _afterAddLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta,
         BalanceDelta,
         bytes calldata
@@ -100,7 +101,7 @@ contract LiquidityPenaltyHook is BaseHook {
     function _afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
-        IPoolManager.ModifyLiquidityParams calldata params,
+        ModifyLiquidityParams calldata params,
         BalanceDelta,
         BalanceDelta feeDelta,
         bytes calldata

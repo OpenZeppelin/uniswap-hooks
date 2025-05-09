@@ -1,5 +1,6 @@
 # <img src="logo.svg" alt="Uniswap Hooks" height="40px">
 
+[![Release](https://img.shields.io/github/v/release/OpenZeppelin/uniswap-hooks.svg)](https://github.com/OpenZeppelin/uniswap-hooks/releases)
 [![Coverage Status](https://codecov.io/gh/OpenZeppelin/uniswap-hooks/graph/badge.svg)](https://codecov.io/gh/OpenZeppelin/uniswap-hooks)
 [![CI](https://github.com/OpenZeppelin/uniswap-hooks/actions/workflows/checks.yml/badge.svg)](https://github.com/OpenZeppelin/uniswap-hooks/actions/workflows/checks.yml)
 

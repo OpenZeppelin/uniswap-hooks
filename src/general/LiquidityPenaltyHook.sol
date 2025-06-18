@@ -37,6 +37,10 @@ import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "v4-core/src/typ
  * low liquidity pools and long-tail assets may still be vulnerable depending on the configured `blockNumberOffset`.
  * Larger values of such are recommended in those cases in order to decrease the profitability of the attack.
  *
+ * IMPORTANT: in case of `blockNumberOffset` > 1, if a LP removes liquidity in a block after which they added,
+ * and the current tick has a single liquidity provider, the penalty will not be applied. Consider setting
+ * `blockNumberOffset = 1` in those cases.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.

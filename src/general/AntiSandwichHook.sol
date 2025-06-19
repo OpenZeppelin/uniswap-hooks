@@ -86,22 +86,30 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
 
         // update the top-of-block `slot0` if new block
         if (_lastCheckpoint.blockNumber != currentBlock) {
+            int24 lastTick = _lastCheckpoint.state.slot0.tick();
             _lastCheckpoint.state.slot0 = Slot0.wrap(poolManager.extsload(StateLibrary._getPoolStateSlot(poolId)));
             _lastCheckpoint.blockNumber = currentBlock;
 
             // iterate over ticks
             (, int24 currentTick,,) = poolManager.getSlot0(poolId);
-
-            int24 lastTick = _lastCheckpoint.state.slot0.tick();
-            int24 step = currentTick > lastTick ? key.tickSpacing : -key.tickSpacing;
-
-            for (int24 tick = lastTick; tick != currentTick; tick += step) {
-                (
-                    _lastCheckpoint.state.ticks[tick].liquidityGross,
-                    _lastCheckpoint.state.ticks[tick].liquidityNet,
-                    _lastCheckpoint.state.ticks[tick].feeGrowthOutside0X128,
-                    _lastCheckpoint.state.ticks[tick].feeGrowthOutside1X128
-                ) = poolManager.getTickInfo(poolId, tick);
+            if (currentTick < lastTick) {
+                for (int24 tick = currentTick; tick < lastTick; tick += key.tickSpacing) {
+                    (
+                        _lastCheckpoint.state.ticks[tick].liquidityGross,
+                        _lastCheckpoint.state.ticks[tick].liquidityNet,
+                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside0X128,
+                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside1X128
+                    ) = poolManager.getTickInfo(poolId, tick);
+                }
+            } else {
+                for (int24 tick = lastTick; tick < currentTick; tick += key.tickSpacing) {
+                    (
+                        _lastCheckpoint.state.ticks[tick].liquidityGross,
+                        _lastCheckpoint.state.ticks[tick].liquidityNet,
+                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside0X128,
+                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside1X128
+                    ) = poolManager.getTickInfo(poolId, tick);
+                }
             }
 
             (_lastCheckpoint.state.feeGrowthGlobal0X128, _lastCheckpoint.state.feeGrowthGlobal1X128) =

@@ -32,3 +32,7 @@ runs           = 1024       # The number of times to run the fuzzing tests
 [profile.super_deep.invariant]
 runs           = 16         # The number of calls to make in the invariant tests
 depth          = 16         # The number of times to run the invariant tests
+
+[fmt]
+# Disable forge formatter in favor of prettier formater. Use `npm run lint` instead.
+ignore = ["**/*"]

@@ -4,21 +4,30 @@ pragma solidity ^0.8.26;
 import "src/fee/BaseDynamicAfterFee.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
+/*
+ * @dev Mock for BaseDynamicAfterFee.
+ * In this mock, `mockTargetOutput` and `mockApplyTargetOutput` allows for easy manipulation
+ * of the target output and apply target output to be applied in `_getTargetOutput`.
+*/
 contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
     using CurrencySettler for Currency;
 
-    uint256 public targetOutput;
-    bool public applyTargetOutput;
+    uint256 private _mockTargetOutput;
+    bool private _mockApplyTargetOutput;
 
     constructor(IPoolManager _poolManager) BaseDynamicAfterFee(_poolManager) {}
 
-    function getTargetOutput() public view returns (uint256) {
-        return _targetOutput;
+    function setMockTargetOutput(uint256 output, bool active) public {
+        _mockTargetOutput = output;
+        _mockApplyTargetOutput = active;
     }
 
-    function setTargetOutput(uint256 output, bool active) public {
-        targetOutput = output;
-        applyTargetOutput = active;
+    function getMockTargetOutput() public view returns (uint256) {
+        return _mockTargetOutput;
+    }
+
+    function getMockApplyTargetOutput() public view returns (bool) {
+        return _mockApplyTargetOutput;
     }
 
     function _afterSwapHandler(
@@ -41,7 +50,7 @@ contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
         override
         returns (uint256, bool)
     {
-        return (targetOutput, applyTargetOutput);
+        return (_mockTargetOutput, _mockApplyTargetOutput);
     }
 
     receive() external payable {}

@@ -15,6 +15,8 @@ import {CurrencySettler} from "src/utils/CurrencySettler.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {IHookEvents} from "src/interfaces/IHookEvents.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
+import {TransientSlot} from "openzeppelin/utils/TransientSlot.sol";
+import {SlotDerivation} from "openzeppelin/utils/SlotDerivation.sol";
 
 /**
  * @dev Base implementation for dynamic fees applied after swaps.
@@ -23,6 +25,10 @@ import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
  * {_afterSwapHandler} functions. The {_getTargetOutput} function returns the target output to
  * apply to the swap depending on the given apply flag. The {_afterSwapHandler} function is called
  * after the target output is applied to the swap and currency amount is received.
+ *
+ * NOTE: Even if `targetOutput` and `applyTargetOutput` are stored in transient storage,
+ * they must be manually reseted after each swap in order to avoid state collisions in swaps batched
+ * in a single transaction. See https://eips.ethereum.org/EIPS/eip-1153#Security-considerations
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -33,15 +39,36 @@ import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     using SafeCast for uint256;
     using CurrencySettler for Currency;
-
-    uint256 internal _targetOutput;
-
-    bool internal _applyTargetOutput;
+    using TransientSlot for *;
+    using SlotDerivation for *;
 
     /**
      * @dev Target output exceeds swap amount.
      */
     error TargetOutputExceeds();
+
+    // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.BaseDynamicAfterFee")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant BASE_DYNAMIC_AFTER_FEE_SLOT =
+        0x573e65eb8119149aa4b92cb540f79645b8190fcaf67b1af773f62674fbe27900;
+
+    uint256 private constant TARGET_OUTPUT_OFFSET = 0;
+    uint256 private constant APPLY_TARGET_OUTPUT_OFFSET = 1;
+
+    function _setTransientTargetOutput(uint256 value) internal {
+        BASE_DYNAMIC_AFTER_FEE_SLOT.offset(TARGET_OUTPUT_OFFSET).asUint256().tstore(value);
+    }
+
+    function _setTransientApplyTargetOutput(bool value) internal {
+        BASE_DYNAMIC_AFTER_FEE_SLOT.offset(APPLY_TARGET_OUTPUT_OFFSET).asBoolean().tstore(value);
+    }
+
+    function _getTransientTargetOutput() internal view returns (uint256) {
+        return BASE_DYNAMIC_AFTER_FEE_SLOT.offset(TARGET_OUTPUT_OFFSET).asUint256().tload();
+    }
+
+    function _getTransientApplyTargetOutput() internal view returns (bool) {
+        return BASE_DYNAMIC_AFTER_FEE_SLOT.offset(APPLY_TARGET_OUTPUT_OFFSET).asBoolean().tload();
+    }
 
     /**
      * @dev Set the `PoolManager` address.
@@ -63,8 +90,8 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
         (uint256 targetOutput, bool applyTargetOutput) = _getTargetOutput(sender, key, params, hookData);
 
         // Set the target output and apply flag, overriding any previous values.
-        _applyTargetOutput = applyTargetOutput;
-        _targetOutput = targetOutput;
+        _setTransientTargetOutput(targetOutput);
+        _setTransientApplyTargetOutput(applyTargetOutput);
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
@@ -76,8 +103,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
      * is native, the implementing contract must ensure that it can receive native tokens
      * when redeeming.
      *
-     * NOTE: The target output is reset to 0, both when the apply flag is set to `false`
-     * and when set to `true`.
+     * NOTE: The target output is reset to 0, regardless of the apply flag.
      */
     function _afterSwap(
         address sender,
@@ -86,13 +112,14 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
         BalanceDelta delta,
         bytes calldata
     ) internal virtual override returns (bytes4, int128) {
-        uint256 targetOutput = _targetOutput;
+        uint256 targetOutput = _getTransientTargetOutput();
 
         // Reset storage target output to 0 and use one stored in memory
-        _targetOutput = 0;
+        _setTransientTargetOutput(0);
 
         // Skip if target output is not active
-        if (!_applyTargetOutput) {
+        // Note that we can return without reseting the apply flag if it is already false
+        if (!_getTransientApplyTargetOutput()) {
             return (this.afterSwap.selector, 0);
         }
 

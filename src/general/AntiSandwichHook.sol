@@ -125,24 +125,33 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
         BalanceDelta delta,
         bytes calldata hookData
     ) internal virtual override returns (bytes4, int128) {
-        if (!_applyTargetOutput) {
+        uint256 targetOutput = _getTransientTargetOutput();
+
+        // Reset storage target output to 0 and use one stored in memory
+        // _setTransientTargetOutput(0);
+
+        if (!_getTransientApplyTargetOutput()) {
             return (this.afterSwap.selector, 0);
         }
 
-        int128 unspecifiedAmount = (params.amountSpecified < 0 == params.zeroForOne) ? delta.amount1() : delta.amount0();
+        // Fee defined in the unspecified currency of the swap
+        (Currency unspecified, int128 unspecifiedAmount) = (params.amountSpecified < 0 == params.zeroForOne)
+            ? (key.currency1, delta.amount1())
+            : (key.currency0, delta.amount0());
+
+        // If fee is on output, get the absolute output amount
         if (unspecifiedAmount < 0) unspecifiedAmount = -unspecifiedAmount;
 
-        Currency unspecified = (params.amountSpecified < 0 == params.zeroForOne) ? (key.currency1) : (key.currency0);
         bool exactInput = params.amountSpecified < 0;
 
-        if (!exactInput && _targetOutput > unspecifiedAmount.toUint256()) {
+        if (!exactInput && targetOutput > unspecifiedAmount.toUint256()) {
             // In this case, the swapper has a fixed output and `_targetOutput` is greater than the input amount.
             // In order to protect against the sandwich attack, we increase the input amount to `_targetOutput`.
-            uint256 payAmount = _targetOutput - unspecifiedAmount.toUint256();
+            uint256 payAmount = targetOutput - unspecifiedAmount.toUint256();
 
             unspecified.take(poolManager, address(this), payAmount, true);
 
-            _afterSwapHandler(key, params, delta, _targetOutput, payAmount);
+            _afterSwapHandler(key, params, delta, targetOutput, payAmount);
 
             return (this.afterSwap.selector, payAmount.toInt256().toInt128());
         }
@@ -222,7 +231,7 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
 
         // reset apply flag
         // slither-disable-next-line reentrancy-no-eth
-        _applyTargetOutput = false;
+        _setTransientApplyTargetOutput(false);
 
         _handleCollectedFees(key, unspecified, feeAmount);
     }

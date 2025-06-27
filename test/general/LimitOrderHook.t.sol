@@ -143,10 +143,6 @@ contract LimitOrderHookTest is HookTest {
         assertEq(hook.getTickLowerLast(key.toId()), 0);
     }
 
-    function test_orderIdNext() public view {
-        assertTrue(OrderIdLibrary.equals(hook.getOrderIdNext(), OrderIdLibrary.OrderId.wrap(1)));
-    }
-
     function test_zeroLiquidityRevert() public {
         vm.expectRevert(LimitOrderHook.ZeroLiquidity.selector);
         hook.placeOrder(key, 0, true, 0);

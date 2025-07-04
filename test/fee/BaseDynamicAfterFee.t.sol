@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
 import {BaseDynamicAfterFee} from "src/fee/BaseDynamicAfterFee.sol";
 import {BaseDynamicAfterFeeMock} from "test/mocks/BaseDynamicAfterFeeMock.sol";
@@ -20,38 +21,17 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
+import {HookTest} from "test/utils/HookTest.sol";
+import {IV4Quoter} from "test/utils/interfaces/IV4Quoter.sol";
 
-interface IV4Quoter {
-    struct QuoteExactSingleParams {
-        PoolKey poolKey;
-        bool zeroForOne;
-        uint128 exactAmount;
-        bytes hookData;
-    }
-
-    function quoteExactInputSingle(QuoteExactSingleParams memory params)
-        external
-        returns (uint256 amountOut, uint256 gasEstimate);
-}
-
-contract BaseDynamicAfterFeeTest is Test, Deployers {
-    using SafeCast for uint256;
+contract BaseDynamicAfterFeeTest is HookTest {
+    using SafeCast for *;
 
     BaseDynamicAfterFeeMock dynamicFeesHook;
     IV4Quoter quoter;
 
-    event Swap(
-        PoolId indexed poolId,
-        address indexed sender,
-        int128 amount0,
-        int128 amount1,
-        uint160 sqrtPriceX96,
-        uint128 liquidity,
-        int24 tick,
-        uint24 fee
-    );
-
-    event Donate(PoolId indexed id, address indexed sender, uint256 amount0, uint256 amount1);
+    PoolKey unhookedKey;
+    PoolKey nativeUnhookedKey;
 
     function setUp() public {
         deployFreshManagerAndRouters();
@@ -68,196 +48,295 @@ contract BaseDynamicAfterFeeTest is Test, Deployers {
         );
 
         deployMintAndApprove2Currencies();
-        (key,) = initPoolAndAddLiquidity(
-            currency0, currency1, IHooks(address(dynamicFeesHook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
+
+        (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(dynamicFeesHook)), 1000, SQRT_PRICE_1_1);
+        (unhookedKey,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 1000, SQRT_PRICE_1_1);
+
+        // deal(address(this), 10 ether);
+        (nativeKey,) = initPoolAndAddLiquidityETH(
+            CurrencyLibrary.ADDRESS_ZERO, currency1, IHooks(address(dynamicFeesHook)), 1000, SQRT_PRICE_1_1, 1 ether
+        );
+        (nativeUnhookedKey,) = initPoolAndAddLiquidityETH(
+            CurrencyLibrary.ADDRESS_ZERO, currency1, IHooks(address(0)), 1000, SQRT_PRICE_1_1, 1 ether
         );
 
         vm.label(Currency.unwrap(currency0), "currency0");
         vm.label(Currency.unwrap(currency1), "currency1");
+        vm.label(address(0), "native");
 
         quoter = IV4Quoter(address(Deploy.v4Quoter(address(manager), "")));
     }
 
-    function test_swap_100PercentLPFeeExactInput_succeeds() public {
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
+    function test_swap_100PercentHookFee_ExactInput_succeeds() public {
+        uint128 swapAmount = 100;
+        // Since this is an exactInput swap, a target of 0 means that the user doesn't receive any output.
+        uint256 target = 0;
 
-        dynamicFeesHook.setTargetOutput(0, true);
-        uint256 currentOutput = dynamicFeesHook.getTargetOutput();
-        assertEq(currentOutput, 0);
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(target, true);
 
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        vm.expectEmit(true, true, true, true, address(manager));
-        emit Swap(key.toId(), address(swapRouter), -100, 99, 79228162514264329670727698910, 1e18, -1, 0);
-
-        uint256 balanceBefore = currency1.balanceOf(address(this));
-
-        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
-
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-        assertEq(currency1.balanceOf(address(dynamicFeesHook)), 99);
-        assertEq(currency1.balanceOf(address(this)), balanceBefore);
-    }
-
-    function test_swap_100PercentLPFeeExactInputNative_succeeds() public {
-        BaseDynamicAfterFeeMock nativeHook =
-            BaseDynamicAfterFeeMock(payable(0x10000000000000000000000000000000000000C4));
-        deployCodeTo(
-            "test/mocks/BaseDynamicAfterFeeMock.sol:BaseDynamicAfterFeeMock", abi.encode(manager), address(nativeHook)
-        );
-        (key,) = initPoolAndAddLiquidityETH(
-            CurrencyLibrary.ADDRESS_ZERO,
-            currency1,
-            IHooks(address(nativeHook)),
-            LPFeeLibrary.DYNAMIC_FEE_FLAG,
-            SQRT_PRICE_1_1,
-            1 ether
-        );
-
-        ERC20(Currency.unwrap(currency1)).approve(address(nativeHook), type(uint256).max);
-        vm.label(address(0), "native");
-
-        deal(address(this), 10 ether);
-
-        assertEq(nativeHook.getTargetOutput(), 0);
-
-        nativeHook.setTargetOutput(0, true);
-        uint256 currentOutput = nativeHook.getTargetOutput();
-        assertEq(currentOutput, 0);
-
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        vm.expectEmit(true, true, true, true, address(manager));
-        emit Swap(key.toId(), address(swapRouter), -100, 99, 79228162514264329670727698910, 1e18, -1, 0);
-
-        uint256 balanceBefore = currency1.balanceOf(address(this));
-
-        swapRouter.swap{value: 100}(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
-
-        assertEq(nativeHook.getTargetOutput(), 0);
-        assertEq(currency1.balanceOf(address(nativeHook)), 99);
-        assertEq(currency1.balanceOf(address(this)), balanceBefore);
-    }
-
-    function test_swap_50PercentLPFeeExactInput_succeeds() public {
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-
-        dynamicFeesHook.setTargetOutput(49, true);
-        uint256 currentOutput = dynamicFeesHook.getTargetOutput();
-        assertEq(currentOutput, 0);
-
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        vm.expectEmit(true, true, true, true, address(manager));
-        emit Swap(key.toId(), address(swapRouter), -100, 99, 79228162514264329670727698910, 1e18, -1, 0);
-
-        uint256 balanceBefore = currency1.balanceOf(address(this));
-
-        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
-
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-        assertEq(currency1.balanceOf(address(dynamicFeesHook)), 50);
-        assertEq(currency1.balanceOf(address(this)), balanceBefore + 49);
-    }
-
-    function test_swap_skipped_succeeds() public {
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-
-        dynamicFeesHook.setTargetOutput(999, false);
-        uint256 currentOutput = dynamicFeesHook.getTargetOutput();
-        assertEq(currentOutput, 0);
-
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        vm.expectEmit(true, true, true, true, address(manager));
-        emit Swap(key.toId(), address(swapRouter), -100, 99, 79228162514264329670727698910, 1e18, -1, 0);
-        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
-
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-    }
-
-    function test_swap_50PercentLPFeeExactOutput_succeeds() public {
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-
-        dynamicFeesHook.setTargetOutput(50, true);
-        uint256 currentOutput = dynamicFeesHook.getTargetOutput();
-        assertEq(currentOutput, 0);
-
-        SwapParams memory params =
-            SwapParams({zeroForOne: true, amountSpecified: 100, sqrtPriceLimitX96: SQRT_PRICE_1_2});
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        vm.expectEmit(true, true, true, true, address(manager));
-        emit Swap(key.toId(), address(swapRouter), -101, 100, 79228162514264329670727698909, 1e18, -1, 0);
-
-        // No fee is applied because this is an exact-output swap
-        swapRouter.swap(key, params, testSettings, ZERO_BYTES);
-
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-    }
-
-    function test_swap_deltaExceeds_succeeds() public {
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-
-        dynamicFeesHook.setTargetOutput(101, true);
-        uint256 currentOutput = dynamicFeesHook.getTargetOutput();
-        assertEq(currentOutput, 0);
-
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CustomRevert.WrappedError.selector,
-                address(dynamicFeesHook),
-                IHooks.afterSwap.selector,
-                abi.encodeWithSelector(BaseDynamicAfterFee.TargetOutputExceeds.selector),
-                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
-            )
-        );
-        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
-
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-    }
-
-    function test_swap_fuzz_succeeds(bool zeroForOne, uint24 lpFee, uint128 amountSpecified) public {
-        assertEq(dynamicFeesHook.getTargetOutput(), 0);
-
-        lpFee = uint24(bound(lpFee, 0, 1e6));
-        amountSpecified = uint128(bound(amountSpecified, 1, 6017734268818166));
-        (uint256 amountUnspecified,) = quoter.quoteExactInputSingle(
+        // Simulate the swap quote in an unhooked pool.
+        (uint256 unhookedQuote,) = quoter.quoteExactInputSingle(
             IV4Quoter.QuoteExactSingleParams({
-                poolKey: key,
+                poolKey: unhookedKey,
+                zeroForOne: true,
+                exactAmount: swapAmount,
+                hookData: ZERO_BYTES
+            })
+        );
+
+        vm.expectEmit(true, true, true, true, address(dynamicFeesHook));
+        emit HookFee(PoolId.unwrap(key.toId()), address(swapRouter), 0, unhookedQuote.toUint128());
+
+        uint256 swapperCurrency1Before = currency1.balanceOf(address(this));
+
+        swap(key, true, -int128(swapAmount), ZERO_BYTES);
+
+        uint256 swapperCurrency1After = currency1.balanceOf(address(this));
+        uint256 hookCurrency1After = currency1.balanceOf(address(dynamicFeesHook));
+
+        assertEq(hookCurrency1After, unhookedQuote, "hook keeps 100%");
+        assertEq(swapperCurrency1After, swapperCurrency1Before, "user gets 0%");
+    }
+
+    function test_swap_100PercentHookFee_ExactInput_Native_succeeds() public {
+        uint128 swapAmount = 100;
+        // Since this is an exactInput swap, a target of 0 means that the user doesn't receive any output.
+        uint256 target = 0;
+
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(target, true);
+
+        (uint256 unhookedNativeQuote,) = quoter.quoteExactInputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: nativeUnhookedKey,
+                zeroForOne: true,
+                exactAmount: swapAmount,
+                hookData: ZERO_BYTES
+            })
+        );
+
+        vm.expectEmit(true, true, true, true, address(dynamicFeesHook));
+        emit HookFee(PoolId.unwrap(nativeKey.toId()), address(swapRouter), 0, unhookedNativeQuote.toUint128());
+
+        uint256 swapperCurrency1Before = currency1.balanceOf(address(this));
+
+        swap(nativeKey, true, -int128(swapAmount), ZERO_BYTES);
+
+        uint256 swapperCurrency1After = currency1.balanceOf(address(this));
+        uint256 hookCurrency1After = currency1.balanceOf(address(dynamicFeesHook));
+
+        assertEq(hookCurrency1After, unhookedNativeQuote, "hook keeps 100%");
+        assertEq(swapperCurrency1After, swapperCurrency1Before, "user gets 0%");
+    }
+
+    function test_swap_50PercentHookFee_ExactInput_succeeds() public {
+        uint128 swapAmount = 100;
+
+        (uint256 unhookedQuote,) = quoter.quoteExactInputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: unhookedKey,
+                zeroForOne: true,
+                exactAmount: swapAmount,
+                hookData: ZERO_BYTES
+            })
+        );
+
+        // Since this is an exactInput swap, a target of `unhookedQuote / 2` means that the user receives
+        // 50% of the output.
+        uint256 target = unhookedQuote / 2;
+        uint256 fee = unhookedQuote - target;
+
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(target, true);
+
+        vm.expectEmit(true, true, true, true, address(dynamicFeesHook));
+        emit HookFee(PoolId.unwrap(key.toId()), address(swapRouter), 0, fee.toUint128());
+
+        uint256 swapperCurrency1Before = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0Before = currency0.balanceOf(address(this));
+
+        swap(key, true, -int128(swapAmount), ZERO_BYTES);
+
+        uint256 swapperCurrency1After = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0After = currency0.balanceOf(address(this));
+        uint256 hookCurrency1After = currency1.balanceOf(address(dynamicFeesHook));
+
+        assertEq(swapperCurrency0After, swapperCurrency0Before - swapAmount, "user pays the exactInput");
+        assertEq(swapperCurrency1After, swapperCurrency1Before + target, "user gets 50% of the output");
+        assertEq(hookCurrency1After, fee, "hook keeps 50% of the output");
+    }
+
+    function test_swap_50PercentHookFee_ExactOutput_succeeds() public {
+        uint128 swapAmount = 100;
+
+        (uint256 unhookedQuote,) = quoter.quoteExactOutputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: unhookedKey,
+                zeroForOne: true,
+                exactAmount: swapAmount,
+                hookData: ZERO_BYTES
+            })
+        );
+
+        // Since this is an exactOutput swap, a target of `unhookedQuote * 2` means that the user pays
+        // double the input, effectively receiving 50% of what he ends up paying for.
+        uint256 target = unhookedQuote * 2;
+        uint256 fee = target - unhookedQuote;
+
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(target, true);
+
+        vm.expectEmit(true, true, true, true, address(dynamicFeesHook));
+        emit HookFee(PoolId.unwrap(key.toId()), address(swapRouter), fee.toUint128(), 0);
+
+        uint256 swapperCurrency1Before = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0Before = currency0.balanceOf(address(this));
+
+        swap(key, true, int128(swapAmount), ZERO_BYTES);
+
+        uint256 swapperCurrency1After = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0After = currency0.balanceOf(address(this));
+        uint256 hookCurrency0After = currency0.balanceOf(address(dynamicFeesHook));
+
+        assertEq(swapperCurrency0After, swapperCurrency0Before - target, "user pays double the input");
+        assertEq(swapperCurrency1After, swapperCurrency1Before + swapAmount, "user gets the exactOutput");
+        assertEq(hookCurrency0After, fee, "hook keeps 50% of the input");
+    }
+
+    function test_swap_TargetExceeded_ExactInput_NoOp() public {
+        uint128 swapAmount = 100;
+
+        (uint256 unhookedQuote,) = quoter.quoteExactInputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: unhookedKey,
+                zeroForOne: true,
+                exactAmount: swapAmount,
+                hookData: ZERO_BYTES
+            })
+        );
+
+        // Since this is an exactInput swap, and the target is larger than the natural output,
+        // the hook will not take any fee and will act as a no-op.
+        uint256 target = unhookedQuote * 2;
+
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(target, true);
+
+        uint256 swapperCurrency1Before = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0Before = currency0.balanceOf(address(this));
+
+        swap(key, true, -int128(swapAmount), ZERO_BYTES);
+
+        uint256 swapperCurrency1After = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0After = currency0.balanceOf(address(this));
+        uint256 hookCurrency1After = currency1.balanceOf(address(dynamicFeesHook));
+
+        assertEq(hookCurrency1After, 0, "noOp:hook doesn't take any");
+        assertEq(swapperCurrency0After, swapperCurrency0Before - swapAmount, "noOp: user pays normal input");
+        assertEq(swapperCurrency1After, swapperCurrency1Before + unhookedQuote, "noOp: user gets normal output");
+    }
+
+    function test_swap_TargetExceeded_ExactOutput_NoOp() public {
+        uint128 swapAmount = 100;
+
+        (uint256 unhookedQuote,) = quoter.quoteExactOutputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: unhookedKey,
+                zeroForOne: true,
+                exactAmount: swapAmount,
+                hookData: ZERO_BYTES
+            })
+        );
+
+        // Since this is an exactOutput swap, and the target is smaller than the natural output,
+        // the hook will not take any fee and will act as a no-op.
+        uint256 target = unhookedQuote / 2;
+
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(target, true);
+
+        uint256 swapperCurrency1Before = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0Before = currency0.balanceOf(address(this));
+
+        swap(key, true, int128(swapAmount), ZERO_BYTES);
+
+        uint256 swapperCurrency1After = currency1.balanceOf(address(this));
+        uint256 swapperCurrency0After = currency0.balanceOf(address(this));
+        uint256 hookCurrency1After = currency1.balanceOf(address(dynamicFeesHook));
+
+        assertEq(hookCurrency1After, 0, "noOp:hook doesn't take any");
+        assertEq(swapperCurrency0After, swapperCurrency0Before - unhookedQuote, "noOp: user pays normal input");
+        assertEq(swapperCurrency1After, swapperCurrency1Before + swapAmount, "noOp: user gets normal output");
+    }
+
+    //     // function test_swap_deltaExceeds_succeeds() public {
+    //     //     dynamicFeesHook.setMockTargetUnspecifiedAmount(101, true);
+
+    //     //     vm.expectRevert(
+    //     //         abi.encodeWithSelector(
+    //     //             CustomRevert.WrappedError.selector,
+    //     //             address(dynamicFeesHook),
+    //     //             IHooks.afterSwap.selector,
+    //     //             abi.encodeWithSelector(BaseDynamicAfterFee.TargetOutputExceeds.selector),
+    //     //             abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+    //     //         )
+    //     //     );
+    //     //     swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
+    //     // }
+
+    function test_swap_fuzz_ExactInput_succeeds(bool zeroForOne, uint24 hookFee, uint128 amountSpecified) public {
+        hookFee = uint24(bound(hookFee, 0, 1e6));
+        amountSpecified = uint128(bound(amountSpecified, 1, 6017734268818166));
+
+        (uint256 unhookedQuote,) = quoter.quoteExactInputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: unhookedKey,
                 zeroForOne: zeroForOne,
                 exactAmount: amountSpecified,
                 hookData: ZERO_BYTES
             })
         );
-        uint256 deltaFee = (amountUnspecified * lpFee) / 1e6;
-        uint256 targetAmount = amountUnspecified - deltaFee;
-        dynamicFeesHook.setTargetOutput(targetAmount, true);
 
-        SwapParams memory params = SwapParams({
-            zeroForOne: zeroForOne,
-            amountSpecified: -int128(amountSpecified),
-            sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT
-        });
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        // deltaFee is (0-100%) of the unhookedQuote
+        uint256 deltaFee = (unhookedQuote * hookFee) / 1e6;
+        // Since this is exactInput, the target is maximun amount the user must receive.
+        uint256 targetAmount = unhookedQuote - deltaFee;
 
-        BalanceDelta delta = swapRouter.swap(key, params, testSettings, ZERO_BYTES);
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(targetAmount, true);
+        BalanceDelta delta = swap(key, zeroForOne, -int128(amountSpecified), ZERO_BYTES);
 
         if (zeroForOne) {
             assertEq(delta.amount0(), -int128(amountSpecified));
-            assertEq(delta.amount1(), targetAmount.toInt128());
+            assertLe(delta.amount1(), targetAmount.toInt128());
         } else {
-            assertEq(delta.amount0(), targetAmount.toInt128());
+            assertLe(delta.amount0(), targetAmount.toInt128());
             assertEq(delta.amount1(), -int128(amountSpecified));
+        }
+    }
+
+    function test_swap_fuzz_ExactOutput_succeeds(bool zeroForOne, uint24 hookFee, uint128 amountSpecified) public {
+        hookFee = uint24(bound(hookFee, 0, 1e6));
+        amountSpecified = uint128(bound(amountSpecified, 1, 5981737760509662));
+
+        (uint256 unhookedQuote,) = quoter.quoteExactOutputSingle(
+            IV4Quoter.QuoteExactSingleParams({
+                poolKey: unhookedKey,
+                zeroForOne: zeroForOne,
+                exactAmount: amountSpecified,
+                hookData: ZERO_BYTES
+            })
+        );
+
+        // deltaFee is (0-100%) of the unhookedQuote
+        uint256 deltaFee = (unhookedQuote * hookFee) / 1e6;
+        // Since this is exactOutput, the target is the minimum amount the user must pay.
+        // target is (100-200%) of the unhookedQuote
+        uint256 targetAmount = unhookedQuote + deltaFee;
+
+        dynamicFeesHook.setMockTargetUnspecifiedAmount(targetAmount, true);
+        BalanceDelta delta = swap(key, zeroForOne, int128(amountSpecified), ZERO_BYTES);
+
+        if (zeroForOne) {
+            assertGe(delta.amount0(), -targetAmount.toInt128());
+            assertEq(delta.amount1(), int128(amountSpecified));
+        } else {
+            assertEq(delta.amount0(), int128(amountSpecified));
+            assertGe(delta.amount1(), -targetAmount.toInt128());
         }
     }
 }

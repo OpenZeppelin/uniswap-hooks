@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+// OpenZeppelin Uniswap Hooks (last updated v1.1.0) (test/utils/HookTest.sol)
 pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
@@ -14,10 +15,11 @@ import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {FixedPoint128} from "v4-core/src/libraries/FixedPoint128.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
-import {IPoolManagerEvents} from "./IPoolManagerEvents.sol";
+import {IHookEvents} from "src/interfaces/IHookEvents.sol";
+import {IPoolManagerEvents} from "test/utils/interfaces/IPoolManagerEvents.sol";
 
 // @dev Set of utilities to test Hooks.
-contract HookTest is Test, Deployers, IPoolManagerEvents {
+contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
     // @dev Calculate the current `feesAccrued` for a given position.
     function calculateFees(
         IPoolManager manager,

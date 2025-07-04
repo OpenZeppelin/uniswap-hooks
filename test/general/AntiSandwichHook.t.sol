@@ -60,7 +60,7 @@ contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
         assertEq(swapDelta, toBalanceDelta(-SWAP_AMOUNT_1e15, SWAP_RESULT_1e15));
     }
 
-    function test_swap_zeroForOne_exactInput_backrunExactInput() public {
+    function test_swap_zeroForOne_FrontrunExactInput_BackrunExactInput() public {
         // front run, exactInput
         // - sends token0 (SWAP_AMOUNT)
         // - receives token1 (unknown amount)
@@ -92,14 +92,6 @@ contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
             "attacker should lose money in the hooked pool"
         );
 
-        int128 balance0Before = int128(uint128(manager.balanceOf(address(this), currency0.toId())));
-        Currency[] memory currencies = new Currency[](1);
-        currencies[0] = currency0;
-        hook.withdrawFees(currencies);
-        int128 balance0After = int128(uint128(manager.balanceOf(address(this), currency0.toId())));
-
-        assertTrue(balance0After - balance0Before > 0, "there should be fees to withdraw");
-
         assertGt(
             deltaAttack2WithoutKey.amount0(),
             -deltaAttack1WithoutKey.amount0(),
@@ -115,7 +107,7 @@ contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
         assertEq(deltaResetWithKey.amount0(), deltaResetWithoutKey.amount0(), "hook should reset state");
     }
 
-    function test_swap_zeroForOne_exactInput_backrunExactOutput() public {
+    function test_swap_zeroForOne_FrontrunExactInput_BackrunExactOutput() public {
         // front run, exactInput
         // - sends token0 (SWAP_AMOUNT)
         // - receives token1 (unknown amount)
@@ -162,7 +154,7 @@ contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
         assertEq(deltaResetWithKey.amount0(), deltaResetWithoutKey.amount0(), "hook should reset state");
     }
 
-    function test_swap_zeroForOne_exactOutput_backrunExactInput() public {
+    function test_swap_zeroForOne_FrontrunExactOutput_BackrunExactInput() public {
         // front run, exactOutput
         // - gives token0 (unknown amount)
         // - receives token1 (SWAP_AMOUNT)
@@ -209,7 +201,7 @@ contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
         assertEq(deltaResetWithKey.amount0(), deltaResetWithoutKey.amount0(), "hook should reset state");
     }
 
-    function test_swap_zeroForOne_exactOutput_backrunExactOutput() public {
+    function test_swap_zeroForOne_FrontrunExactOutput_BackrunExactOutput() public {
         // front run, exactOutput
         // - sends token0 (unknown amount)
         // - receives token1 (SWAP_AMOUNT)

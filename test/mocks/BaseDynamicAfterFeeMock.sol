@@ -7,18 +7,14 @@ import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
     using CurrencySettler for Currency;
 
-    uint256 public targetOutput;
-    bool public applyTargetOutput;
+    uint256 public targetUnspecifiedAmount;
+    bool public applyTarget;
 
     constructor(IPoolManager _poolManager) BaseDynamicAfterFee(_poolManager) {}
 
-    function getTargetOutput() public view returns (uint256) {
-        return _targetOutput;
-    }
-
-    function setTargetOutput(uint256 output, bool active) public {
-        targetOutput = output;
-        applyTargetOutput = active;
+    function setMockTargetUnspecifiedAmount(uint256 amount, bool active) public {
+        targetUnspecifiedAmount = amount;
+        applyTarget = active;
     }
 
     function _afterSwapHandler(
@@ -35,13 +31,13 @@ contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
         unspecified.take(poolManager, address(this), feeAmount, false);
     }
 
-    function _getTargetOutput(address, PoolKey calldata, SwapParams calldata, bytes calldata)
+    function _getTargetUnspecified(address, PoolKey calldata, SwapParams calldata, bytes calldata)
         internal
         view
         override
         returns (uint256, bool)
     {
-        return (targetOutput, applyTargetOutput);
+        return (targetUnspecifiedAmount, applyTarget);
     }
 
     receive() external payable {}

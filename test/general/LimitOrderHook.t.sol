@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
 import {Test} from "forge-std/Test.sol";
@@ -141,10 +141,6 @@ contract LimitOrderHookTest is HookTest {
 
     function test_getTickLowerLast() public view {
         assertEq(hook.getTickLowerLast(key.toId()), 0);
-    }
-
-    function test_orderIdNext() public view {
-        assertTrue(OrderIdLibrary.equals(hook.getOrderIdNext(), OrderIdLibrary.OrderId.wrap(1)));
     }
 
     function test_zeroLiquidityRevert() public {

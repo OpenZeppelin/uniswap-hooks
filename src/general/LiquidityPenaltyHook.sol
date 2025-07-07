@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Uniswap Hooks (last updated v0.1.1) (src/general/LiquidityPenaltyHook.sol)
+// OpenZeppelin Uniswap Hooks (last updated v1.1.0) (src/general/LiquidityPenaltyHook.sol)
 
 pragma solidity ^0.8.24;
 
@@ -58,12 +58,24 @@ contract LiquidityPenaltyHook is BaseHook {
      */
     error NoLiquidityToReceiveDonation();
 
+    /**
+     * @dev The minimum block number offset.
+     */
     uint48 public constant MIN_BLOCK_NUMBER_OFFSET = 1;
 
+    /**
+     * @dev The block number offset.
+     */
     uint48 private immutable _blockNumberOffset;
 
+    /**
+     * @dev Tracks the `lastAddedLiquidityBlock` for a liquidity position.
+     */
     mapping(PoolId poolId => mapping(bytes32 positionKey => uint48 blockNumber)) private _lastAddedLiquidityBlock;
 
+    /**
+     * @dev Tracks the `withheldFees` for a liquidity position.
+     */
     mapping(PoolId poolId => mapping(bytes32 positionKey => BalanceDelta delta)) private _withheldFees;
 
     /**
@@ -75,7 +87,9 @@ contract LiquidityPenaltyHook is BaseHook {
     }
 
     /**
-     * @dev Tracks `lastAddedLiquidityBlock` and withholds `feeDelta` if liquidity was added within the `blockNumberOffset` period.
+     * @dev Tracks `lastAddedLiquidityBlock` and withholds `feeDelta` if liquidity was recently added within
+     * the `blockNumberOffset` period.
+     *
      * See {_afterRemoveLiquidity} for claiming the withheld fees back.
      */
     function _afterAddLiquidity(
@@ -103,13 +117,13 @@ contract LiquidityPenaltyHook is BaseHook {
     }
 
     /**
-     * @dev Penalizes the collection of LP `feesDelta` and `withheldFees` after liquidity removal if liquidity was
-     * recently added to the position.
+     * @dev Penalizes the collection of any existing LP `feesDelta` and `withheldFees` after liquidity removal if
+     * liquidity was recently added to the position.
      *
      * NOTE: The penalty is applied on both `withheldFees` and `feeDelta` equally.
      * Therefore, regardless of how many times liquidity was added to the position within the `blockNumberOffset` period,
-     * all accrued fees are penalized as if the liquidity was added only once during that period. This ensures that splitting
-     * liquidity additions within the `blockNumberOffset` period does not reduce or increase the penalty.
+     * all accrued fees are penalized as if the liquidity was added only once during that period. This ensures that
+     * splitting liquidity additions within the `blockNumberOffset` period does not reduce or increase the penalty.
      *
      * IMPORTANT: The penalty is donated to the pool's liquidity providers in range at the time of liquidity removal,
      * which may be different from the liquidity providers in range at the time of liquidity addition.
@@ -131,7 +145,7 @@ contract LiquidityPenaltyHook is BaseHook {
         // The total fees accrued by the LP are the sum of the `feeDelta` plus the `withheldFees`.
         BalanceDelta totalFees = feeDelta + withheldFees;
 
-        // cache lastAddedLiquidity SLOAD
+        // cache lastAddedLiquidity in memory
         uint48 lastAddedLiquidityBlock = getLastAddedLiquidityBlock(poolId, positionKey);
 
         if (
@@ -215,10 +229,11 @@ contract LiquidityPenaltyHook is BaseHook {
      *
      * The penalty is calculated as a linear function of the block number difference between the `lastAddedLiquidityBlock` and the `currentBlockNumber`.
      *
-     * The formula is:
+     * The used formula is:
+     *
      * liquidityPenalty = feeDelta * ( 1 - (currentBlockNumber - lastAddedLiquidityBlock) / blockNumberOffset)
      *
-     * The penalty is 100% at the block where liquidity was last added and 0% after the `blockNumberOffset` block.
+     * As a result, the penalty is 100% at the same block where liquidity was last added and zero after the `blockNumberOffset` block time window.
      *
      * NOTE: Won't overflow if `currentBlockNumber - lastAddedLiquidityBlock < blockNumberOffset` is verified prior to calling this function.
      */
@@ -249,7 +264,7 @@ contract LiquidityPenaltyHook is BaseHook {
 
     /**
      * @dev The minimum time window (in blocks) that must pass after adding liquidity before it can be
-     * removed without penalty. During this period, JIT attacks are deterred through fee withholding
+     * removed without any penalty. During this period, JIT attacks are deterred through fee withholding
      * and penalties. Higher values provide stronger JIT protection but may discourage legitimate LPs.
      */
     function getBlockNumberOffset() public view virtual returns (uint48) {
@@ -257,11 +272,9 @@ contract LiquidityPenaltyHook is BaseHook {
     }
 
     /**
-     * @dev Tracks the `withheldFees` for a liquidity position.
+     * @dev Tracks the `lastAddedLiquidityBlock` for a liquidity position.
      *
-     * `withheldFees` are UniswapV4's `feesAccrued` retained by this hook during liquidity addition if liquidity
-     * has been added within the `blockNumberOffset` time window. This is intended to disable fee collection during
-     * JIT liquidity provisioning attacks. See {_afterRemoveLiquidity} for claiming the fees back.
+     * `lastAddedLiquidityBlock` is the block number when liquidity was last added to the position.
      */
     function getLastAddedLiquidityBlock(PoolId poolId, bytes32 positionKey) public view virtual returns (uint48) {
         return _lastAddedLiquidityBlock[poolId][positionKey];
@@ -269,6 +282,10 @@ contract LiquidityPenaltyHook is BaseHook {
 
     /**
      * @dev Returns the `withheldFees` for a liquidity position.
+     *
+     * `withheldFees` are UniswapV4's `feesAccrued` retained by this hook during liquidity addition if liquidity
+     * has been recently added within the `blockNumberOffset` block time window, with the purpose of disabling fee
+     * collection during JIT liquidity provisioning attacks. See {_afterRemoveLiquidity} for claiming the fees back.
      */
     function getWithheldFees(PoolId poolId, bytes32 positionKey) public view virtual returns (BalanceDelta) {
         return _withheldFees[poolId][positionKey];

@@ -85,15 +85,14 @@
 :xref-LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-: xref:general.adoc#LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-
 :xref-LimitOrderHook-withdraw-OrderIdLibrary-OrderId-address-: xref:general.adoc#LimitOrderHook-withdraw-OrderIdLibrary-OrderId-address-
 :xref-LimitOrderHook-unlockCallback-bytes-: xref:general.adoc#LimitOrderHook-unlockCallback-bytes-
-:xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-CallbackDataPlace-: xref:general.adoc#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-CallbackDataPlace-
-:xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CallbackDataCancel-: xref:general.adoc#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CallbackDataCancel-
-:xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-CallbackDataWithdraw-: xref:general.adoc#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-CallbackDataWithdraw-
+:xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-: xref:general.adoc#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-
+:xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-: xref:general.adoc#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-
+:xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-: xref:general.adoc#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-
 :xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-
 :xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-: xref:general.adoc#LimitOrderHook-_getCrossedTicks-PoolId-int24-
 :xref-LimitOrderHook-getTickLowerLast-PoolId-: xref:general.adoc#LimitOrderHook-getTickLowerLast-PoolId-
 :xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-
 :xref-LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-: xref:general.adoc#LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-
-:xref-LimitOrderHook-getOrderIdNext--: xref:general.adoc#LimitOrderHook-getOrderIdNext--
 :xref-LimitOrderHook-getHookPermissions--: xref:general.adoc#LimitOrderHook-getHookPermissions--
 :xref-LimitOrderHook-orderInfos-mapping-OrderIdLibrary-OrderId----struct-LimitOrderHook-OrderInfo-: xref:general.adoc#LimitOrderHook-orderInfos-mapping-OrderIdLibrary-OrderId----struct-LimitOrderHook-OrderInfo-
 :xref-BaseHook-validateHookAddress-contract-BaseHook-: xref:base.adoc#BaseHook-validateHookAddress-contract-BaseHook-
@@ -263,20 +262,22 @@ Sets the `PoolManager` address and the {getBlockNumberOffset}.
 [[LiquidityPenaltyHook-_afterAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-]]
 ==== `[.contract-item-name]#++_afterAddLiquidity++#++(address sender, struct PoolKey key, struct ModifyLiquidityParams params, BalanceDelta, BalanceDelta feeDelta, bytes) → bytes4, BalanceDelta++` [.item-kind]#internal#
 
-Tracks `lastAddedLiquidityBlock` and withholds `feeDelta` if liquidity was added within the `blockNumberOffset` period.
+Tracks `lastAddedLiquidityBlock` and withholds `feeDelta` if liquidity was recently added within
+the `blockNumberOffset` period.
+
 See {_afterRemoveLiquidity} for claiming the withheld fees back.
 
 [.contract-item]
 [[LiquidityPenaltyHook-_afterRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-]]
 ==== `[.contract-item-name]#++_afterRemoveLiquidity++#++(address sender, struct PoolKey key, struct ModifyLiquidityParams params, BalanceDelta, BalanceDelta feeDelta, bytes) → bytes4, BalanceDelta++` [.item-kind]#internal#
 
-Penalizes the collection of LP `feesDelta` and `withheldFees` after liquidity removal if liquidity was
-recently added to the position.
+Penalizes the collection of any existing LP `feesDelta` and `withheldFees` after liquidity removal if
+liquidity was recently added to the position.
 
 NOTE: The penalty is applied on both `withheldFees` and `feeDelta` equally.
 Therefore, regardless of how many times liquidity was added to the position within the `blockNumberOffset` period,
-all accrued fees are penalized as if the liquidity was added only once during that period. This ensures that splitting
-liquidity additions within the `blockNumberOffset` period does not reduce or increase the penalty.
+all accrued fees are penalized as if the liquidity was added only once during that period. This ensures that
+splitting liquidity additions within the `blockNumberOffset` period does not reduce or increase the penalty.
 
 IMPORTANT: The penalty is donated to the pool's liquidity providers in range at the time of liquidity removal,
 which may be different from the liquidity providers in range at the time of liquidity addition.
@@ -313,10 +314,11 @@ Calculates the penalty to be applied to JIT liquidity provisioning.
 
 The penalty is calculated as a linear function of the block number difference between the `lastAddedLiquidityBlock` and the `currentBlockNumber`.
 
-The formula is:
+The used formula is:
+
 liquidityPenalty = feeDelta * ( 1 - (currentBlockNumber - lastAddedLiquidityBlock) / blockNumberOffset)
 
-The penalty is 100% at the block where liquidity was last added and 0% after the `blockNumberOffset` block.
+As a result, the penalty is 100% at the same block where liquidity was last added and zero after the `blockNumberOffset` block time window.
 
 NOTE: Won't overflow if `currentBlockNumber - lastAddedLiquidityBlock < blockNumberOffset` is verified prior to calling this function.
 
@@ -325,24 +327,26 @@ NOTE: Won't overflow if `currentBlockNumber - lastAddedLiquidityBlock < blockNum
 ==== `[.contract-item-name]#++getBlockNumberOffset++#++() → uint48++` [.item-kind]#public#
 
 The minimum time window (in blocks) that must pass after adding liquidity before it can be
-removed without penalty. During this period, JIT attacks are deterred through fee withholding
+removed without any penalty. During this period, JIT attacks are deterred through fee withholding
 and penalties. Higher values provide stronger JIT protection but may discourage legitimate LPs.
 
 [.contract-item]
 [[LiquidityPenaltyHook-getLastAddedLiquidityBlock-PoolId-bytes32-]]
 ==== `[.contract-item-name]#++getLastAddedLiquidityBlock++#++(PoolId poolId, bytes32 positionKey) → uint48++` [.item-kind]#public#
 
-Tracks the `withheldFees` for a liquidity position.
+Tracks the `lastAddedLiquidityBlock` for a liquidity position.
 
-`withheldFees` are UniswapV4's `feesAccrued` retained by this hook during liquidity addition if liquidity
-has been added within the `blockNumberOffset` time window. This is intended to disable fee collection during
-JIT liquidity provisioning attacks. See {_afterRemoveLiquidity} for claiming the fees back.
+`lastAddedLiquidityBlock` is the block number when liquidity was last added to the position.
 
 [.contract-item]
 [[LiquidityPenaltyHook-getWithheldFees-PoolId-bytes32-]]
 ==== `[.contract-item-name]#++getWithheldFees++#++(PoolId poolId, bytes32 positionKey) → BalanceDelta++` [.item-kind]#public#
 
 Returns the `withheldFees` for a liquidity position.
+
+`withheldFees` are UniswapV4's `feesAccrued` retained by this hook during liquidity addition if liquidity
+has been recently added within the `blockNumberOffset` block time window, with the purpose of disabling fee
+collection during JIT liquidity provisioning attacks. See {_afterRemoveLiquidity} for claiming the fees back.
 
 [.contract-item]
 [[LiquidityPenaltyHook-getHookPermissions--]]
@@ -353,6 +357,8 @@ Set the hooks permissions, specifically `afterAddLiquidity`, `afterAddLiquidityR
 [.contract-item]
 [[LiquidityPenaltyHook-MIN_BLOCK_NUMBER_OFFSET-uint48]]
 ==== `[.contract-item-name]#++MIN_BLOCK_NUMBER_OFFSET++#++() → uint48++` [.item-kind]#public#
+
+The minimum block number offset.
 
 [.contract-item]
 [[LiquidityPenaltyHook-BlockNumberOffsetTooLow--]]
@@ -571,11 +577,11 @@ NOTE: Must be implemented by the inheriting contract.
 Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwapReturnDelta`.
 
 :OrderInfo: pass:normal[xref:#LimitOrderHook-OrderInfo[`++OrderInfo++`]]
-:Callbacks: pass:normal[xref:#LimitOrderHook-Callbacks[`++Callbacks++`]]
+:CallbackType: pass:normal[xref:#LimitOrderHook-CallbackType[`++CallbackType++`]]
 :CallbackData: pass:normal[xref:#LimitOrderHook-CallbackData[`++CallbackData++`]]
-:CallbackDataPlace: pass:normal[xref:#LimitOrderHook-CallbackDataPlace[`++CallbackDataPlace++`]]
-:CallbackDataCancel: pass:normal[xref:#LimitOrderHook-CallbackDataCancel[`++CallbackDataCancel++`]]
-:CallbackDataWithdraw: pass:normal[xref:#LimitOrderHook-CallbackDataWithdraw[`++CallbackDataWithdraw++`]]
+:PlaceCallbackData: pass:normal[xref:#LimitOrderHook-PlaceCallbackData[`++PlaceCallbackData++`]]
+:CancelCallbackData: pass:normal[xref:#LimitOrderHook-CancelCallbackData[`++CancelCallbackData++`]]
+:WithdrawCallbackData: pass:normal[xref:#LimitOrderHook-WithdrawCallbackData[`++WithdrawCallbackData++`]]
 :CheckpointCurrencies: pass:normal[xref:#LimitOrderHook-CheckpointCurrencies[`++CheckpointCurrencies++`]]
 :ZERO_BYTES: pass:normal[xref:#LimitOrderHook-ZERO_BYTES-bytes[`++ZERO_BYTES++`]]
 :orderInfos: pass:normal[xref:#LimitOrderHook-orderInfos-mapping-OrderIdLibrary-OrderId----struct-LimitOrderHook-OrderInfo-[`++orderInfos++`]]
@@ -595,15 +601,14 @@ Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwap
 :cancelOrder: pass:normal[xref:#LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-[`++cancelOrder++`]]
 :withdraw: pass:normal[xref:#LimitOrderHook-withdraw-OrderIdLibrary-OrderId-address-[`++withdraw++`]]
 :unlockCallback: pass:normal[xref:#LimitOrderHook-unlockCallback-bytes-[`++unlockCallback++`]]
-:_handlePlaceCallback: pass:normal[xref:#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-CallbackDataPlace-[`++_handlePlaceCallback++`]]
-:_handleCancelCallback: pass:normal[xref:#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CallbackDataCancel-[`++_handleCancelCallback++`]]
-:_handleWithdrawCallback: pass:normal[xref:#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-CallbackDataWithdraw-[`++_handleWithdrawCallback++`]]
+:_handlePlaceCallback: pass:normal[xref:#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-[`++_handlePlaceCallback++`]]
+:_handleCancelCallback: pass:normal[xref:#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-[`++_handleCancelCallback++`]]
+:_handleWithdrawCallback: pass:normal[xref:#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-[`++_handleWithdrawCallback++`]]
 :_fillOrder: pass:normal[xref:#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-[`++_fillOrder++`]]
 :_getCrossedTicks: pass:normal[xref:#LimitOrderHook-_getCrossedTicks-PoolId-int24-[`++_getCrossedTicks++`]]
 :getTickLowerLast: pass:normal[xref:#LimitOrderHook-getTickLowerLast-PoolId-[`++getTickLowerLast++`]]
 :getOrderId: pass:normal[xref:#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-[`++getOrderId++`]]
 :getOrderLiquidity: pass:normal[xref:#LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-[`++getOrderLiquidity++`]]
-:getOrderIdNext: pass:normal[xref:#LimitOrderHook-getOrderIdNext--[`++getOrderIdNext++`]]
 :getHookPermissions: pass:normal[xref:#LimitOrderHook-getHookPermissions--[`++getHookPermissions++`]]
 
 [.contract]
@@ -615,19 +620,20 @@ Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwap
 import "uniswap-hooks/src/general/LimitOrderHook.sol";
 ```
 
-This hook implements a mechanism to place limit orders on a liquidity pool. Specifically,
-it allows users to place limit orders at a specific tick, which will be filled if the price of the pool
-crosses the tick.
+Limit Order Mechanism hook.
 
-The hook implements the placing of orders by adding liquidity to the pool in a tick range out of range of the current price.
-Note that, given the way v4 pools work, if one adds liquidity out of range, the liquidity added will be in a single currency,
-instead of both, as in an in-range addition.
+Allows users to place limit orders at specific ticks outside of the current price range,
+which will be filled if the pool's price crosses the order's tick.
 
-Users can cancel their limit orders at any time until it is filled and liquidity is removed from the pool. Users can also withdraw
-their liquidity after the limit order is filled.
+Note that given the way UniswapV4 pools works, when liquidity is added out of the current range,
+a single currency will be provided, instead of both currencies as in in-range liquidity additions.
 
-IMPORTANT: when cancelling or placing an order into an existing one, it's possible that fees were accrued in the past. In those cases,
-the accrued fees are added to the order info, benefitting the remaining limit order placers.
+Orders can be cancelled at any time until they are filled and their liquidity is removed from the pool.
+Once completely filled, the resulting liquidity can be withdrawn from the pool.
+
+IMPORTANT: When cancelling or adding more liquidity into an existing order, it's possible that fees
+have been accrued. In those cases, the accrued fees are added to the order info, benefitting the remaining
+limit order placers.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -645,15 +651,14 @@ _Available since v1.1.0_
 * {xref-LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-}[`++cancelOrder(key, tickLower, zeroForOne, to)++`]
 * {xref-LimitOrderHook-withdraw-OrderIdLibrary-OrderId-address-}[`++withdraw(orderId, to)++`]
 * {xref-LimitOrderHook-unlockCallback-bytes-}[`++unlockCallback(rawData)++`]
-* {xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-CallbackDataPlace-}[`++_handlePlaceCallback(placeData)++`]
-* {xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CallbackDataCancel-}[`++_handleCancelCallback(cancelData)++`]
-* {xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-CallbackDataWithdraw-}[`++_handleWithdrawCallback(withdrawData)++`]
+* {xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-}[`++_handlePlaceCallback(placeData)++`]
+* {xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-}[`++_handleCancelCallback(cancelData)++`]
+* {xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-}[`++_handleWithdrawCallback(withdrawData)++`]
 * {xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-}[`++_fillOrder(key, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-}[`++_getCrossedTicks(poolId, tickSpacing)++`]
 * {xref-LimitOrderHook-getTickLowerLast-PoolId-}[`++getTickLowerLast(poolId)++`]
 * {xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-}[`++getOrderId(key, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-}[`++getOrderLiquidity(orderId, owner)++`]
-* {xref-LimitOrderHook-getOrderIdNext--}[`++getOrderIdNext()++`]
 * {xref-LimitOrderHook-getHookPermissions--}[`++getHookPermissions()++`]
 * {xref-LimitOrderHook-orderInfos-mapping-OrderIdLibrary-OrderId----struct-LimitOrderHook-OrderInfo-}[`++orderInfos()++`]
 
@@ -802,24 +807,24 @@ and operation-specific data. Returns encoded data containing fees accrued for ca
 otherwise. Only callable by the PoolManager.
 
 [.contract-item]
-[[LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-CallbackDataPlace-]]
-==== `[.contract-item-name]#++_handlePlaceCallback++#++(struct LimitOrderHook.CallbackDataPlace placeData) → uint256 amount0Fee, uint256 amount1Fee++` [.item-kind]#internal#
+[[LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-]]
+==== `[.contract-item-name]#++_handlePlaceCallback++#++(struct LimitOrderHook.PlaceCallbackData placeData) → uint256 amount0Fee, uint256 amount1Fee++` [.item-kind]#internal#
 
 Internal handler for place order callbacks. Takes `placeData` containing the order details and adds the
 specified liquidity to the pool out of range. Reverts if the order would be placed in range or on the wrong
 side of the range.
 
 [.contract-item]
-[[LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CallbackDataCancel-]]
-==== `[.contract-item-name]#++_handleCancelCallback++#++(struct LimitOrderHook.CallbackDataCancel cancelData) → uint256 amount0Fee, uint256 amount1Fee++` [.item-kind]#internal#
+[[LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-]]
+==== `[.contract-item-name]#++_handleCancelCallback++#++(struct LimitOrderHook.CancelCallbackData cancelData) → uint256 amount0Fee, uint256 amount1Fee++` [.item-kind]#internal#
 
 Internal handler for cancel order callbacks. Takes `cancelData` containing the cancellation details and
 removes liquidity from the pool. Returns accrued fees `(amount0Fee, amount1Fee)` which are allocated to remaining
 limit order placers, or to the cancelling user if they're removing all liquidity.
 
 [.contract-item]
-[[LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-CallbackDataWithdraw-]]
-==== `[.contract-item-name]#++_handleWithdrawCallback++#++(struct LimitOrderHook.CallbackDataWithdraw withdrawData)++` [.item-kind]#internal#
+[[LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-]]
+==== `[.contract-item-name]#++_handleWithdrawCallback++#++(struct LimitOrderHook.WithdrawCallbackData withdrawData)++` [.item-kind]#internal#
 
 Internal handler for withdraw callbacks. Takes `withdrawData` containing withdrawal amounts and recipient,
 burns the specified currency amounts from the hook, and transfers them to the recipient address.
@@ -861,12 +866,6 @@ position, or the default order id if no order exists.
 
 Get the liquidity of an order for a given order id and owner. Takes an {OrderId} `orderId` and `owner` address
 and returns the amount of liquidity the owner has contributed to the order.
-
-[.contract-item]
-[[LimitOrderHook-getOrderIdNext--]]
-==== `[.contract-item-name]#++getOrderIdNext++#++() → OrderIdLibrary.OrderId++` [.item-kind]#external#
-
-Get the next order id.
 
 [.contract-item]
 [[LimitOrderHook-getHookPermissions--]]

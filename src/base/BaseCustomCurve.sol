@@ -188,8 +188,8 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     {
         CallbackDataCustom memory data = abi.decode(rawData, (CallbackDataCustom));
 
-        int128 amount0 = 0;
-        int128 amount1 = 0;
+        int128 amount0;
+        int128 amount1;
 
         // This section handles liquidity modifications (adding/removing) for both tokens in the pool
         // The sign of data.amount0/1 determines if we're removing (-) or adding (+) liquidity

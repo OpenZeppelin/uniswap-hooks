@@ -8,8 +8,14 @@
   ],
   "scripts": {
     "docs": "npm run prepare-docs && oz-docs",
-    "docs:watch": "oz-docs watch src docs/templates docs/config.js",
-    "prepare-docs": "scripts/prepare-docs.sh"
+    "docs:watch": "oz-docs watch contracts docs/templates docs/config.js",
+    "prepare-docs": "scripts/prepare-docs.sh",
+    "lint": "forge fmt --check && npm run solhint",
+    "lint:fix": "forge fmt",
+    "solhint": "npm run solhint:src && npm run solhint:test",
+    "solhint:src": "solhint --noPoster 'src/**/*.sol' --config solhint/solhint.src.config.js",
+    "solhint:test": "solhint --noPoster 'test/**/*.sol' --config solhint/solhint.test.config.js",
+    "prepare": "husky"
   },
   "repository": "https://github.com/OpenZeppelin/uniswap-hooks.git",
   "bugs": {
@@ -21,6 +27,21 @@
     "@nomicfoundation/hardhat-foundry": "^1.1.2",
     "@openzeppelin/docs-utils": "^0.1.6",
     "hardhat": "^2.22.15",
+    "solhint": "^6.0.0",
+    "solhint-plugin-openzeppelin": "file:scripts/solhint-custom",
+    "lint-staged": "^16.1.2",
+    "husky": "^9.1.7",
     "solidity-docgen": "^0.6.0-beta.36"
+  },
+  "lint-staged": {
+    "**/*.sol": [
+      "forge fmt --check"
+    ],
+    "src/**/*.sol": [
+      "solhint --noPoster --config solhint/solhint.src.config.js"
+    ],
+    "test/**/*.sol": [
+      "solhint --noPoster --config solhint/solhint.test.config.js"
+    ]
   }
 }

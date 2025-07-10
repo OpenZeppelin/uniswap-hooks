@@ -1,6 +1,6 @@
 {
   "name": "uniswap-hooks",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Solidity library for secure and modular Uniswap hooks.",
   "files": [
     "src/*.sol",

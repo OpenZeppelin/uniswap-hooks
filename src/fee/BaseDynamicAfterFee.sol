@@ -40,11 +40,21 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     using SafeCast for *;
     using CurrencySettler for Currency;
 
-    // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.BaseDynamicAfterFee")) - 1)) & ~bytes32(uint256(0xff))
+    /*
+     * @dev The slot for the BaseDynamicAfterFee contract.
+     * keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.BaseDynamicAfterFee")) - 1)) & ~bytes32(uint256(0xff))
+    */
     bytes32 private constant BASE_DYNAMIC_AFTER_FEE_SLOT =
         0x573e65eb8119149aa4b92cb540f79645b8190fcaf67b1af773f62674fbe27900;
 
+    /*
+     * @dev The offset for the slot of the target unspecified amount.
+    */
     uint256 private constant TARGET_UNSPECIFIED_AMOUNT_OFFSET = 0;
+
+    /*
+     * @dev The offset for the slot of the apply target boolean.
+    */
     uint256 private constant APPLY_TARGET_OFFSET = 1;
 
     /**
@@ -182,9 +192,6 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     /**
      * @dev Return the target unspecified amount to be enforced by the `afterSwap` hook.
      *
-     * TIP: In order to consume all of the swap unspecified amount, set the target equal to zero and set the apply
-     * flag to `true`.
-     *
      * @return targetUnspecifiedAmount The target unspecified amount, defined in the unspecified currency of the swap.
      * @return applyTarget The apply flag, which can be set to `false` to skip applying the target output.
      */
@@ -198,6 +205,12 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     /**
      * @dev Customizable handler called after `_afterSwap` to handle or distribuite the fees.
      *
+     * @param key The pool key.
+     * @param params The swap parameters.
+     * @param delta The balance delta.
+     * @param targetUnspecifiedAmount The target unspecified amount.
+     * @param feeAmount The fee amount.
+     *
      * WARNING: If the underlying unspecified currency is native, the implementing contract must ensure that it can
      * receive and handle it when redeeming.
      */
@@ -205,7 +218,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
         PoolKey calldata key,
         SwapParams calldata params,
         BalanceDelta delta,
-        uint256 targetOutput,
+        uint256 targetUnspecifiedAmount,
         uint256 feeAmount
     ) internal virtual;
 

@@ -37,6 +37,11 @@ import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "v4-core/src/typ
  * low liquidity pools and long-tail assets may still be vulnerable depending on the configured `blockNumberOffset`.
  * Larger values of such are recommended in those cases in order to decrease the profitability of the attack.
  *
+ * WARNING: In low liquidity pools, this hook may be vulnerable to multi-account strategies: attackers may bypass JIT protection
+ * by using a secondary account to add minimal liquidity at a target tick with no other liquidity, then moving the price there after a JIT attack.
+ * This allows penalty fees to be redirected to the attacker's secondary account. While technically feasible, this attack is rarely profitable in practice,
+ * due to the cost associated with moving the price to the target tick.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.

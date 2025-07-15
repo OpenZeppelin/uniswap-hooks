@@ -20,7 +20,7 @@ import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {SafeCast} from "openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 
-abstract contract BaseHookFee is BaseHook, IHookEvents {
+abstract contract BaseHookFeeBefore is BaseHook, IHookEvents {
     using SafeCast for *;
     using CurrencySettler for Currency;
 

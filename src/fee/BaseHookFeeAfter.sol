@@ -20,7 +20,7 @@ import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 
-abstract contract BaseHookFee is BaseHook, IHookEvents {
+abstract contract BaseHookFeeAfter is BaseHook, IHookEvents {
     using SafeCast for *;
     using CurrencySettler for Currency;
 

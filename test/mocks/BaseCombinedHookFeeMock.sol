@@ -11,6 +11,9 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {BaseHook} from "src/base/BaseHook.sol";
 
+/*
+* @dev Mock contract for testing the combined hook fee implemementation of {BaseBeforeSwapHookFee} and {BaseAfterSwapHookFee}.
+*/
 contract BaseHookFeeCombinedMock is BaseBeforeSwapHookFee, BaseAfterSwapHookFee {
     uint128 private _unspecifiedHookFeeAfter;
     uint128 private _specifiedHookFeeBefore;

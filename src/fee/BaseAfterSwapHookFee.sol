@@ -16,18 +16,29 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
-import {BeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 
-abstract contract BaseHookFeeAfter is BaseHook, IHookEvents {
+/**
+ * @dev Base implementation for taking hook fees after swaps.
+ * 
+ * NOTE: This hook is ideal when your hook fee depends on the `delta` result of the swap. However, a drawback
+ * is that the `specifiedAmount` can't be altered after a swap already happened, and therefore this hook can 
+ * only apply hook fees to the `unspecifiedCurrency`. If you need to deduct fees from the `specifiedCurrency`,
+ * {BaseBeforeSwapHookFee} might be a better fit.
+ * 
+ */
+abstract contract BaseAfterSwapHookFee is BaseHook, IHookEvents {
     using SafeCast for *;
     using CurrencySettler for Currency;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
+    /**
+     * @dev Thrown when the hook attempts to take a fee larger than possible.
+     */
     error HookFeeTooLarge();
 
+    /**
+     * @dev Determine the hook fee to be applied during the `afterSwap` hook.
+     */
     function _getAfterSwapHookFee(
         address sender,
         PoolKey calldata key,
@@ -52,7 +63,8 @@ abstract contract BaseHookFeeAfter is BaseHook, IHookEvents {
 
         if (unspecifiedAmount == 0) return (this.afterSwap.selector, 0);
 
-        // `unspecifiedAmount` is negative if the swap is `exactOutput`, and it is positive if the swap is `exactInput`.
+        // `unspecifiedAmount` is negative if the swap is `exactOutput`, and it is positive if the swap is 
+        // `exactInput`.
         if (unspecifiedAmount < 0) unspecifiedAmount = -unspecifiedAmount;
 
         uint128 unspecifiedFee = _getAfterSwapHookFee(sender, key, params, delta, hookData);
@@ -62,8 +74,8 @@ abstract contract BaseHookFeeAfter is BaseHook, IHookEvents {
         // Is not possible to take a larger `unspecified currency` hook fee than the result of the swap
         if (unspecifiedFee > unspecifiedAmount.toUint128()) revert HookFeeTooLarge();
 
-        // Take the fee amount to the hook. Note that having `claims` as true means that the currency will be transferred to the hook
-        // as ERC-6909 claims instead of performing an erc20 transfer.
+        // Take the fee amount to the hook. Note that having `claims` as true means that the currency will be
+        // transferred to the hook as ERC-6909 claims instead of performing an erc20 transfer.
         unspecified.take(poolManager, address(this), unspecifiedFee, true);
 
         // Emit the swap event with the amounts ordered correctly

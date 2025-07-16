@@ -20,14 +20,18 @@ import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {SafeCast} from "openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 
-abstract contract BaseHookFeeBefore is BaseHook, IHookEvents {
+abstract contract BaseBeforeSwapHookFee is BaseHook, IHookEvents {
     using SafeCast for *;
     using CurrencySettler for Currency;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
+    /**
+     * @dev Thrown when the hook attempts to take a fee larger than possible.
+     */
     error HookFeeTooLarge();
 
+    /**
+     * @dev Determine the hook fee to be applied during the `beforeSwap` hook.
+     */
     function _getBeforeSwapHookFee(
         address sender,
         PoolKey calldata key,
@@ -36,33 +40,35 @@ abstract contract BaseHookFeeBefore is BaseHook, IHookEvents {
     ) internal view virtual returns (uint128 specifiedFee, uint128 unspecifiedFee);
 
     /**
-     * @dev Hooks into the `afterSwap` hook to apply the hook fee to the unspecified currency.
+     * @dev Hooks into the `beforeSwap` hook to apply the hook fee to the specified and unspecified currencies.
      */
-    function _beforeSwap(
-        address sender,
-        PoolKey calldata key,
-        SwapParams calldata params,
-        bytes calldata hookData
-    ) internal virtual override returns (bytes4 selector, BeforeSwapDelta delta, uint24 lpFeeOverride) {
+    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
+        internal
+        virtual
+        override
+        returns (bytes4 selector, BeforeSwapDelta delta, uint24 lpFeeOverride)
+    {
         (Currency unspecified, Currency specified) = (params.amountSpecified < 0 == params.zeroForOne)
             ? (key.currency1, key.currency0)
             : (key.currency0, key.currency1);
 
         (uint128 specifiedFee, uint128 unspecifiedFee) = _getBeforeSwapHookFee(sender, key, params, hookData);
 
-        if (unspecifiedFee == 0 && specifiedFee == 0) return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        if (unspecifiedFee == 0 && specifiedFee == 0) {
+            return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+        }
 
         int256 amountSpecified = params.amountSpecified;
 
         // `amountSpecified` is negative if the swap is `exactInput`, and it is positive if the swap is `exactOutput`.
         if (amountSpecified < 0) amountSpecified = -amountSpecified;
-        
+
         // Is not possible to take a larger or equal `specified currency` hook fee than the origin of the swap.
         if (specifiedFee >= amountSpecified.toUint256().toUint128()) revert HookFeeTooLarge();
 
         // Is not possible to take a larger `unspecified currency` hook fee than the result of the swap
         // However, we cannot validate the `unspecifiedFee` since the swap didn't happen yet.
-        // @TBD validate if this is a real problem or if the PoolManager handles the scenario where we attempt to larger amount than there is. 
+        // @TBD validate if this is a real problem or if the PoolManager handles the scenario where we attempt to larger amount than there is.
         // if (unspecifiedFee > ...) revert HookFeeTooLarge();
 
         // Take the fee amount to the hook. Note that having `claims` as true means that the currency will be transferred to the hook

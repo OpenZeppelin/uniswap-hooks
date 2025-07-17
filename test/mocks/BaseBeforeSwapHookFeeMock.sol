@@ -9,7 +9,6 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BaseHook} from "src/base/BaseHook.sol";
 
 contract BaseBeforeSwapHookFeeMock is BaseBeforeSwapHookFee {
-
     uint128 private _specifiedHookFee;
     uint128 private _unspecifiedHookFee;
 

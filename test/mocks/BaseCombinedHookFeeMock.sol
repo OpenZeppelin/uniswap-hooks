@@ -21,7 +21,11 @@ contract BaseHookFeeCombinedMock is BaseBeforeSwapHookFee, BaseAfterSwapHookFee 
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
-    function setMockHookFee(uint128 specifiedHookFeeBefore, uint128 unspecifiedHookFeeBefore, uint128 unspecifiedHookFeeAfter) external {
+    function setMockHookFee(
+        uint128 specifiedHookFeeBefore,
+        uint128 unspecifiedHookFeeBefore,
+        uint128 unspecifiedHookFeeAfter
+    ) external {
         _specifiedHookFeeBefore = specifiedHookFeeBefore;
         _unspecifiedHookFeeBefore = unspecifiedHookFeeBefore;
         _unspecifiedHookFeeAfter = unspecifiedHookFeeAfter;
@@ -82,7 +86,13 @@ contract BaseHookFeeCombinedMock is BaseBeforeSwapHookFee, BaseAfterSwapHookFee 
      *
      * @return permissions The hook permissions.
      */
-    function getHookPermissions() public pure virtual override(BaseBeforeSwapHookFee, BaseAfterSwapHookFee) returns (Hooks.Permissions memory permissions) {
+    function getHookPermissions()
+        public
+        pure
+        virtual
+        override(BaseBeforeSwapHookFee, BaseAfterSwapHookFee)
+        returns (Hooks.Permissions memory permissions)
+    {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: false,

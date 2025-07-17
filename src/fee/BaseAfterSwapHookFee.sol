@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/fee/BaseHookFee.sol)
+// OpenZeppelin Uniswap Hooks (last updated v1.2.0) (src/fee/BaseHookFee.sol)
 
 pragma solidity ^0.8.24;
 
@@ -20,12 +20,10 @@ import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 /**
  * @dev Base implementation for taking hook fees after swaps.
- * 
- * NOTE: This hook is ideal when your hook fee depends on the `delta` result of the swap. However, a drawback
- * is that the `specifiedAmount` can't be altered after a swap already happened, and therefore this hook can 
- * only apply hook fees to the `unspecifiedCurrency`. If you need to deduct fees from the `specifiedCurrency`,
- * {BaseBeforeSwapHookFee} might be a better fit.
- * 
+ *
+ * Taking hook fees after swaps is ideal when your hook fee depends on the `delta` result of the swap.
+ * However, a drawback is that only the `unspecifiedAmount` can be modified after a swap already happened.
+ * If you need to deduct fees from the `specifiedCurrency`, consider using {BaseBeforeSwapHookFee} instead.
  */
 abstract contract BaseAfterSwapHookFee is BaseHook, IHookEvents {
     using SafeCast for *;
@@ -34,7 +32,7 @@ abstract contract BaseAfterSwapHookFee is BaseHook, IHookEvents {
     /**
      * @dev Thrown when the hook attempts to take a fee larger than possible.
      */
-    error HookFeeTooLarge();
+    error AfterSwapHookFeeTooLarge();
 
     /**
      * @dev Determine the hook fee to be applied during the `afterSwap` hook.
@@ -61,21 +59,22 @@ abstract contract BaseAfterSwapHookFee is BaseHook, IHookEvents {
             ? (key.currency1, delta.amount1())
             : (key.currency0, delta.amount0());
 
+        // If the `unspecifiedAmount` is 0, there is no currency to take a hook fee from.
         if (unspecifiedAmount == 0) return (this.afterSwap.selector, 0);
 
-        // `unspecifiedAmount` is negative if the swap is `exactOutput`, and it is positive if the swap is 
-        // `exactInput`.
-        if (unspecifiedAmount < 0) unspecifiedAmount = -unspecifiedAmount;
-
+        // Get the hook fee to be applied during the `afterSwap` hook.
         uint128 unspecifiedFee = _getAfterSwapHookFee(sender, key, params, delta, hookData);
 
+        // If the `unspecifiedFee` is 0, there is no fee to take.
         if (unspecifiedFee == 0) return (this.afterSwap.selector, 0);
 
-        // Is not possible to take a larger `unspecified currency` hook fee than the result of the swap
-        if (unspecifiedFee > unspecifiedAmount.toUint128()) revert HookFeeTooLarge();
+        // `unspecifiedAmount` is negative if the swap is `exactOutput`, and positive if the swap is `exactInput`.
+        if (unspecifiedAmount < 0) unspecifiedAmount = -unspecifiedAmount;
 
-        // Take the fee amount to the hook. Note that having `claims` as true means that the currency will be
-        // transferred to the hook as ERC-6909 claims instead of performing an erc20 transfer.
+        // Is not possible to take a larger `unspecified currency` hook fee than the result of the swap
+        if (unspecifiedFee > unspecifiedAmount.toUint128()) revert AfterSwapHookFeeTooLarge();
+
+        // Take the fee amount to the hook as ERC-6909 claims instead of performing an erc20 transfer.
         unspecified.take(poolManager, address(this), unspecifiedFee, true);
 
         // Emit the swap event with the amounts ordered correctly

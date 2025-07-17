@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/fee/BaseHookFee.sol)
+// OpenZeppelin Uniswap Hooks (last updated v1.2.0) (src/fee/BaseHookFee.sol)
 
 pragma solidity ^0.8.24;
 
@@ -15,11 +15,18 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {SafeCast} from "openzeppelin-contracts/contracts/utils/math/SafeCast.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 
+/**
+ * @dev Base implementation for taking hook fees before swaps.
+ *
+ * Taking hook fees before swaps is ideal when your hook fee must be taken from the `specifiedAmount` and/or
+ * the `unspecifiedAmount` of the swap. However, since the swap didn't happen yet, a drawback is that you don't
+ * have access to the `delta` result of the swap. If your hook fee depends on the `delta` result of the swap,
+ * consider using {BaseAfterSwapHookFee} instead.
+ */
 abstract contract BaseBeforeSwapHookFee is BaseHook, IHookEvents {
     using SafeCast for *;
     using CurrencySettler for Currency;
@@ -27,7 +34,7 @@ abstract contract BaseBeforeSwapHookFee is BaseHook, IHookEvents {
     /**
      * @dev Thrown when the hook attempts to take a fee larger than possible.
      */
-    error HookFeeTooLarge();
+    error BeforeSwapHookFeeTooLarge();
 
     /**
      * @dev Determine the hook fee to be applied during the `beforeSwap` hook.
@@ -52,8 +59,10 @@ abstract contract BaseBeforeSwapHookFee is BaseHook, IHookEvents {
             ? (key.currency1, key.currency0)
             : (key.currency0, key.currency1);
 
+        // Get the hook fee to be applied during the `beforeSwap` hook.
         (uint128 specifiedFee, uint128 unspecifiedFee) = _getBeforeSwapHookFee(sender, key, params, hookData);
 
+        // If the `unspecifiedFee` and `specifiedFee` are 0, there is no fee to take.
         if (unspecifiedFee == 0 && specifiedFee == 0) {
             return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
@@ -63,16 +72,15 @@ abstract contract BaseBeforeSwapHookFee is BaseHook, IHookEvents {
         // `amountSpecified` is negative if the swap is `exactInput`, and it is positive if the swap is `exactOutput`.
         if (amountSpecified < 0) amountSpecified = -amountSpecified;
 
-        // Is not possible to take a larger or equal `specified currency` hook fee than the origin of the swap.
-        if (specifiedFee >= amountSpecified.toUint256().toUint128()) revert HookFeeTooLarge();
+        // Is not possible to take a larger than or equal `specifiedFee` hook fee than the specified amount of the swap.
+        if (specifiedFee >= amountSpecified.toUint256().toUint128()) revert BeforeSwapHookFeeTooLarge();
 
-        // Is not possible to take a larger `unspecified currency` hook fee than the result of the swap
+        // Is not possible to take a larger `unspecifiedFee` hook fee than the result of the swap
         // However, we cannot validate the `unspecifiedFee` since the swap didn't happen yet.
         // @TBD validate if this is a real problem or if the PoolManager handles the scenario where we attempt to larger amount than there is.
         // if (unspecifiedFee > ...) revert HookFeeTooLarge();
 
-        // Take the fee amount to the hook. Note that having `claims` as true means that the currency will be transferred to the hook
-        // as ERC-6909 claims instead of performing an erc20 transfer.
+        // Take the fee amount to the hook as ERC-6909 claims instead of performing an erc20 transfer.
         if (specifiedFee > 0) specified.take(poolManager, address(this), specifiedFee, true);
         if (unspecifiedFee > 0) unspecified.take(poolManager, address(this), unspecifiedFee, true);
 

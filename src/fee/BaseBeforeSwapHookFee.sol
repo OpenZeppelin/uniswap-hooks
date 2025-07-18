@@ -23,9 +23,14 @@ import {BeforeSwapDelta, toBeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-cor
  * @dev Base implementation for taking hook fees before swaps.
  *
  * Taking hook fees before swaps is ideal when your hook fee must be taken from the `specifiedAmount` and/or
- * the `unspecifiedAmount` of the swap. However, since the swap didn't happen yet, a drawback is that you don't
- * have access to the `delta` result of the swap. If your hook fee depends on the `delta` result of the swap,
+ * the `unspecifiedAmount` of the swap. However, since the swap didn't happen yet, a drawback is that the `delta`
+ * result of the swap is not yet available. If your hook fee depends on the `delta` result of the swap,
  * consider using {BaseAfterSwapHookFee} instead.
+ * 
+ * NOTE: on `exactOutput` swaps hook fees can't be taken from `specifiedAmount`.
+ * 
+ * NOTE: Since the swap didn't yet happen, the `delta` result of the swap is not available, and the `unspecifiedFee`
+ * can't be set but cannot be validated in this hook.
  */
 abstract contract BaseBeforeSwapHookFee is BaseHook, IHookEvents {
     using SafeCast for *;
@@ -74,11 +79,6 @@ abstract contract BaseBeforeSwapHookFee is BaseHook, IHookEvents {
 
         // Is not possible to take a larger than or equal `specifiedFee` hook fee than the specified amount of the swap.
         if (specifiedFee >= amountSpecified.toUint256().toUint128()) revert BeforeSwapHookFeeTooLarge();
-
-        // Is not possible to take a larger `unspecifiedFee` hook fee than the result of the swap
-        // However, we cannot validate the `unspecifiedFee` since the swap didn't happen yet.
-        // @TBD validate if this is a real problem or if the PoolManager handles the scenario where we attempt to larger amount than there is.
-        // if (unspecifiedFee > ...) revert HookFeeTooLarge();
 
         // Take the fee amount to the hook as ERC-6909 claims instead of performing an erc20 transfer.
         if (specifiedFee > 0) specified.take(poolManager, address(this), specifiedFee, true);

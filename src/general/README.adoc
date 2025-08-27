@@ -8,9 +8,11 @@ Ready-to-use hooks built on top of the base and fee abstract contracts
  * {LiquidityPenaltyHook}: Hook resistant to just-in-time liquidity attacks
  * {AntiSandwichHook}: Hook resistant to sandwich attacks on swaps
  * {LimitOrderHook}: Hook to enable limit order placing on liquidity pools
+ * {ReHypothecationHook}: Hook that enables rehypothecation of liquidity positions.
 
 == Hooks
 
 {{LiquidityPenaltyHook}}
 {{AntiSandwichHook}}
 {{LimitOrderHook}}
+{{ReHypothecationHook}}

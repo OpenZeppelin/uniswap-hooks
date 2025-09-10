@@ -8,6 +8,7 @@ optimizer_runs  = 200                                   # The number of optimize
 fs_permissions  = [{ access = "read", path = "./"}]     # Gives permission to read files for deployment keys.
 evm_version     = "cancun"                              # The EVM version to use
 ffi             = true                                  # Enable the foreign function interface (ffi) cheatcode.
+gas_limit = 100000000
 
 [fuzz]
 runs           = 256        # The number of times to run the fuzzing tests

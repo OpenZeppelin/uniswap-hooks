@@ -22,7 +22,7 @@ contract BaseHookFeeMock is BaseHookFee, AccessControl {
     /// @dev The authorized role to withdraw fees
     bytes32 public constant WITHDRAW_FEES_ROLE = keccak256("WITHDRAW_FEES_ROLE");
 
-    constructor(IPoolManager _poolManager, uint24 _hookFee, address _withdrawer) BaseHookFee(_poolManager) {
+    constructor(uint24 _hookFee, address _withdrawer) {
         _grantRole(WITHDRAW_FEES_ROLE, _withdrawer);
         hookFee = _hookFee;
     }
@@ -40,11 +40,13 @@ contract BaseHookFeeMock is BaseHookFee, AccessControl {
 
     /// @dev withdraws the hook fees to the sender.
     function handleHookFees(Currency[] memory currencies) public override onlyRole(WITHDRAW_FEES_ROLE) {
-        poolManager.unlock(abi.encode(currencies, msg.sender));
+        poolManager().unlock(abi.encode(currencies, msg.sender));
     }
 
     /// @dev callback from the poolManager to unlock and transfer the hook fees to the sender.
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
+        IPoolManager poolManager = poolManager();
+
         (Currency[] memory currencies, address recipient) = abi.decode(data, (Currency[], address));
 
         for (uint256 i = 0; i < currencies.length; i++) {

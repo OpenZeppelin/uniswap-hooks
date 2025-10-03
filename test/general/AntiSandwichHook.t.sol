@@ -7,11 +7,12 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+// Internal imports
+import {HookTest} from "test/utils/HookTest.sol";
+import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
 import {BaseDynamicFeeMock} from "src/mocks/BaseDynamicFeeMock.sol";
 import {AntiSandwichMock} from "src/mocks/AntiSandwichMock.sol";
-import {HookTest} from "../utils/HookTest.sol";
-import {toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
 
 contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
     AntiSandwichMock hook;
@@ -30,12 +31,10 @@ contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
         hook = AntiSandwichMock(
             address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG))
         );
-        deployCodeTo("src/mocks/AntiSandwichMock.sol:AntiSandwichMock", abi.encode(manager), address(hook));
+        deployCodeTo("src/mocks/AntiSandwichMock.sol:AntiSandwichMock", address(hook));
 
         dynamicFeesHooks = BaseDynamicFeeMock(address(uint160(Hooks.AFTER_INITIALIZE_FLAG)));
-        deployCodeTo(
-            "src/mocks/BaseDynamicFeeMock.sol:BaseDynamicFeeMock", abi.encode(manager), address(dynamicFeesHooks)
-        );
+        deployCodeTo("src/mocks/BaseDynamicFeeMock.sol:BaseDynamicFeeMock", address(dynamicFeesHooks));
 
         (key,) = initPoolAndAddLiquidity(
             currency0, currency1, IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1

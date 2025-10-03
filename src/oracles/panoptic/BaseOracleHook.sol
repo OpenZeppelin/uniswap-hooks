@@ -54,9 +54,8 @@ contract BaseOracleHook is BaseHook {
 
     /// @dev Initializes a Uniswap V4 pool with this hook, stores baseline observation state, and optionally performs a cardinality increase.
     ///
-    /// @param _manager The canonical Uniswap V4 pool manager
     /// @param _maxAbsTickDelta The maximum absolute tick delta that can be observed for the truncated oracle
-    constructor(IPoolManager _manager, int24 _maxAbsTickDelta) BaseHook(_manager) {
+    constructor(int24 _maxAbsTickDelta) {
         MAX_ABS_TICK_DELTA = _maxAbsTickDelta;
     }
 
@@ -117,7 +116,7 @@ contract BaseOracleHook is BaseHook {
 
         ObservationState memory _observationState = stateById[poolId];
 
-        (, int24 tick,,) = poolManager.getSlot0(poolId);
+        (, int24 tick,,) = poolManager().getSlot0(poolId);
 
         (_observationState.index, _observationState.cardinality) = observationsById[poolId].write(
             _observationState.index,
@@ -152,7 +151,7 @@ contract BaseOracleHook is BaseHook {
     {
         ObservationState memory _observationState = stateById[underlyingPoolId];
 
-        (, int24 tick,,) = poolManager.getSlot0(underlyingPoolId);
+        (, int24 tick,,) = poolManager().getSlot0(underlyingPoolId);
 
         return observationsById[underlyingPoolId].observe(
             uint32(block.timestamp),

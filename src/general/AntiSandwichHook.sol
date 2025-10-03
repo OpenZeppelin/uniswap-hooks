@@ -66,8 +66,6 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
     /// @dev Maps each pool to its last checkpoint.
     mapping(PoolId id => Checkpoint checkpoint) private _lastCheckpoints;
 
-    constructor(IPoolManager _poolManager) BaseDynamicAfterFee(_poolManager) {}
-
     /**
      * @dev Handles the before swap hook.
      *
@@ -83,6 +81,7 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         PoolId poolId = key.toId();
+        IPoolManager poolManager = poolManager();
         Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];
 
         uint48 currentBlock = _getBlockNumber();

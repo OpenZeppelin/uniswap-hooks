@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test} from "forge-std/Test.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
-import {BaseOverrideFeeMock} from "src/mocks/BaseOverrideFeeMock.sol";
+// External imports
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
@@ -20,30 +18,21 @@ import {BaseOverrideFee} from "src/fee/BaseOverrideFee.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 
-contract BaseOverrideFeeTest is Test, Deployers {
+// Internal imports
+import {HookTest} from "test/utils/HookTest.sol";
+import {BaseOverrideFeeMock} from "src/mocks/BaseOverrideFeeMock.sol";
+
+contract BaseOverrideFeeTest is HookTest {
     using StateLibrary for IPoolManager;
     using ProtocolFeeLibrary for uint16;
 
     BaseOverrideFeeMock dynamicFeesHooks;
 
-    event Swap(
-        PoolId indexed poolId,
-        address indexed sender,
-        int128 amount0,
-        int128 amount1,
-        uint160 sqrtPriceX96,
-        uint128 liquidity,
-        int24 tick,
-        uint24 fee
-    );
-
     function setUp() public {
         deployFreshManagerAndRouters();
 
         dynamicFeesHooks = BaseOverrideFeeMock(address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_INITIALIZE_FLAG)));
-        deployCodeTo(
-            "src/mocks/BaseOverrideFeeMock.sol:BaseOverrideFeeMock", abi.encode(manager), address(dynamicFeesHooks)
-        );
+        deployCodeTo("src/mocks/BaseOverrideFeeMock.sol:BaseOverrideFeeMock", address(dynamicFeesHooks));
 
         deployMintAndApprove2Currencies();
         (key,) = initPoolAndAddLiquidity(

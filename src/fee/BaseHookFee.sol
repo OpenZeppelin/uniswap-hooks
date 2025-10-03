@@ -4,7 +4,6 @@
 pragma solidity ^0.8.26;
 
 // External imports
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -41,8 +40,6 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
 
     /// @dev The maximum fee that can be applied to a hook, expressed in hundredths of a bip (100%)
     uint24 internal constant MAX_HOOK_FEE = 1e6;
-
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     /**
      * @dev Get the fee to be applied after the swap. Takes the `address` `sender`, a `PoolKey` `key`,
@@ -87,7 +84,7 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
 
         // Take the fee amount to the hook as ERC-6909 claims in order to save gas,
         // which can be redeemed back for tokens with the PoolManager at any point.
-        unspecified.take(poolManager, address(this), feeAmount, true);
+        unspecified.take(poolManager(), address(this), feeAmount, true);
 
         // Emit the hook fee event with the amounts ordered correctly
         if (unspecified == key.currency0) {

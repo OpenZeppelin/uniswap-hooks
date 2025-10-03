@@ -43,7 +43,7 @@ contract LimitOrderHookTest is HookTest {
 
         hook = LimitOrderHook(address(uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG)));
 
-        deployCodeTo("src/general/LimitOrderHook.sol:LimitOrderHook", abi.encode(manager), address(hook));
+        deployCodeTo("src/general/LimitOrderHook.sol:LimitOrderHook", address(hook));
 
         (key,) = initPool(currency0, currency1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
         (noHookKey,) = initPool(currency0, currency1, IHooks(address(0)), 3000, SQRT_PRICE_1_1);

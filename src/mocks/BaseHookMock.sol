@@ -5,7 +5,6 @@ pragma solidity ^0.8.26;
 import {BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -27,8 +26,6 @@ contract BaseHookMock is BaseHook {
     event Callback();
 
     error RevertCallback();
-
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     function _beforeInitialize(address, PoolKey calldata, uint160) internal virtual override returns (bytes4) {
         emit BeforeInitialize();
@@ -149,7 +146,7 @@ contract BaseHookMock is BaseHook {
 
     /// @dev Unlock the poolManager, which will perform a callback to {unlockCallback} with `bytes calldata call`
     function unlockAndCall(bool revertCallback) external {
-        poolManager.unlock(abi.encode(revertCallback));
+        poolManager().unlock(abi.encode(revertCallback));
     }
 
     /// @dev Called by the poolMananger after being unlocked
@@ -171,8 +168,6 @@ contract BaseHookMock is BaseHook {
 }
 
 contract BaseHookMockReverts is BaseHook {
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
     /**
      * @dev Set all permissions.
      */

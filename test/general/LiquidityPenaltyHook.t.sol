@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {LiquidityPenaltyHook} from "src/general/LiquidityPenaltyHook.sol";
+// External imports
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
@@ -12,10 +12,13 @@ import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/Bala
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
-import {HookTest} from "test/utils/HookTest.sol";
 import {toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+
+// Internal imports
+import {HookTest} from "test/utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
+import {LiquidityPenaltyHook} from "src/general/LiquidityPenaltyHook.sol";
 
 contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
     LiquidityPenaltyHook hook;
@@ -40,7 +43,7 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
                 )
             )
         );
-        deployCodeTo("src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(manager, 1), address(hook));
+        deployCodeTo("src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(1), address(hook));
 
         (key,) = initPool(currency0, currency1, IHooks(address(hook)), fee, SQRT_PRICE_1_1);
         (noHookKey,) = initPool(currency0, currency1, IHooks(address(0)), fee, SQRT_PRICE_1_1);
@@ -51,7 +54,7 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
 
     function test_deploy_LowOffset_reverts() public {
         vm.expectRevert();
-        deployCodeTo("src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(manager, 0), address(hook));
+        deployCodeTo("src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(0), address(hook));
     }
 
     function test_noSwaps() public {
@@ -371,9 +374,7 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
             ) // 2**96 is an offset to avoid collision with the hook address already in the test
         );
 
-        deployCodeTo(
-            "src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(manager, offset), address(newHook)
-        );
+        deployCodeTo("src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(offset), address(newHook));
 
         (PoolKey memory poolKey,) = initPool(currency0, currency1, IHooks(address(newHook)), fee, SQRT_PRICE_1_1);
 
@@ -423,9 +424,7 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
             ) // 2**96 is an offset to avoid collision with the hook address already in the test
         );
 
-        deployCodeTo(
-            "src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(manager, offset), address(newHook)
-        );
+        deployCodeTo("src/general/LiquidityPenaltyHook.sol:LiquidityPenaltyHook", abi.encode(offset), address(newHook));
 
         (PoolKey memory poolKey,) = initPool(currency0, currency1, IHooks(address(newHook)), fee, SQRT_PRICE_1_1);
 

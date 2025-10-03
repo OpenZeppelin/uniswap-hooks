@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test} from "forge-std/Test.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
+// External imports
 import {BaseHook} from "src/base/BaseHook.sol";
 import {BaseHookMock, BaseHookMockReverts} from "src/mocks/BaseHookMock.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
@@ -12,20 +11,10 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+// Internal imports
+import {HookTest} from "test/utils/HookTest.sol";
 
-contract BaseHookTest is Test, Deployers {
-    event Swap(
-        PoolId indexed poolId,
-        address indexed sender,
-        int128 amount0,
-        int128 amount1,
-        uint160 sqrtPriceX96,
-        uint128 liquidity,
-        int24 tick,
-        uint24 fee
-    );
-
+contract BaseHookTest is HookTest {
     BaseHookMock hook;
     BaseHookMockReverts hookReverts;
 
@@ -42,10 +31,10 @@ contract BaseHookTest is Test, Deployers {
                 )
             )
         );
-        deployCodeTo("src/mocks/BaseHookMock.sol:BaseHookMock", abi.encode(manager), address(hook));
+        deployCodeTo("src/mocks/BaseHookMock.sol:BaseHookMock", address(hook));
 
         hookReverts = BaseHookMockReverts(address(0x1000000000000000000000000000000000003FF0));
-        deployCodeTo("src/mocks/BaseHookMock.sol:BaseHookMockReverts", abi.encode(manager), address(hookReverts));
+        deployCodeTo("src/mocks/BaseHookMock.sol:BaseHookMockReverts", address(hookReverts));
 
         deployMintAndApprove2Currencies();
 

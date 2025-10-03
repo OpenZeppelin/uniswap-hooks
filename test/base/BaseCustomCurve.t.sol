@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test} from "forge-std/Test.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
+// External imports
 import {BaseCustomCurveMock} from "src/mocks/BaseCustomCurveMock.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -19,20 +18,12 @@ import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
-contract BaseCustomCurveTest is Test, Deployers {
+// Internal imports
+import {HookTest} from "test/utils/HookTest.sol";
+
+contract BaseCustomCurveTest is HookTest {
     using SafeCast for uint256;
     using StateLibrary for IPoolManager;
-
-    event Swap(
-        PoolId indexed poolId,
-        address indexed sender,
-        int128 amount0,
-        int128 amount1,
-        uint160 sqrtPriceX96,
-        uint128 liquidity,
-        int24 tick,
-        uint24 fee
-    );
 
     BaseCustomCurveMock hook;
 
@@ -57,7 +48,7 @@ contract BaseCustomCurveTest is Test, Deployers {
                 )
             )
         );
-        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", abi.encode(manager), address(hook));
+        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", address(hook));
 
         deployMintAndApprove2Currencies();
         (key, id) = initPool(currency0, currency1, IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1);
@@ -104,7 +95,7 @@ contract BaseCustomCurveTest is Test, Deployers {
 
     function test_addLiquidity_native_succeeds() public {
         BaseCustomCurveMock nativeHook = BaseCustomCurveMock(payable(0x1000000000000000000000000000000000002A88));
-        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", abi.encode(manager), address(nativeHook));
+        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", address(nativeHook));
         (key, id) = initPool(
             CurrencyLibrary.ADDRESS_ZERO,
             currency1,
@@ -371,7 +362,7 @@ contract BaseCustomCurveTest is Test, Deployers {
 
     function test_removeLiquidity_native_succeeds() public {
         BaseCustomCurveMock nativeHook = BaseCustomCurveMock(payable(0x1000000000000000000000000000000000002A88));
-        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", abi.encode(manager), address(nativeHook));
+        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", address(nativeHook));
         (key, id) = initPool(
             CurrencyLibrary.ADDRESS_ZERO,
             currency1,
@@ -492,9 +483,7 @@ contract BaseCustomCurveTest is Test, Deployers {
 
     function test_removeLiquidity_notInitialized_reverts() public {
         BaseCustomCurveMock uninitializedHook = BaseCustomCurveMock(payable(0x1000000000000000000000000000000000002A88));
-        deployCodeTo(
-            "src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", abi.encode(manager), address(uninitializedHook)
-        );
+        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", address(uninitializedHook));
 
         vm.expectRevert(BaseCustomAccounting.PoolNotInitialized.selector);
         uninitializedHook.removeLiquidity(
@@ -504,9 +493,7 @@ contract BaseCustomCurveTest is Test, Deployers {
 
     function test_addLiquidity_notInitialized_reverts() public {
         BaseCustomCurveMock uninitializedHook = BaseCustomCurveMock(payable(0x1000000000000000000000000000000000002A88));
-        deployCodeTo(
-            "src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", abi.encode(manager), address(uninitializedHook)
-        );
+        deployCodeTo("src/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", address(uninitializedHook));
 
         vm.expectRevert(BaseCustomAccounting.PoolNotInitialized.selector);
         uninitializedHook.addLiquidity(

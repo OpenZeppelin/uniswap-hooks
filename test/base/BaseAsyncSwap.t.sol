@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test} from "forge-std/Test.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
-import {BaseAsyncSwapMock} from "src/mocks/BaseAsyncSwapMock.sol";
+// External imports
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
@@ -13,31 +11,22 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {ProtocolFeeLibrary} from "@uniswap/v4-core/src/libraries/ProtocolFeeLibrary.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+// Internal imports
+import {HookTest} from "test/utils/HookTest.sol";
+import {BaseAsyncSwapMock} from "src/mocks/BaseAsyncSwapMock.sol";
 
-contract BaseAsyncSwapTest is Test, Deployers {
+contract BaseAsyncSwapTest is HookTest {
     using StateLibrary for IPoolManager;
     using ProtocolFeeLibrary for uint16;
 
     BaseAsyncSwapMock hook;
 
-    event Swap(
-        PoolId indexed poolId,
-        address indexed sender,
-        int128 amount0,
-        int128 amount1,
-        uint160 sqrtPriceX96,
-        uint128 liquidity,
-        int24 tick,
-        uint24 fee
-    );
-
     function setUp() public {
         deployFreshManagerAndRouters();
 
         hook = BaseAsyncSwapMock(address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG)));
-        deployCodeTo("src/mocks/BaseAsyncSwapMock.sol:BaseAsyncSwapMock", abi.encode(manager), address(hook));
+        deployCodeTo("src/mocks/BaseAsyncSwapMock.sol:BaseAsyncSwapMock", address(hook));
 
         deployMintAndApprove2Currencies();
         (key,) = initPoolAndAddLiquidity(

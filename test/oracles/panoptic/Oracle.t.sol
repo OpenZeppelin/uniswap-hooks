@@ -9,7 +9,6 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
@@ -19,8 +18,9 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {OracleHookWithV3Adapters} from "../../../src/oracles/panoptic/OracleHookWithV3Adapters.sol";
 import {V3OracleAdapter} from "../../../src/oracles/panoptic/adapters/V3OracleAdapter.sol";
 import {V3TruncatedOracleAdapter} from "../../../src/oracles/panoptic/adapters/V3TruncatedOracleAdapter.sol";
+import {HookTest} from "test/utils/HookTest.sol";
 
-contract OracleTestV4 is Test, Deployers {
+contract OracleTestV4 is HookTest {
     using StateLibrary for IPoolManager;
 
     OracleHookWithV3Adapters public constant ORACLE_BASE =
@@ -256,7 +256,7 @@ contract OracleLibTest is Test {
         oracle = new OracleTestV4();
         manager = oracle.getManager();
 
-        deployCodeTo("OracleHookWithV3Adapters.sol", abi.encode(manager, int24(9116)), address(ORACLE_BASE));
+        deployCodeTo("OracleHookWithV3Adapters.sol", abi.encode(int24(9116)), address(ORACLE_BASE));
     }
 
     function test_fail_increaseObservationCardinalityNext_notInitialized() public {

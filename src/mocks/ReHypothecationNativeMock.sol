@@ -5,7 +5,6 @@ pragma solidity ^0.8.26;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -67,10 +66,7 @@ contract ReHypothecationNativeMock is ReHypothecationHook {
     /// @dev Error thrown when attempting to use an unsupported currency.
     error UnsupportedCurrency();
 
-    constructor(IPoolManager poolManager_, address yieldSource0_, address yieldSource1_)
-        ReHypothecationHook(poolManager_)
-        ERC20("ReHypothecationMock", "RHM")
-    {
+    constructor(address yieldSource0_, address yieldSource1_) ReHypothecationHook("ReHypothecationMock", "RHM") {
         _yieldSource0 = yieldSource0_;
         _yieldSource1 = yieldSource1_;
     }

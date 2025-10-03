@@ -6,7 +6,6 @@ pragma solidity ^0.8.26;
 // External imports
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {
     BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta
 } from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
@@ -48,11 +47,6 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
     using CurrencySettler for Currency;
 
     /**
-     * @dev Set the `PoolManager` address.
-     */
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
-    /**
      * @dev Skip the v3-like swap implementation of the `PoolManager` by returning a delta that nets out the
      * specified amount to 0 to enable asynchronous swaps.
      */
@@ -71,7 +65,7 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
             uint256 specifiedAmount = uint256(-params.amountSpecified);
 
             // Mint ERC-6909 claim token for the specified currency and amount
-            specified.take(poolManager, address(this), specifiedAmount, true);
+            specified.take(poolManager(), address(this), specifiedAmount, true);
 
             // Calculate the fee amount for the swap, paid to LPs
             uint256 feeAmount = _calculateSwapFee(key, specifiedAmount);

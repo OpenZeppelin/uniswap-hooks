@@ -18,6 +18,13 @@ import {IPoolManagerEvents} from "test/utils/interfaces/IPoolManagerEvents.sol";
 
 // @dev Set of utilities to test Hooks.
 contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
+    IPoolManager constant POOL_MANAGER = IPoolManager(address(0x000000000004444c5dc75cB358380D2e3dE08A90));
+
+    function deployFreshManager() internal override {
+        deployCodeTo("PoolManager", abi.encode(address(this)), address(POOL_MANAGER));
+        manager = POOL_MANAGER;
+    }
+
     // @dev Calculate the current `feesAccrued` for a given position.
     function calculateFees(
         IPoolManager manager,

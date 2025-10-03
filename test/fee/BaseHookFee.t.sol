@@ -2,8 +2,6 @@
 pragma solidity ^0.8.26;
 
 // External imports
-import {Test} from "forge-std/Test.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
@@ -13,11 +11,11 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-
 // Internal imports
 import {BaseHookFeeMock} from "src/mocks/BaseHookFeeMock.sol";
+import {HookTest} from "test/utils/HookTest.sol";
 
-contract BaseHookFeeTest is Test, Deployers {
+contract BaseHookFeeTest is HookTest {
     using SafeCast for *;
 
     uint256 public constant MAX_HOOK_FEE = 1e6;
@@ -39,9 +37,7 @@ contract BaseHookFeeTest is Test, Deployers {
         withdrawer = makeAddr("withdrawer");
 
         hook = BaseHookFeeMock(address(uint160(Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG)));
-        deployCodeTo(
-            "src/mocks/BaseHookFeeMock.sol:BaseHookFeeMock", abi.encode(manager, hookFee, withdrawer), address(hook)
-        );
+        deployCodeTo("src/mocks/BaseHookFeeMock.sol:BaseHookFeeMock", abi.encode(hookFee, withdrawer), address(hook));
 
         (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
         (noHookKey,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 3000, SQRT_PRICE_1_1);

@@ -32,11 +32,7 @@ contract BaseDynamicAfterFeeTest is HookTest {
                 address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG))
             )
         );
-        deployCodeTo(
-            "src/mocks/BaseDynamicAfterFeeMock.sol:BaseDynamicAfterFeeMock",
-            abi.encode(manager),
-            address(dynamicFeesHook)
-        );
+        deployCodeTo("src/mocks/BaseDynamicAfterFeeMock.sol:BaseDynamicAfterFeeMock", address(dynamicFeesHook));
 
         deployMintAndApprove2Currencies();
 

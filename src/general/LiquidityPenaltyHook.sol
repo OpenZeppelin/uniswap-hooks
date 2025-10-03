@@ -87,7 +87,7 @@ contract LiquidityPenaltyHook is BaseHook {
     /**
      * @dev Sets the `PoolManager` address and the {getBlockNumberOffset}.
      */
-    constructor(IPoolManager _poolManager, uint48 _blockNumberOffset) BaseHook(_poolManager) {
+    constructor(uint48 _blockNumberOffset) {
         if (_blockNumberOffset < MIN_BLOCK_NUMBER_OFFSET) revert BlockNumberOffsetTooLow();
         blockNumberOffset = _blockNumberOffset;
     }
@@ -162,9 +162,9 @@ contract LiquidityPenaltyHook is BaseHook {
 
             // If there is a penalty to be applied but there are no active liquidity positions in range to
             // receive the donation, then the liquidity removal is not possible and the offset must be awaited.
-            if (poolManager.getLiquidity(poolId) == 0) revert NoLiquidityToReceiveDonation();
+            if (poolManager().getLiquidity(poolId) == 0) revert NoLiquidityToReceiveDonation();
 
-            poolManager.donate(
+            poolManager().donate(
                 key, uint256(int256(liquidityPenalty.amount0())), uint256(int256(liquidityPenalty.amount1())), ""
             );
 
@@ -199,6 +199,7 @@ contract LiquidityPenaltyHook is BaseHook {
      */
     function _takeFeesToHook(PoolKey calldata key, bytes32 positionKey, BalanceDelta feeDelta) internal virtual {
         PoolId poolId = key.toId();
+        IPoolManager poolManager = poolManager();
 
         _withheldFees[poolId][positionKey] = _withheldFees[poolId][positionKey] + feeDelta;
 
@@ -215,6 +216,7 @@ contract LiquidityPenaltyHook is BaseHook {
         returns (BalanceDelta withheldFees)
     {
         PoolId poolId = key.toId();
+        IPoolManager poolManager = poolManager();
 
         withheldFees = getWithheldFees(poolId, positionKey);
 

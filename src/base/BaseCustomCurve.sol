@@ -48,11 +48,6 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     }
 
     /**
-     * @dev Set the pool `PoolManager` address.
-     */
-    constructor(IPoolManager _poolManager) BaseCustomAccounting(_poolManager) {}
-
-    /**
      * @dev Defines how the liquidity modification data is encoded and returned
      * for an add liquidity request.
      */
@@ -91,8 +86,10 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         internal
         virtual
         override
-        returns (bytes4, BeforeSwapDelta, uint24)
+        returns (bytes4, BeforeSwapDelta returnDelta, uint24)
     {
+        IPoolManager poolManager = poolManager();
+
         // Determine if the swap is exact input or exact output
         bool exactInput = params.amountSpecified < 0;
 
@@ -108,9 +105,6 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
 
         // Get the total amount of fees to be paid in the swap
         uint256 swapFeeAmount = _getSwapFeeAmount(params, unspecifiedAmount);
-
-        // New delta must be returned, so store in memory
-        BeforeSwapDelta returnDelta;
 
         if (exactInput) {
             // For exact input swaps:
@@ -171,7 +165,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     {
         (int128 amount0, int128 amount1) = abi.decode(params, (int128, int128));
         (callerDelta, feesAccrued) = abi.decode(
-            poolManager.unlock(abi.encode(CallbackDataCustom(msg.sender, amount0, amount1))),
+            poolManager().unlock(abi.encode(CallbackDataCustom(msg.sender, amount0, amount1))),
             (BalanceDelta, BalanceDelta)
         );
     }
@@ -190,6 +184,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
         onlyPoolManager
         returns (bytes memory returnData)
     {
+        IPoolManager poolManager = poolManager();
         CallbackDataCustom memory data = abi.decode(rawData, (CallbackDataCustom));
 
         int128 amount0;

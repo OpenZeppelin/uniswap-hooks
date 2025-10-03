@@ -6,7 +6,6 @@ pragma solidity ^0.8.26;
 // External imports
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
@@ -29,11 +28,6 @@ abstract contract BaseOverrideFee is BaseHook {
      * @dev The hook was attempted to be initialized with a non-dynamic fee.
      */
     error NotDynamicFee();
-
-    /**
-     * @dev Set the `PoolManager` address.
-     */
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     /**
      * @dev Check that the pool key has a dynamic fee.

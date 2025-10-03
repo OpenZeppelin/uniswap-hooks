@@ -201,9 +201,6 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
      */
     event Withdraw(address indexed owner, OrderIdLibrary.OrderId indexed orderId, uint128 liquidity);
 
-    /// @dev Set the `PoolManager` address.
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
     /// @dev Hooks into the `afterInitialize` hook to set the last tick lower for the pool.
     function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick)
         internal
@@ -293,7 +290,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
         // IMPORTANT: `tick` must be valid, i.e. within the range of `MIN_TICK` and `MAX_TICK`, defined in the `TickMath` library and it must be
         // a multiple of `key.tickSpacing`.
         (uint256 amount0Fee, uint256 amount1Fee) = abi.decode(
-            poolManager.unlock(
+            poolManager().unlock(
                 abi.encode(
                     CallbackData(
                         CallbackType.Place, abi.encode(PlaceCallbackData(key, msg.sender, zeroForOne, tick, liquidity))
@@ -357,7 +354,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
         // Note that `amount0Fee` and `amount1Fee` are the fees accrued by the position and will not be transferred to
         // the `to` address. Instead, they will be added to the order info (benefiting the remaining limit order placers).
         (uint256 amount0Fee, uint256 amount1Fee) = abi.decode(
-            poolManager.unlock(
+            poolManager().unlock(
                 abi.encode(
                     CallbackData(
                         CallbackType.Cancel,
@@ -430,7 +427,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
 
         // unlock the callback to the poolManager, the callback will trigger `unlockCallback`
         // and return the liquidity to the `to` address.
-        poolManager.unlock(
+        poolManager().unlock(
             abi.encode(
                 CallbackData(
                     CallbackType.Withdraw,
@@ -480,7 +477,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
         virtual
         returns (uint256 amount0Fee, uint256 amount1Fee)
     {
-        // get the pool key
+        IPoolManager poolManager = poolManager();
         PoolKey memory key = placeData.key;
 
         // add the out of range liquidity to the pool
@@ -534,7 +531,8 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
         virtual
         returns (uint256 amount0Fee, uint256 amount1Fee)
     {
-        // get the tick upper
+        IPoolManager poolManager = poolManager();
+
         int24 tickUpper = cancelData.tickLower + cancelData.key.tickSpacing;
 
         // remove the liquidity from the pool. The fees accrued by the position are included in the `cancelDelta`
@@ -595,6 +593,8 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
      * burns the specified currency amounts from the hook, and transfers them to the recipient address.
      */
     function _handleWithdrawCallback(WithdrawCallbackData memory withdrawData) internal virtual {
+        IPoolManager poolManager = poolManager();
+
         // if the amount of currency0 is positive, burn the currency0 from the hook
         if (withdrawData.currency0Amount > 0) {
             // burn the currency0 from the hook
@@ -618,7 +618,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
      * updates order state to track filled amounts.
      */
     function _fillOrder(PoolKey calldata key, int24 tickLower, bool zeroForOne) internal virtual {
-        // get the order
+        IPoolManager poolManager = poolManager();
         OrderIdLibrary.OrderId orderId = getOrderId(key, tickLower, zeroForOne);
 
         // if the order is not default (not initialized), fill it
@@ -749,7 +749,7 @@ contract LimitOrderHook is BaseHook, IUnlockCallback {
      * from the pool's current sqrt price.
      */
     function _getTick(PoolId poolId) internal view returns (int24 tick) {
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
+        (uint160 sqrtPriceX96,,,) = poolManager().getSlot0(poolId);
         tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
     }
 

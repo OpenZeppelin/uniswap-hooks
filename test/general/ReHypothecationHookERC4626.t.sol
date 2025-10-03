@@ -50,7 +50,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         );
         deployCodeTo(
             "src/mocks/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
-            abi.encode(manager, address(yieldSource0), address(yieldSource1)),
+            abi.encode(address(yieldSource0), address(yieldSource1)),
             address(hook)
         );
 
@@ -130,7 +130,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         );
         deployCodeTo(
             "src/mocks/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
-            abi.encode(manager, address(yieldSource0), address(yieldSource1)),
+            abi.encode(address(yieldSource0), address(yieldSource1)),
             address(newHook)
         );
         vm.expectRevert(ReHypothecationHook.NotInitialized.selector);
@@ -262,7 +262,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         );
         deployCodeTo(
             "src/mocks/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
-            abi.encode(manager, address(yieldSource0), address(yieldSource1)),
+            abi.encode(address(yieldSource0), address(yieldSource1)),
             address(newHook)
         );
         vm.expectRevert(ReHypothecationHook.NotInitialized.selector);

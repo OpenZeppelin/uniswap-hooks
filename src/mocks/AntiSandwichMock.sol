@@ -14,8 +14,6 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
 contract AntiSandwichMock is AntiSandwichHook {
     using CurrencySettler for Currency;
 
-    constructor(IPoolManager _poolManager) AntiSandwichHook(_poolManager) {}
-
     /**
      * @dev Handles the excess tokens collected during the swap due to the anti-sandwich mechanism.
      * When a swap executes at a worse price than what's currently available in the pool (due to
@@ -34,6 +32,7 @@ contract AntiSandwichMock is AntiSandwichHook {
         uint256,
         uint256 feeAmount
     ) internal override {
+        IPoolManager poolManager = poolManager();
         Currency unspecified = (params.amountSpecified < 0 == params.zeroForOne) ? (key.currency1) : (key.currency0);
         (uint256 amount0, uint256 amount1) = unspecified == key.currency0
             ? (uint256(uint128(feeAmount)), uint256(0))

@@ -17,8 +17,6 @@ contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
     uint256 private _mockTargetUnspecifiedAmount;
     bool private _mockApplyTarget;
 
-    constructor(IPoolManager _poolManager) BaseDynamicAfterFee(_poolManager) {}
-
     function setMockTargetUnspecifiedAmount(uint256 amount, bool active) public {
         _mockTargetUnspecifiedAmount = amount;
         _mockApplyTarget = active;
@@ -31,6 +29,7 @@ contract BaseDynamicAfterFeeMock is BaseDynamicAfterFee {
         uint256,
         uint256 feeAmount
     ) internal override {
+        IPoolManager poolManager = poolManager();
         Currency unspecified = (params.amountSpecified < 0 == params.zeroForOne) ? (key.currency1) : (key.currency0);
 
         // Burn ERC-6909 and take underlying tokens

@@ -7,7 +7,6 @@ pragma solidity ^0.8.26;
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -86,11 +85,6 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     function _setTransientApplyTarget(bool value) internal {
         BASE_DYNAMIC_AFTER_FEE_SLOT.offset(APPLY_TARGET_OFFSET).asBoolean().tstore(value);
     }
-
-    /**
-     * @dev Set the `PoolManager` address.
-     */
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     /**
      * @dev Sets the target unspecified amount and apply flag to be used in the `afterSwap` hook.
@@ -177,7 +171,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
 
         if (feeAmount > 0) {
             // Mint ERC-6909 tokens for unspecified currency fee and call handler
-            unspecified.take(poolManager, address(this), feeAmount.toUint128(), true);
+            unspecified.take(poolManager(), address(this), feeAmount.toUint128(), true);
             _afterSwapHandler(key, params, delta, targetUnspecifiedAmount, feeAmount);
 
             // Emit the swap event with the amounts ordered correctly

@@ -115,11 +115,6 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
     }
 
     /**
-     * @dev Set the pool `PoolManager` address.
-     */
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
-    /**
      * @notice Returns the hook's pool key. Note that this hook works with a single pool key.
      */
     function poolKey() public view returns (PoolKey memory) {
@@ -148,7 +143,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
     {
         PoolKey memory key = poolKey();
 
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(key.toId());
+        (uint160 sqrtPriceX96,,,) = poolManager().getSlot0(key.toId());
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
@@ -200,7 +195,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         ensure(params.deadline)
         returns (BalanceDelta delta)
     {
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey().toId());
+        (uint160 sqrtPriceX96,,,) = poolManager().getSlot0(poolKey().toId());
 
         if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
@@ -236,7 +231,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         returns (BalanceDelta callerDelta, BalanceDelta feesAccrued)
     {
         (callerDelta, feesAccrued) = abi.decode(
-            poolManager.unlock(abi.encode(CallbackData(msg.sender, abi.decode(params, (ModifyLiquidityParams))))),
+            poolManager().unlock(abi.encode(CallbackData(msg.sender, abi.decode(params, (ModifyLiquidityParams))))),
             (BalanceDelta, BalanceDelta)
         );
     }
@@ -255,6 +250,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         returns (bytes memory returnData)
     {
         PoolKey memory key = poolKey();
+        IPoolManager poolManager = poolManager();
 
         CallbackData memory data = abi.decode(rawData, (CallbackData));
 
@@ -310,6 +306,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         virtual
     {
         PoolKey memory key = poolKey();
+        IPoolManager poolManager = poolManager();
 
         // Send any accrued fees to the sender
         key.currency0.take(poolManager, data.sender, uint256(int256(feesAccrued.amount0())), false);

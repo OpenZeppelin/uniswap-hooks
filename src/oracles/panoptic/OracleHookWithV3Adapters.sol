@@ -27,13 +27,13 @@ contract OracleHookWithV3Adapters is BaseOracleHook {
 
     /// @dev Initializes a Uniswap V4 pool with this hook, stores baseline observation state, and optionally performs a cardinality increase.
     ///
-    /// @param _manager The canonical Uniswap V4 pool manager
     /// @param _maxAbsTickDelta The maximum absolute tick delta that can be observed for the truncated oracle
-    constructor(IPoolManager _manager, int24 _maxAbsTickDelta) BaseOracleHook(_manager, _maxAbsTickDelta) {}
+    constructor(int24 _maxAbsTickDelta) BaseOracleHook(_maxAbsTickDelta) {}
 
     /// @inheritdoc BaseOracleHook
     function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick) internal override returns (bytes4) {
         PoolId poolId = key.toId();
+        IPoolManager poolManager = poolManager();
 
         // Deploy adapter contracts
         V3OracleAdapter _standardAdapter = new V3OracleAdapter(poolManager, this, poolId);

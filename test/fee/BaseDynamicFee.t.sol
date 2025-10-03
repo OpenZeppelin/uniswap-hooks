@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test} from "forge-std/Test.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
-import {BaseDynamicFeeMock} from "src/mocks/BaseDynamicFeeMock.sol";
+// External imports
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
@@ -16,34 +14,24 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {ProtocolFeeLibrary} from "@uniswap/v4-core/src/libraries/ProtocolFeeLibrary.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
-import {BaseDynamicFee} from "src/fee/BaseDynamicFee.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+// Internal imports
+import {HookTest} from "test/utils/HookTest.sol";
+import {BaseDynamicFee} from "src/fee/BaseDynamicFee.sol";
+import {BaseDynamicFeeMock} from "src/mocks/BaseDynamicFeeMock.sol";
 
-contract BaseDynamicFeeTest is Test, Deployers {
+contract BaseDynamicFeeTest is HookTest {
     using StateLibrary for IPoolManager;
     using ProtocolFeeLibrary for uint16;
 
     BaseDynamicFeeMock dynamicFeesHooks;
 
-    event Swap(
-        PoolId indexed poolId,
-        address indexed sender,
-        int128 amount0,
-        int128 amount1,
-        uint160 sqrtPriceX96,
-        uint128 liquidity,
-        int24 tick,
-        uint24 fee
-    );
-
     function setUp() public {
         deployFreshManagerAndRouters();
 
         dynamicFeesHooks = BaseDynamicFeeMock(address(uint160(Hooks.AFTER_INITIALIZE_FLAG)));
-        deployCodeTo(
-            "src/mocks/BaseDynamicFeeMock.sol:BaseDynamicFeeMock", abi.encode(manager), address(dynamicFeesHooks)
-        );
+        deployCodeTo("src/mocks/BaseDynamicFeeMock.sol:BaseDynamicFeeMock", address(dynamicFeesHooks));
 
         deployMintAndApprove2Currencies();
         (key,) = initPoolAndAddLiquidity(

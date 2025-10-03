@@ -6,7 +6,6 @@ pragma solidity ^0.8.26;
 // External imports
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
@@ -29,11 +28,6 @@ abstract contract BaseDynamicFee is BaseHook {
     error NotDynamicFee();
 
     /**
-     * @dev Set the `PoolManager` address.
-     */
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
-
-    /**
      * @dev Returns a fee, denominated in hundredths of a bip, to be applied to the pool after it is initialized.
      */
     function _getFee(PoolKey calldata key) internal virtual returns (uint24);
@@ -48,7 +42,7 @@ abstract contract BaseDynamicFee is BaseHook {
         returns (bytes4)
     {
         if (!key.fee.isDynamicFee()) revert NotDynamicFee();
-        poolManager.updateDynamicLPFee(key, _getFee(key));
+        poolManager().updateDynamicLPFee(key, _getFee(key));
         return this.afterInitialize.selector;
     }
 
@@ -70,7 +64,7 @@ abstract contract BaseDynamicFee is BaseHook {
      * @param key The pool key to update the dynamic LP fee for.
      */
     function poke(PoolKey calldata key) public virtual onlyValidPools(key.hooks) {
-        poolManager.updateDynamicLPFee(key, _getFee(key));
+        poolManager().updateDynamicLPFee(key, _getFee(key));
     }
 
     /**

@@ -6,19 +6,15 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 // Internal imports
 import {HookTest} from "test/utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
-import {BaseDynamicFeeMock} from "src/mocks/BaseDynamicFeeMock.sol";
 import {AntiSandwichMock} from "src/mocks/AntiSandwichMock.sol";
 
 contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
     AntiSandwichMock hook;
     PoolKey noHookKey;
-
-    BaseDynamicFeeMock dynamicFeesHooks;
 
     // @dev expected values for pools with 1e18 liquidity.
     int128 constant SWAP_AMOUNT_1E15 = 1e15;
@@ -33,15 +29,8 @@ contract AntiSandwichHookTest is HookTest, BalanceDeltaAssertions {
         );
         deployCodeTo("src/mocks/AntiSandwichMock.sol:AntiSandwichMock", address(hook));
 
-        dynamicFeesHooks = BaseDynamicFeeMock(address(uint160(Hooks.AFTER_INITIALIZE_FLAG)));
-        deployCodeTo("src/mocks/BaseDynamicFeeMock.sol:BaseDynamicFeeMock", address(dynamicFeesHooks));
-
-        (key,) = initPoolAndAddLiquidity(
-            currency0, currency1, IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
-        );
-        (noHookKey,) = initPoolAndAddLiquidity(
-            currency0, currency1, IHooks(address(dynamicFeesHooks)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1
-        );
+        (key,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(hook)), 0, 60, SQRT_PRICE_1_1);
+        (noHookKey,) = initPoolAndAddLiquidity(currency0, currency1, IHooks(address(0)), 0, 60, SQRT_PRICE_1_1);
 
         vm.label(Currency.unwrap(currency0), "currency0");
         vm.label(Currency.unwrap(currency1), "currency1");

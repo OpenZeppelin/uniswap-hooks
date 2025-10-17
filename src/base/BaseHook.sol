@@ -33,16 +33,6 @@ abstract contract BaseHook is IHooks {
      */
 
     /**
-     * @dev The hook is not the caller.
-     */
-    error NotSelf();
-
-    /**
-     * @dev The pool is not authorized to use this hook.
-     */
-    error InvalidPool();
-
-    /**
      * @dev The hook function is not implemented.
      */
     error HookNotImplemented();
@@ -64,22 +54,6 @@ abstract contract BaseHook is IHooks {
      */
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager())) revert NotPoolManager();
-        _;
-    }
-
-    /**
-     * @dev Restrict the function to only be callable by the hook itself.
-     */
-    modifier onlySelf() {
-        if (msg.sender != address(this)) revert NotSelf();
-        _;
-    }
-
-    /**
-     * @dev Restrict the function to only be called for a valid pool.
-     */
-    modifier onlyValidPools(IHooks hooks) {
-        if (hooks != this) revert InvalidPool();
         _;
     }
 

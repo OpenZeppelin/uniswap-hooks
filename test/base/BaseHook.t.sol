@@ -9,7 +9,6 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
-import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 // Internal imports
 import {HookTest} from "test/utils/HookTest.sol";
@@ -228,14 +227,5 @@ contract BaseHookTest is HookTest {
 
         vm.expectRevert(BaseHook.NotPoolManager.selector);
         hook.afterDonate(address(this), key, 1e18, 1e18, ZERO_BYTES);
-    }
-
-    function test_onlyValidPools_succeeds() public {
-        PoolKey memory key =
-            PoolKey({currency0: currency0, currency1: currency1, fee: 0, tickSpacing: 0, hooks: IHooks(address(0x123))});
-
-        vm.prank(address(manager));
-        vm.expectRevert(BaseHook.InvalidPool.selector);
-        hook.beforeSwap(address(this), key, SWAP_PARAMS, ZERO_BYTES);
     }
 }

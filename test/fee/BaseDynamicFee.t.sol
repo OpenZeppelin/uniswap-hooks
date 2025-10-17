@@ -31,7 +31,11 @@ contract BaseDynamicFeeTest is HookTest {
         deployFreshManagerAndRouters();
 
         dynamicFeesHooks = BaseDynamicFeeMock(address(uint160(Hooks.AFTER_INITIALIZE_FLAG)));
-        deployCodeTo("src/mocks/BaseDynamicFeeMock.sol:BaseDynamicFeeMock", address(dynamicFeesHooks));
+        deployCodeTo(
+            "src/mocks/BaseDynamicFeeMock.sol:BaseDynamicFeeMock",
+            abi.encode(address(this), address(this)),
+            address(dynamicFeesHooks)
+        );
 
         deployMintAndApprove2Currencies();
         (key,) = initPoolAndAddLiquidity(

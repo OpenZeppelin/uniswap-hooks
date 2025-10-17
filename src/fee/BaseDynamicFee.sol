@@ -47,23 +47,16 @@ abstract contract BaseDynamicFee is BaseHook {
     }
 
     /**
-     * @dev Updates the dynamic LP fee for the given pool, which must have a key
-     * that contains this hook's address.
+     * @dev Updates the dynamic LP fee for the given pool
      *
-     * WARNING: This function can be called by anyone at any time. If `_getFee` implementation
-     * depends on external conditions (e.g., oracle prices, other pool states, token balances),
-     * it may be vulnerable to manipulation. An attacker could potentially:
-     * 1. Manipulate the external conditions that `_getFee` depends on
-     * 2. Call `poke()` to update the fee to a more favorable rate
-     * 3. Execute trades at the manipulated fee rate
-     *
-     * Inheriting contracts should consider implementing access controls on this function,
-     * make the logic in `_getFee` resistant to short-term manipulation, or accept the risk
-     * of fee manipulation.
+     * NOTE: It can be called internally at any point in the pool's lifecycle to update the fee
+     * given the current market conditions. Alternatively, it can be wrapped and exposed publicly
+     * to be externally called by an authorized party. If exposed, it must be properly protected
+     * and access control is recommended.
      *
      * @param key The pool key to update the dynamic LP fee for.
      */
-    function poke(PoolKey calldata key) public virtual onlyValidPools(key.hooks) {
+    function _poke(PoolKey calldata key) internal virtual {
         poolManager().updateDynamicLPFee(key, _getFee(key));
     }
 

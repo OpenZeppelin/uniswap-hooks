@@ -13,6 +13,8 @@ import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IHookEvents} from "src/interfaces/IHookEvents.sol";
 import {IPoolManagerEvents} from "test/utils/interfaces/IPoolManagerEvents.sol";
 
@@ -23,6 +25,19 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
     function deployFreshManager() internal override {
         deployCodeTo("PoolManager", abi.encode(address(this)), address(POOL_MANAGER));
         manager = POOL_MANAGER;
+    }
+
+    // @dev `initPoolAndAddLiquidity` overload that allows for specifying the tick spacing.
+    function initPoolAndAddLiquidity(
+        Currency _currency0,
+        Currency _currency1,
+        IHooks hooks,
+        uint24 fee,
+        int24 tickSpacing,
+        uint160 sqrtPriceX96
+    ) internal returns (PoolKey memory _key, PoolId id) {
+        (_key, id) = initPool(_currency0, _currency1, hooks, fee, tickSpacing, sqrtPriceX96);
+        modifyLiquidityRouter.modifyLiquidity{value: msg.value}(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
     }
 
     // @dev Calculate the current `feesAccrued` for a given position.

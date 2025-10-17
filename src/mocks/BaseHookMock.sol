@@ -85,7 +85,6 @@ contract BaseHookMock is BaseHook {
         internal
         virtual
         override
-        onlyValidPools(key.hooks)
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         emit BeforeSwap();

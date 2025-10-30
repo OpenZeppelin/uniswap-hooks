@@ -151,7 +151,7 @@ contract BaseHookMock is BaseHook {
         poolManager.unlock(abi.encode(revertCallback));
     }
 
-    /// @dev Called by the poolMananger after being unlocked
+    /// @dev Called by the poolManager after being unlocked
     function unlockCallback(bytes calldata rawData) external onlyPoolManager returns (bytes memory) {
         (bool revertCallback) = abi.decode(rawData, (bool));
         bytes memory returnData = _callback(revertCallback);

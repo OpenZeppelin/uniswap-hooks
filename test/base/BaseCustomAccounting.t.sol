@@ -52,14 +52,12 @@ contract BaseCustomAccountingTest is Test, Deployers {
         deployFreshManagerAndRouters();
 
         hook = BaseCustomAccountingMock(
-            payable(
-                address(
+            payable(address(
                     uint160(
                         Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
                             | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
                     )
-                )
-            )
+                ))
         );
         deployCodeTo(
             "test/mocks/BaseCustomAccountingMock.sol:BaseCustomAccountingMock", abi.encode(manager), address(hook)

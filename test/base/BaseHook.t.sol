@@ -254,8 +254,9 @@ contract BaseHookTest is Test, Deployers {
     }
 
     function test_onlyValidPools_succeeds() public {
-        PoolKey memory key =
-            PoolKey({currency0: currency0, currency1: currency1, fee: 0, tickSpacing: 0, hooks: IHooks(address(0x123))});
+        PoolKey memory key = PoolKey({
+            currency0: currency0, currency1: currency1, fee: 0, tickSpacing: 0, hooks: IHooks(address(0x123))
+        });
 
         vm.prank(address(manager));
         vm.expectRevert(BaseHook.InvalidPool.selector);

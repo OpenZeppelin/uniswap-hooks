@@ -114,8 +114,9 @@ contract LimitOrderHookTest is HookTest {
         int256 liquidity,
         bytes32 salt
     ) internal returns (BalanceDelta) {
-        ModifyLiquidityParams memory modifyLiquidityParams =
-            ModifyLiquidityParams({tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: liquidity, salt: salt});
+        ModifyLiquidityParams memory modifyLiquidityParams = ModifyLiquidityParams({
+            tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: liquidity, salt: salt
+        });
         return modifyLiquidityNoChecks.modifyLiquidity(poolKey, modifyLiquidityParams, "");
     }
 
@@ -125,7 +126,9 @@ contract LimitOrderHookTest is HookTest {
     {
         return swapRouter.swap(
             poolKey,
-            SwapParams({zeroForOne: zeroForOne, amountSpecified: amountSpecified, sqrtPriceLimitX96: sqrtPriceLimitX96}),
+            SwapParams({
+                zeroForOne: zeroForOne, amountSpecified: amountSpecified, sqrtPriceLimitX96: sqrtPriceLimitX96
+            }),
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             ZERO_BYTES
         );

@@ -51,14 +51,12 @@ contract BaseCustomCurveTest is Test, Deployers {
         deployFreshManagerAndRouters();
 
         hook = BaseCustomCurveMock(
-            payable(
-                address(
+            payable(address(
                     uint160(
                         Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
                             | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
                     )
-                )
-            )
+                ))
         );
         deployCodeTo("test/mocks/BaseCustomCurveMock.sol:BaseCustomCurveMock", abi.encode(manager), address(hook));
 

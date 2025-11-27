@@ -63,8 +63,9 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         int256 liquidity,
         bytes32 salt
     ) internal returns (BalanceDelta) {
-        ModifyLiquidityParams memory modifyLiquidityParams =
-            ModifyLiquidityParams({tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: liquidity, salt: salt});
+        ModifyLiquidityParams memory modifyLiquidityParams = ModifyLiquidityParams({
+            tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: liquidity, salt: salt
+        });
         return modifyLiquidityRouter.modifyLiquidity(poolKey, modifyLiquidityParams, "");
     }
 

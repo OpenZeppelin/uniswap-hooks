@@ -3,22 +3,21 @@
 
 pragma solidity ^0.8.24;
 
+// External imports
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
+import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
 import {CurrencySettler} from "../utils/CurrencySettler.sol";
-
-// External imports
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {Position} from "v4-core/src/libraries/Position.sol";
-import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {FullMath} from "v4-core/src/libraries/FullMath.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
-import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 
 /**
  * @dev Just-in-Time (JIT) liquidity provisioning resistant hook.

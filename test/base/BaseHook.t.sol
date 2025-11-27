@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "forge-std/Test.sol";
-import {Deployers} from "v4-core/test/utils/Deployers.sol";
-import {BaseHook} from "src/base/BaseHook.sol";
-import {BaseHookMock, BaseHookMockReverts} from "test/mocks/BaseHookMock.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
-import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
-import {ProtocolFeeLibrary} from "v4-core/src/libraries/ProtocolFeeLibrary.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {Pool} from "v4-core/src/libraries/Pool.sol";
+// External imports
+import {Test} from "forge-std/Test.sol";
+import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+// Internal imports
+import {HookTest} from "../utils/HookTest.sol";
+import {BaseHook} from "../../src/base/BaseHook.sol";
+import {BaseHookMock, BaseHookMockReverts} from "../mocks/BaseHookMock.sol";
 
 contract BaseHookTest is Test, Deployers {
     event Swap(

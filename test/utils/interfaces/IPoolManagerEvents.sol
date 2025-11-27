@@ -2,10 +2,11 @@
 // OpenZeppelin Uniswap Hooks (last updated v1.1.0) (test/utils/interfaces/IPoolManagerEvents.sol)
 pragma solidity ^0.8.24;
 
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+// External imports
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 /// @notice Interface for the PoolManager
 interface IPoolManagerEvents {

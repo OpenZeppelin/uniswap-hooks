@@ -3,17 +3,23 @@
 
 pragma solidity ^0.8.24;
 
-import {BaseHook} from "src/base/BaseHook.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {CurrencySettler} from "src/utils/CurrencySettler.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {IHookEvents} from "src/interfaces/IHookEvents.sol";
-import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
+// External imports
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {
+    BeforeSwapDelta,
+    BeforeSwapDeltaLibrary,
+    toBeforeSwapDelta
+} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+// Internal imports
+import {CurrencySettler} from "../utils/CurrencySettler.sol";
+import {IHookEvents} from "../interfaces/IHookEvents.sol";
+import {BaseHook} from "../base/BaseHook.sol";
 
 /**
  * @dev Base implementation for async swaps, which skip the v3-like swap implementation of the `PoolManager`

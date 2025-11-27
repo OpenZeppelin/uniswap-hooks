@@ -1,24 +1,27 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "forge-std/Test.sol";
-import {Deployers} from "v4-core/test/utils/Deployers.sol";
-import {BaseDynamicFeeMock} from "test/mocks/BaseDynamicFeeMock.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
-import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
-import {ProtocolFeeLibrary} from "v4-core/src/libraries/ProtocolFeeLibrary.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {Pool} from "v4-core/src/libraries/Pool.sol";
-import {BaseDynamicFee} from "src/fee/BaseDynamicFee.sol";
-import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
-import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
+// External imports
+import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
+import {Test} from "forge-std/Test.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {ProtocolFeeLibrary} from "@uniswap/v4-core/src/libraries/ProtocolFeeLibrary.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+// Internal imports
+import {HookTest} from "../utils/HookTest.sol";
+import {BaseDynamicFee} from "../../src/fee/BaseDynamicFee.sol";
+import {BaseDynamicFeeMock} from "../mocks/BaseDynamicFeeMock.sol";
 
 contract BaseDynamicFeeTest is Test, Deployers {
     using StateLibrary for IPoolManager;

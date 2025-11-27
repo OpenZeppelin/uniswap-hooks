@@ -2,7 +2,7 @@
 // OpenZeppelin Uniswap Hooks (last updated v1.1.0) (test/utils/BalanceDeltaAssertions.sol)
 pragma solidity ^0.8.26;
 
-import {BalanceDelta, toBalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Test} from "forge-std/Test.sol";
 
 // @dev Custom foundry-like assertions for `BalanceDelta` from `v4-core`

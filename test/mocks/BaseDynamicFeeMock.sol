@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "src/fee/BaseDynamicFee.sol";
+// External imports
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+// Internal imports
+import {BaseDynamicFee} from "../../src/fee/BaseDynamicFee.sol";
+import {BaseHook} from "../../src/base/BaseHook.sol";
 
 contract BaseDynamicFeeMock is BaseDynamicFee {
     uint24 public fee;

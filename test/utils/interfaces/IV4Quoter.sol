@@ -2,11 +2,11 @@
 // OpenZeppelin Uniswap Hooks (last updated v1.1.0) (test/utils/interfaces/IV4Quoter.sol)
 pragma solidity ^0.8.0;
 
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {PathKey} from "v4-periphery/src/libraries/PathKey.sol";
-import {IImmutableState} from "v4-periphery/src/interfaces/IImmutableState.sol";
-import {IMsgSender} from "v4-periphery/src/interfaces/IMsgSender.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PathKey} from "@uniswap/v4-periphery/src/libraries/PathKey.sol";
+import {IImmutableState} from "@uniswap/v4-periphery/src/interfaces/IImmutableState.sol";
+import {IMsgSender} from "@uniswap/v4-periphery/src/interfaces/IMsgSender.sol";
 
 /// @title IV4Quoter
 /// @notice Interface for the V4Quoter contract

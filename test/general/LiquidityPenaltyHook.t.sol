@@ -1,25 +1,24 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {LiquidityPenaltyHook} from "src/general/LiquidityPenaltyHook.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {FullMath} from "v4-core/src/libraries/FullMath.sol";
-import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
-import {Position} from "v4-core/src/libraries/Position.sol";
-import {FixedPoint128} from "v4-core/src/libraries/FixedPoint128.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
-import {BalanceDelta, BalanceDeltaLibrary} from "v4-core/src/types/BalanceDelta.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
-import {HookTest} from "test/utils/HookTest.sol";
-import {toBalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
+// External imports
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {BalanceDelta, BalanceDeltaLibrary} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+
+// Internal imports
+import {HookTest} from "../utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
+import {LiquidityPenaltyHook} from "../../src/general/LiquidityPenaltyHook.sol";
 
 contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
     LiquidityPenaltyHook hook;

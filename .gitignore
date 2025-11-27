@@ -22,3 +22,7 @@ docs/modules/api
 
 # Foundry coverage
 coverage
+
+# NPM
+*.tgz
+package/

@@ -1,28 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import "forge-std/Test.sol";
-import {Vm} from "forge-std/Vm.sol";
-import {Deployers} from "v4-core/test/utils/Deployers.sol";
-import {BaseDynamicAfterFee} from "src/fee/BaseDynamicAfterFee.sol";
-import {BaseDynamicAfterFeeMock} from "test/mocks/BaseDynamicAfterFeeMock.sol";
-import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
-import {BalanceDelta, toBalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {SafeCast} from "v4-core/src/libraries/SafeCast.sol";
-import {V4Quoter} from "v4-periphery/src/lens/V4Quoter.sol";
-import {Deploy} from "v4-periphery/test/shared/Deploy.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {ERC20} from "openzeppelin/token/ERC20/ERC20.sol";
-import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
-import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
-import {HookTest} from "test/utils/HookTest.sol";
-import {IV4Quoter} from "test/utils/interfaces/IV4Quoter.sol";
+// External imports
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
+import {Deploy} from "@uniswap/v4-periphery/test/shared/Deploy.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+// solhint-disable-next-line no-unused-import
+import {V4Quoter} from "@uniswap/v4-periphery/src/lens/V4Quoter.sol";
+
+// Internal imports
+import {BaseDynamicAfterFeeMock} from "../mocks/BaseDynamicAfterFeeMock.sol";
+import {HookTest} from "../utils/HookTest.sol";
+import {IV4Quoter} from "../utils/interfaces/IV4Quoter.sol";
 
 contract BaseDynamicAfterFeeTest is HookTest {
     using SafeCast for *;

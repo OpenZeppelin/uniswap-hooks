@@ -3,20 +3,22 @@
 
 pragma solidity ^0.8.24;
 
-import {BaseHook} from "src/base/BaseHook.sol";
-import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
-import {CurrencySettler} from "src/utils/CurrencySettler.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {IHookEvents} from "src/interfaces/IHookEvents.sol";
-import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
-import {TransientSlot} from "openzeppelin/utils/TransientSlot.sol";
-import {SlotDerivation} from "openzeppelin/utils/SlotDerivation.sol";
-import {SafeCast} from "openzeppelin/utils/math/SafeCast.sol";
+// External imports
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
+import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+// Internal imports
+import {BaseHook} from "../base/BaseHook.sol";
+import {IHookEvents} from "../interfaces/IHookEvents.sol";
+import {CurrencySettler} from "../utils/CurrencySettler.sol";
 
 /**
  * @dev Base implementation for dynamic target hook fees applied after swaps.

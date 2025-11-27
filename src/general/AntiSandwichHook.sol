@@ -3,23 +3,22 @@
 
 pragma solidity ^0.8.24;
 
+// External imports
+import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
+import {Slot0} from "@uniswap/v4-core/src/types/Slot0.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // Internal imports
 import {BaseDynamicAfterFee} from "../fee/BaseDynamicAfterFee.sol";
 import {CurrencySettler} from "../utils/CurrencySettler.sol";
-
-// External imports
-import {Pool} from "v4-core/src/libraries/Pool.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
-import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
-import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
-import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {BeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
-import {Slot0} from "v4-core/src/types/Slot0.sol";
-import {Currency} from "v4-core/src/types/Currency.sol";
-import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
-import {SafeCast} from "openzeppelin/utils/math/SafeCast.sol";
 
 /**
  * @dev This hook implements the sandwich-resistant AMM design introduced

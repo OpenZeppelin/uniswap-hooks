@@ -1,5 +1,1 @@
 * xref:index.adoc[Overview]
-* xref:base.adoc[Base]
-* xref:fee.adoc[Fee]
-* xref:oracles.adoc[Oracles]
-* xref:utilities.adoc[Utilities]

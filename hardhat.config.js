@@ -13,5 +13,5 @@ module.exports = {
       evmVersion: "cancun",
     },
   },
-  docgen: require('./docs/config'),
+  docgen: require('./docs/config-md'),
 };

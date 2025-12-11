@@ -7,6 +7,7 @@ import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.so
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -23,6 +24,7 @@ contract ERC4626YieldSourceMock is ERC4626 {
 /// @title ReHypothecationERC4626Mock
 /// @notice A mock implementation of the ReHypothecationHook for ERC-4626 yield sources.
 contract ReHypothecationERC4626Mock is ReHypothecationHook {
+    using Math for *;
     using SafeERC20 for IERC20;
 
     /// @dev Error thrown when attempting to use an unsupported currency.
@@ -90,9 +92,16 @@ contract ReHypothecationERC4626Mock is ReHypothecationHook {
         revert UnsupportedCurrency();
     }
 
-    /// @dev Helpers for testing
+    /// @dev Exposed internal function for testing
     function getAmountInYieldSource(Currency currency) public view returns (uint256) {
         return _getAmountInYieldSource(currency);
+    }
+
+    /// @dev Exposed internal function for testing
+    function burnYieldSourcesBalance(Currency currency, uint256 amount) public returns (uint256) {
+        IERC4626 yieldSource = IERC4626(getCurrencyYieldSource(currency));
+        if (address(yieldSource) == address(0)) revert UnsupportedCurrency();
+        return yieldSource.withdraw(amount, address(0), address(this));
     }
 
     // Exclude from coverage report

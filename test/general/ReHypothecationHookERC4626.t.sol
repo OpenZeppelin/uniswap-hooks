@@ -154,7 +154,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         uint256 amount0InYieldSource0Before = hook.getAmountInYieldSource(currency0);
         uint256 amount1InYieldSource1Before = hook.getAmountInYieldSource(currency1);
 
-        (uint256 previewedAmount0, uint256 previewedAmount1) = hook.previewAmountsForShares(shares);
+        (uint256 previewedAmount0, uint256 previewedAmount1) = hook.previewMint(shares);
 
         BalanceDelta delta = hook.addReHypothecatedLiquidity(shares);
 
@@ -248,9 +248,34 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
         BalanceDelta addDeltalp2 = hook.addReHypothecatedLiquidity(shareslp2);
 
-        // in order to obtain the same shares, lp2 must pay 10% more currency0 and 20% more currency1
+        // in order to obtain the same shares as lp1, lp2 must deposit 10% more currency0 and 20% more currency1
         assertApproxEqAbs(-addDeltalp2.amount0(), -addDeltalp1.amount0() * 110 / 100, 1);
         assertApproxEqAbs(-addDeltalp2.amount1(), -addDeltalp1.amount1() * 120 / 100, 1);
+
+        // total supply should be the sum of the shares
+        assertEq(hook.totalSupply(), shareslp1 + shareslp2);
+    }
+
+    function test_add_yieldsDecay_add_multipleLP() public {
+        uint128 shareslp1 = 1e18;
+        uint128 shareslp2 = 1e18;
+
+        vm.prank(lp1);
+        BalanceDelta addDeltalp1 = hook.addReHypothecatedLiquidity(shareslp1);
+
+        uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
+        uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
+
+        // yield1 decays by 10%
+        hook.burnYieldSourcesBalance(currency0, amount0InYieldSource * 10 / 100);
+        // yield2 decays by 20%
+        hook.burnYieldSourcesBalance(currency1, amount1InYieldSource * 20 / 100);
+
+        BalanceDelta addDeltalp2 = hook.addReHypothecatedLiquidity(shareslp2);
+
+        // in order to obtain the same shares as lp1, lp2 must deposit 10% less currency0 and 20% less currency1
+        assertApproxEqAbs(-addDeltalp2.amount0(), -addDeltalp1.amount0() * 90 / 100, 1);
+        assertApproxEqAbs(-addDeltalp2.amount1(), -addDeltalp1.amount1() * 80 / 100, 1);
 
         // total supply should be the sum of the shares
         assertEq(hook.totalSupply(), shareslp1 + shareslp2);
@@ -288,7 +313,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         uint256 amount0InYieldSource0Before = hook.getAmountInYieldSource(currency0);
         uint256 amount1InYieldSource1Before = hook.getAmountInYieldSource(currency1);
 
-        (uint256 amount0, uint256 amount1) = hook.previewAmountsForShares(shares);
+        (uint256 amount0, uint256 amount1) = hook.previewRedeem(shares);
 
         BalanceDelta removeDelta = hook.removeReHypothecatedLiquidity(shares);
 
@@ -430,8 +455,45 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         BalanceDelta removeDeltalp2 = hook.removeReHypothecatedLiquidity(shareslp2);
 
         // lp2 must have removed more assets, since the fees from the yield growth belongs to him
-        assertGt(removeDeltalp2.amount0(), removeDeltalp1.amount0());
-        assertGt(removeDeltalp2.amount1(), removeDeltalp1.amount1());
+        assertApproxEqAbs(removeDeltalp2.amount0(), removeDeltalp1.amount0() * 110 / 100, 1);
+        assertApproxEqAbs(removeDeltalp2.amount1(), removeDeltalp1.amount1() * 120 / 100, 1);
+
+        // both must have burned their shares
+        assertEq(hook.balanceOf(lp1), 0);
+        assertEq(hook.balanceOf(lp2), 0);
+
+        // total supply should be 0
+        assertEq(hook.totalSupply(), 0);
+    }
+
+    function test_remove_yieldsDecay_remove_multipleLP() public {
+        uint128 shareslp1 = 1e18;
+        uint128 shareslp2 = 1e18;
+
+        vm.prank(lp1);
+        hook.addReHypothecatedLiquidity(shareslp1);
+        vm.prank(lp2);
+        hook.addReHypothecatedLiquidity(shareslp2);
+
+        // lp1 removes
+        vm.prank(lp1);
+        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(shareslp1);
+
+        uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
+        uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
+
+        // yield1 decays by 10%
+        hook.burnYieldSourcesBalance(currency0, amount0InYieldSource * 10 / 100);
+        // yield2 decays by 20%
+        hook.burnYieldSourcesBalance(currency1, amount1InYieldSource * 20 / 100);
+
+        // lp2 removes
+        vm.prank(lp2);
+        BalanceDelta removeDeltalp2 = hook.removeReHypothecatedLiquidity(shareslp2);
+
+        // lp2 must have removed less assets, since the yield decay belongs to him
+        assertApproxEqAbs(removeDeltalp2.amount0(), removeDeltalp1.amount0() * 90 / 100, 1);
+        assertApproxEqAbs(removeDeltalp2.amount1(), removeDeltalp1.amount1() * 80 / 100, 1);
 
         // both must have burned their shares
         assertEq(hook.balanceOf(lp1), 0);
@@ -444,8 +506,8 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     // -- differential -- //
 
     function testFuzz_differential_add_swap_remove_SingleLP(uint256 shares, int256 amountToSwap) public {
-        shares = uint256(bound(shares, 1e12, 1e26)); // add from 0.000001 to 100M shares
-        amountToSwap = int256(bound(amountToSwap, 1e10, 1e24)); // swap from 0.00000001 to 1M tokens
+        shares = uint256(bound(shares, 1e12, 1e28)); // add from 0.000001 to 10B shares
+        amountToSwap = int256(bound(amountToSwap, 1e10, 1e26)); // swap from 0.00000001 to 100M tokens
         // assume the swap is less than half of the added liquidity
         vm.assume(amountToSwap * 2 < int256(shares));
 
@@ -455,14 +517,14 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
             modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), int256(uint256(shares)), 0);
         // Hooked
         BalanceDelta hookedAddDelta = hook.addReHypothecatedLiquidity(shares);
-        assertApproxEqAbs(hookedAddDelta, noHookAddDelta, 10, "hookedAddDelta !~= noHookAddDelta");
+        assertApproxEqAbs(hookedAddDelta, noHookAddDelta, 1, "hookedAddDelta !~= noHookAddDelta");
 
         // -- Swap --
         // Unhooked
         BalanceDelta noHookSwapDelta = swap(noHookKey, true, amountToSwap, ZERO_BYTES);
         // Hooked
         BalanceDelta hookedSwapDelta = swap(key, true, amountToSwap, ZERO_BYTES);
-        assertApproxEqAbs(hookedSwapDelta, noHookSwapDelta, 10, "hookedSwapDelta !~= noHookSwapDelta");
+        assertApproxEqAbs(hookedSwapDelta, noHookSwapDelta, 3, "hookedSwapDelta !~= noHookSwapDelta");
 
         // -- Remove liquidity --
         // Unhooked
@@ -470,6 +532,36 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
             modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(uint256(shares)), 0);
         // Hooked
         BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(shares);
-        assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 10, "hookedRemoveDelta !~= noHookRemoveDelta");
+        assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 2, "hookedRemoveDelta !~= noHookRemoveDelta");
+    }
+
+    // -- decimals/rounding -- //
+
+    function testFuzz_postLossDilutionAttack_add_loss_add_SingleLP(
+        uint8 lossPercentage,
+        uint128 sharesLP1,
+        uint128 sharesLP2
+    ) public {
+        lossPercentage = uint8(bound(lossPercentage, 1, 99));
+
+        sharesLP1 = uint128(bound(sharesLP1, 1e12, 1e28));
+        sharesLP2 = uint128(bound(sharesLP2, 1, 1e28));
+
+        // lp1 adds liquidity
+        vm.prank(lp1);
+        hook.addReHypothecatedLiquidity(sharesLP1);
+
+        uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
+        uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
+
+        // the vault suffers a loss
+        hook.burnYieldSourcesBalance(currency0, amount0InYieldSource * lossPercentage / 100);
+        hook.burnYieldSourcesBalance(currency1, amount1InYieldSource * lossPercentage / 100);
+
+        // preview attacker deposit
+        (uint256 amount0, uint256 amount1) = hook.previewMint(sharesLP2);
+
+        // if shares > 0 and amounts are zero, then the attacker can mint shares freely.
+        assertFalse(sharesLP2 > 0 && (amount0 == 0 && amount1 == 0));
     }
 }

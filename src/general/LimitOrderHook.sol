@@ -509,7 +509,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         PoolKey memory key = placeData.key;
 
         // add the out of range liquidity to the pool
-        (BalanceDelta principalDelta, BalanceDelta feesAccrued) = poolManager.modifyLiquidity(
+        (BalanceDelta callerDelta, BalanceDelta feesAccrued) = poolManager.modifyLiquidity(
             key,
             ModifyLiquidityParams({
                 tickLower: placeData.tickLower,
@@ -527,25 +527,25 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             key.currency1.take(poolManager, address(this), amount1Fee = uint256(uint128(feesAccrued.amount1())), true);
         }
 
-        BalanceDelta delta = principalDelta - feesAccrued;
+        BalanceDelta principalDelta = callerDelta - feesAccrued;
 
         // if the amount of currency0 is negative, the limit order is to sell `currency0` for `currency1`
-        if (delta.amount0() < 0) {
+        if (principalDelta.amount0() < 0) {
             // if the amount of currency1 is not 0, the limit order is in range
-            if (delta.amount1() != 0) revert InRange();
+            if (principalDelta.amount1() != 0) revert InRange();
             // if `zeroForOne` is false, the limit order is wrong side of the range
             if (!placeData.zeroForOne) revert CrossedRange();
 
             // settle the currency0 to the owner
-            key.currency0.settle(poolManager, placeData.owner, uint256(uint128(-delta.amount0())), false);
+            key.currency0.settle(poolManager, placeData.owner, uint256(uint128(-principalDelta.amount0())), false);
         } else {
             // if the amount of currency0 is not 0, the limit order is in range
-            if (delta.amount0() != 0) revert InRange();
+            if (principalDelta.amount0() != 0) revert InRange();
             // if `zeroForOne` is true, the limit order is wrong side of the range
             if (placeData.zeroForOne) revert CrossedRange();
 
             // settle the currency1 to the owner
-            key.currency1.settle(poolManager, placeData.owner, uint256(uint128(-delta.amount1())), false);
+            key.currency1.settle(poolManager, placeData.owner, uint256(uint128(-principalDelta.amount1())), false);
         }
     }
 

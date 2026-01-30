@@ -34,7 +34,7 @@
     "hardhat": "^2.26.3",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.2",
-    "solhint": "^6.0.1",
+    "solhint": "^6.0.3",
     "solhint-plugin-openzeppelin": "file:scripts/solhint-custom",
     "solidity-docgen": "^0.6.0-beta.36"
   },

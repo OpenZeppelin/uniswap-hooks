@@ -64,7 +64,7 @@ jobs:
       - name: Set up environment
         uses: ./.github/actions/setup
 
-      - uses: crytic/slither-action@v0.4.1
+      - uses: crytic/slither-action@v0.4.2
 
   codespell:
     name: CodeSpell

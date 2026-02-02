@@ -69,12 +69,12 @@ library OrderIdLibrary {
  * have been accrued. In those cases, the accrued fees are added to the order info, benefitting the remaining
  * limit order placers.
  *
+ * NOTE: Since the PoolManager implements a ReentrancyGuard, {placeOrder, cancelOrder, withdraw} are already
+ * protected from reentrancy.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
- *
- * Note: since the PoolManager implements a ReentrancyGuard, {placeOrder, cancelOrder, withdraw} are already
- * protected from reentrancy.
  *
  * _Available since v1.1.0_
  */
@@ -90,9 +90,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         Currency currency0;
         /// @dev The currency1 of the order.
         Currency currency1;
-        /// @dev The total currency0 of the order including fees resting inactive in the hook.
+        /// @dev The total currency0 of the order from accrued fees or fills, resting inactive in the hook.
         uint256 currency0Total;
-        /// @dev The total currency1 of the order including fees resting inactive in the hook.
+        /// @dev The total currency1 of the order from accrued fees or fills, resting inactive in the hook.
         uint256 currency1Total;
         /// @dev The total liquidity of the order provided by all the limit order placers.
         uint128 liquidityTotal;
@@ -100,9 +100,11 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         bool filled;
         /// @dev The liquidity of the order owned by each placer.
         mapping(address owner => uint128 amount) liquidity;
-        /// @dev Checkpoints of the `currency0Total` and `currency1Total` (accrued fees) the last time the owner
-        /// added liquidity to the order, used as enhanced accounting to protect from accrued fees being stolen.
-        mapping(address owner => FeesCheckpointCurrencies feeCheckpoints) feeCheckpoints;
+        /// @dev Tracks `currency0Total` and `currency1Total` at the time each owner adds liquidity to an order.
+        /// At withdrawal, fees accrued before the checkpoint are deducted to prevent owners from claiming fees
+        /// they're not entitled to.
+        /// NOTE: Only updated on order placement (while unfilled), so checkpoints never include order fills.
+        mapping(address owner => AccruedFeesCheckpoint accruedFeesCheckpoint) accruedFeesCheckpoints;
     }
 
     /// @dev Types of callbacks performed by the poolManager in `{unlockCallback}`
@@ -148,11 +150,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         address to;
     }
 
-    /**
-     * @dev Struct of fees checkpoint currencies. These are the amounts of `currency0` and `currency1` marked
-     * as `currency0Total` and `currency1Total` in the `OrderInfo` struct at the time of the checkpoint.
-     */
-    struct FeesCheckpointCurrencies {
+    /// @dev Struct of accrued fees checkpoint.
+    struct AccruedFeesCheckpoint {
         uint256 currency0Fees;
         uint256 currency1Fees;
     }
@@ -180,7 +179,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     error ZeroLiquidity();
 
     /// @dev Limit order was incorrectly placed in an invalid tick range.
-    /// Note: limit orders can only be placed out of the current range as single side liquidity.
+    /// NOTE: limit orders can only be placed out of the current range as single side liquidity.
     error InvalidRange();
 
     /// @dev Limit order was already filled.
@@ -236,8 +235,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     );
 
     /**
-     * @dev Emitted when an `owner` withdraws their `liquidity` from a limit order with the given `orderId`, in the pool identified by `key`,
-     * at the given `tickLower`, `zeroForOne` indicating the direction of the order.
+     * @dev Emitted when an `owner` withdraws their `liquidity` from a limit order with the given `orderId`, in
+     * the pool identified by `key`, at the given `tickLower`, `zeroForOne` indicating the direction of the order.
      */
     event Withdraw(address indexed owner, OrderIdLibrary.OrderId indexed orderId, uint128 liquidity);
 
@@ -253,7 +252,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         return this.afterInitialize.selector;
     }
 
-    /// @dev Hooks into the `afterSwap` hook to get the ticks crossed by the swap and fills the crossed limit orders.
+    /// @dev Hooks into the `afterSwap` hook to get the ticks crossed by the swap, filling the crossed limit orders.
     function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta, bytes calldata)
         internal
         virtual
@@ -264,7 +263,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
         if (lower > upper) return (this.afterSwap.selector, 0);
 
-        // set the last tick lower for the pool
         _tickLowerLasts[key.toId()] = tickLower;
 
         for (; lower <= upper; lower += key.tickSpacing) {
@@ -279,20 +277,17 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /**
      * @dev Places a limit order by adding liquidity out of range at a specific tick. The order will be filled when the
      * pool price crosses the specified `tick`. Takes a `PoolKey` `key`, target `tick`, direction `zeroForOne` indicating
-     * whether to buy currency0 or currency1, and amount of `liquidity` to place. The interaction with the `poolManager` is done
-     * via the `unlock` function, which will trigger the `{unlockCallback}` function.
+     * whether to buy currency0 or currency1, and amount of `liquidity` to place. The interaction with the `poolManager` is
+     * done via the `unlock` function, which will trigger the `{unlockCallback}` function.
      */
     function placeOrder(PoolKey calldata key, int24 tick, bool zeroForOne, uint128 liquidity) public payable virtual {
         if (liquidity == 0) revert ZeroLiquidity();
 
-        // the `msg.value` should be positive if the order is a native placement, 0 otherwise.
-        if (key.currency0.isAddressZero() && zeroForOne) {
-            if (msg.value == 0) revert InsufficientValue();
-        } else if (msg.value != 0) {
+        // the `msg.value` should be positive only if the order is a native placement
+        if (!(key.currency0.isAddressZero() && zeroForOne) && msg.value != 0) {
             revert InvalidValue();
         }
 
-        // get the OrderKey and it's associated OrderId
         bytes32 orderKey = getOrderKey(key, tick, zeroForOne);
         OrderIdLibrary.OrderId orderId = getOrderId(orderKey);
 
@@ -306,28 +301,19 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             }
 
             orderInfo = _orderInfos[orderId];
-
-            // set the order currencies
             orderInfo.currency0 = key.currency0;
             orderInfo.currency1 = key.currency1;
         } else {
-            // get the order info
             orderInfo = _orderInfos[orderId];
         }
 
-        // add the liquidity to the order
         unchecked {
             orderInfo.liquidityTotal += liquidity;
             orderInfo.liquidity[msg.sender] += liquidity;
         }
 
-        // Set the currency checkpoints for the `msg.sender`. These amounts are stored and considered at withdrawal time
-        // so that the user cannot steal fees accrued before the checkpoint. This means that any fees accrued in between
-        // checkpoints are deducted, so the user is not entitled to them.
-        // Note that the amounts in the checkpoints can only be from fees accrued, never from order fills,
-        // since the checkpoint are only updated at order placement, which is only possible while the order is unfilled.
-        orderInfo.feeCheckpoints[msg.sender].currency0Fees = orderInfo.currency0Total;
-        orderInfo.feeCheckpoints[msg.sender].currency1Fees = orderInfo.currency1Total;
+        orderInfo.accruedFeesCheckpoints[msg.sender].currency0Fees = orderInfo.currency0Total;
+        orderInfo.accruedFeesCheckpoints[msg.sender].currency1Fees = orderInfo.currency1Total;
 
         // unlock the callback to the poolManager, the callback will trigger `unlockCallback`
         // note that multiple functions trigger `unlockCallback`, so the `callbackData.callbackType` will determine what happens
@@ -356,7 +342,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             orderInfo.currency1Total += amount1Fee;
         }
 
-        // emit the place event
         emit Place(msg.sender, orderId, key, tick, zeroForOne, liquidity);
     }
 
@@ -368,24 +353,18 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * The interaction with the `poolManager` is done via the `unlock` function, which will trigger the `{unlockCallback}` function.
      */
     function cancelOrder(PoolKey calldata key, int24 tickLower, bool zeroForOne, address to) public virtual {
-        // get the OrderId and it's associated OrderInfo
         OrderIdLibrary.OrderId orderId = getOrderId(key, tickLower, zeroForOne);
         OrderInfo storage orderInfo = _orderInfos[orderId];
 
-        // revert if the order is already filled
         if (orderInfo.filled) revert Filled();
 
-        // get the liquidity added by the msg.sender
         uint128 liquidity = orderInfo.liquidity[msg.sender];
 
-        // revert if the liquidity is 0
         if (liquidity == 0) revert ZeroLiquidity();
 
-        // delete the liquidity from the order
         delete orderInfo.liquidity[msg.sender];
 
         bool removingAllLiquidity = liquidity == orderInfo.liquidityTotal;
-        // subtract the liquidity from the total liquidity
         orderInfo.liquidityTotal -= liquidity;
 
         // unlock the callback to the poolManager, the callback will trigger `unlockCallback`
@@ -431,7 +410,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             }
         }
 
-        // emit the cancel event
         emit Cancel(msg.sender, orderId, key, tickLower, zeroForOne, liquidity);
     }
 
@@ -446,40 +424,32 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         virtual
         returns (uint256 amount0, uint256 amount1)
     {
-        // get the order info
         OrderInfo storage orderInfo = _orderInfos[orderId];
 
-        // revert if the order is not filled
         if (!orderInfo.filled) revert NotFilled();
 
-        // get the liquidity added by the msg.sender
         uint128 liquidity = orderInfo.liquidity[msg.sender];
 
-        // revert if the sender liquidity is 0
         if (liquidity == 0) revert ZeroLiquidity();
 
-        // delete the sender liquidity from the order
         delete orderInfo.liquidity[msg.sender];
 
-        // get the total liquidity in the order
         uint128 liquidityTotal = orderInfo.liquidityTotal;
 
-        uint256 checkpointCurrency0Fees = orderInfo.feeCheckpoints[msg.sender].currency0Fees;
-        uint256 checkpointCurrency1Fees = orderInfo.feeCheckpoints[msg.sender].currency1Fees;
+        uint256 checkpointCurrency0Fees = orderInfo.accruedFeesCheckpoints[msg.sender].currency0Fees;
+        uint256 checkpointCurrency1Fees = orderInfo.accruedFeesCheckpoints[msg.sender].currency1Fees;
 
         // Calculate the amount of currency0 and currency1 owed to the `msg.sender`.
         // Note that the user is not entitled to withdraw fees that were accrued before their placing checkpoint.
-        // Since the order is filled, `currencyTotals` at this point consists of fill amounts + any accrued fees,
-        // while `checkpoints` are the fees accrued before the withdrawer placed his order.
-        // Therefore, `currencyTotals` minus the `checkpoints` gives us the exact amount owed to the withdrawer.
+        // Since the order is filled, `currencyTotals` at this point consists of fill amounts plus any accrued fees,
+        // while `checkpoints` are the accrued fees that were registered when the withdrawer placed his order.
+        // Therefore, `currencyTotals` minus `checkpoints` is the exact amount owed to the withdrawer.
         amount0 = FullMath.mulDiv(orderInfo.currency0Total - checkpointCurrency0Fees, liquidity, liquidityTotal);
         amount1 = FullMath.mulDiv(orderInfo.currency1Total - checkpointCurrency1Fees, liquidity, liquidityTotal);
 
-        // subtract the amount of currency0 and currency1 from the order info
         orderInfo.currency0Total -= amount0;
         orderInfo.currency1Total -= amount1;
 
-        // update total liquidity
         orderInfo.liquidityTotal -= liquidity;
 
         // unlock the callback to the poolManager, the callback will trigger `unlockCallback`

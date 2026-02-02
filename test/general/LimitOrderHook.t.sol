@@ -215,6 +215,8 @@ contract LimitOrderHookTest is HookTest {
         (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
 
         assertFalse(filled);
+        assertTrue(currency0 == orderCurrency0);
+        assertTrue(currency1 == orderCurrency1);
         assertEq(currency0Total, 0);
         assertEq(currency1Total, 0);
         assertEq(liquidityTotal, liquidity * 2);

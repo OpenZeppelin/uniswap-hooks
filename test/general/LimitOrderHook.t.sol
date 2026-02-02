@@ -222,75 +222,6 @@ contract LimitOrderHookTest is HookTest {
         assertEq(hook.getOrderLiquidity(OrderIdLibrary.OrderId.wrap(1), user), liquidity);
     }
 
-    // @TBD: I don't understand this test
-    function test_placeOrder_feesAccrued() public {
-        bool zeroForOne = true;
-        uint128 liquidity = 1000000;
-
-        hook.placeOrder(key, 0, zeroForOne, liquidity);
-
-        // placing the order is the same as adding liquidity to the pool in the range (0, tickSpacing)
-        vm.startPrank(user);
-        hook.placeOrder(key, 0, zeroForOne, liquidity);
-
-        // add liquidity equivalent to two orders
-        modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, int256(uint256(2 * liquidity)), 0);
-        vm.stopPrank();
-
-        // this swap should accrue fees to the order, since tick is in range (0, tickSpacing)
-        vm.startPrank(swapper);
-        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
-        swapOnPool(noHookKey, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
-
-        // swap outside of the range (0, tickSpacing) without filling the order to be able to place orders again
-        swapOnPool(noHookKey, true, -1e15, TickMath.getSqrtPriceAtTick(-key.tickSpacing));
-        swapOnPool(key, true, -1e15, TickMath.getSqrtPriceAtTick(-key.tickSpacing));
-
-        vm.stopPrank();
-
-        (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
-
-        assertFalse(filled, "order should not be filled");
-        assertEq(currency0Total, 0, "currency0Total should be 0");
-        assertEq(currency1Total, 0, "currency1Total should be 0");
-        assertEq(liquidityTotal, 2 * liquidity, "liquidityTotal should be 2*liquidity");
-
-        int256 balance0Before = int256(currency0.balanceOf(address(this)));
-        int256 balance1Before = int256(currency1.balanceOf(address(this)));
-        hook.placeOrder(key, 0, zeroForOne, liquidity);
-        int256 balance0AfterPlace = int256(currency0.balanceOf(address(this)));
-        int256 balance1AfterPlace = int256(currency1.balanceOf(address(this)));
-
-        // place the order is the same as add liquidity to the pool in the range (0, tickSpacing)
-
-        vm.startPrank(user);
-        (int128 feesExpected0, int128 feesExpected1) =
-            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
-        BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, int256(uint256(liquidity)), 0);
-        vm.stopPrank();
-        (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
-
-        assertFalse(filled, "order should not be filled");
-        assertEq(liquidityTotal, 3 * liquidity, "liquidityTotal should be 3*liquidity");
-
-        assertEq(currency0Total, uint256(uint128(feesExpected0)), "currency0Total should be feesExpected0");
-        assertEq(currency1Total, uint256(uint128(feesExpected1)), "currency1Total should be feesExpected1");
-
-        assertTrue(feesExpected0 > 0 || feesExpected1 > 0, "fees should be accrued");
-
-        // placing the order is the same as adding liquidity, plus the fees accrued to the order (which are in currency total)
-        assertEq(
-            balance0AfterPlace - balance0Before,
-            int256(delta.amount0()) - int256(currency0Total),
-            "fees were not held in currency0Total"
-        );
-        assertEq(
-            balance1AfterPlace - balance1Before,
-            int256(delta.amount1()) - int256(currency1Total),
-            "fees were not held in currency1Total"
-        );
-    }
-
     function test_cancelOrder() public {
         int24 tickLower = 0;
         bool zeroForOne = true;
@@ -428,6 +359,76 @@ contract LimitOrderHookTest is HookTest {
         assertEq(balanceUser1After - balanceUser1Before, int256(delta.amount1()));
     }
 
+    function test_placeOrder_feesAccrued() public {
+        bool zeroForOne = true;
+        uint128 liquidity = 1000000;
+
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        // placing the order is the same as adding liquidity to the pool in the range (0, tickSpacing)
+        vm.startPrank(user);
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        // add liquidity equivalent to two orders
+        modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, int256(uint256(2 * liquidity)), 0);
+        vm.stopPrank();
+
+        // this swap should accrue fees to the order, since tick is in range (0, tickSpacing)
+        vm.startPrank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+        swapOnPool(noHookKey, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+
+        // swap outside of the range (0, tickSpacing) without filling the order to be able to place orders again
+        swapOnPool(noHookKey, true, -1e15, TickMath.getSqrtPriceAtTick(-key.tickSpacing));
+        swapOnPool(key, true, -1e15, TickMath.getSqrtPriceAtTick(-key.tickSpacing));
+
+        vm.stopPrank();
+
+        (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
+
+        assertFalse(filled, "order should not be filled");
+        assertTrue(currency0 == orderCurrency0);
+        assertTrue(currency1 == orderCurrency1);
+        assertEq(currency0Total, 0, "currency0Total should be 0");
+        assertEq(currency1Total, 0, "currency1Total should be 0");
+        assertEq(liquidityTotal, 2 * liquidity, "liquidityTotal should be 2*liquidity");
+
+        int256 balance0Before = int256(currency0.balanceOf(address(this)));
+        int256 balance1Before = int256(currency1.balanceOf(address(this)));
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+        int256 balance0AfterPlace = int256(currency0.balanceOf(address(this)));
+        int256 balance1AfterPlace = int256(currency1.balanceOf(address(this)));
+
+        // place the order is the same as add liquidity to the pool in the range (0, tickSpacing)
+
+        vm.startPrank(user);
+        (int128 feesExpected0, int128 feesExpected1) =
+            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
+        BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, int256(uint256(liquidity)), 0);
+        vm.stopPrank();
+        (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
+
+        assertFalse(filled, "order should not be filled");
+        assertEq(liquidityTotal, 3 * liquidity, "liquidityTotal should be 3*liquidity");
+
+        assertEq(currency0Total, uint256(uint128(feesExpected0)), "currency0Total should be feesExpected0");
+        assertEq(currency1Total, uint256(uint128(feesExpected1)), "currency1Total should be feesExpected1");
+
+        assertTrue(feesExpected0 > 0 || feesExpected1 > 0, "fees should be accrued");
+
+        // placing the order is the same as adding liquidity, plus the fees accrued to the order (which are in currency total)
+        assertEq(
+            balance0AfterPlace - balance0Before,
+            int256(delta.amount0()) - int256(currency0Total),
+            "fees were not held in currency0Total"
+        );
+        assertEq(
+            balance1AfterPlace - balance1Before,
+            int256(delta.amount1()) - int256(currency1Total),
+            "fees were not held in currency1Total"
+        );
+    }
+
     function test_withdraw_multipleLPs() public {
         int24 tickLower = 0;
         bool zeroForOne = true;
@@ -483,7 +484,6 @@ contract LimitOrderHookTest is HookTest {
         assertEq(currency1Total, 0, "wrong amount of currency1");
     }
 
-    // @TBD: I don't understand this test
     function test_withdraw_feesAccruedFromCancel() public {
         bool zeroForOne = true;
         uint128 liquidity = 1000000;
@@ -554,7 +554,6 @@ contract LimitOrderHookTest is HookTest {
         assertEq(balanceUser1After - balanceUser1Before, int256(delta.amount1()) + int256(initialFeesExpected1));
     }
 
-    // @TBD: I don't understand this test
     function test_withdraw_feesAccruedJIT() public {
         // some user places an order
         hook.placeOrder(key, 0, true, 1e15);

@@ -424,9 +424,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
         if (liquidity == 0) revert ZeroLiquidity();
 
-        delete orderInfo.liquidity[msg.sender];
-
         uint128 liquidityTotal = orderInfo.liquidityTotal;
+        uint256 currency0Total = orderInfo.currency0Total;
+        uint256 currency1Total = orderInfo.currency1Total;
 
         uint256 checkpointCurrency0Fees = orderInfo.accruedFeesCheckpoints[msg.sender].currency0Fees;
         uint256 checkpointCurrency1Fees = orderInfo.accruedFeesCheckpoints[msg.sender].currency1Fees;
@@ -435,13 +435,14 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         // while `checkpoints` contains fees accrued at placement time.
         // Therefore, (fills + all fees) - (pre-checkpoint fees) = fills + post-checkpoint fees, which is exactly what
         // the withdrawer is entitled to.
-        amount0 = FullMath.mulDiv(orderInfo.currency0Total - checkpointCurrency0Fees, liquidity, liquidityTotal);
-        amount1 = FullMath.mulDiv(orderInfo.currency1Total - checkpointCurrency1Fees, liquidity, liquidityTotal);
+        amount0 = FullMath.mulDiv(currency0Total - checkpointCurrency0Fees, liquidity, liquidityTotal);
+        amount1 = FullMath.mulDiv(currency1Total - checkpointCurrency1Fees, liquidity, liquidityTotal);
 
-        orderInfo.currency0Total -= amount0;
-        orderInfo.currency1Total -= amount1;
+        delete orderInfo.liquidity[msg.sender];
+        orderInfo.liquidityTotal = liquidityTotal - liquidity;
 
-        orderInfo.liquidityTotal -= liquidity;
+        orderInfo.currency0Total = currency0Total - amount0;
+        orderInfo.currency1Total = currency1Total - amount1;
 
         // Unlock the poolManager, which will call back this contract `unlockCallback`.
         poolManager.unlock(

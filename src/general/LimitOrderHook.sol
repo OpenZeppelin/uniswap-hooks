@@ -78,6 +78,7 @@ library OrderIdLibrary {
  *
  * _Available since v1.1.0_
  */
+// slither-disable-next-line locked-ether
 abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     using StateLibrary for IPoolManager;
     using OrderIdLibrary for OrderIdLibrary.OrderId;
@@ -134,9 +135,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /// @dev Struct of callback data for the cancel callback.
     struct CancelCallbackData {
         PoolKey key;
-        int24 tickLower;
         int256 liquidityDelta;
         address to;
+        int24 tickLower;
         bool removingAllLiquidity;
         uint256 accumulatedFees0;
         uint256 accumulatedFees1;
@@ -375,9 +376,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
                         abi.encode(
                             CancelCallbackData(
                                 key,
-                                tickLower,
                                 -liquidity.toInt256(),
                                 to,
+                                tickLower,
                                 removingAllLiquidity,
                                 orderInfo.currency0Total,
                                 orderInfo.currency1Total
@@ -390,6 +391,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         );
 
         if (removingAllLiquidity) {
+            // slither-disable-next-line reentrancy-no-eth
             _setOrderId(key, tickLower, zeroForOne, ORDER_ID_DEFAULT);
             orderInfo.currency0Total = 0;
             orderInfo.currency1Total = 0;

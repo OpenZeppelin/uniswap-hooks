@@ -78,7 +78,7 @@ contract LimitOrderHookNativeTest is HookTest {
     // @dev Bound the tick lower for the limit order.
     function boundTickLower(PoolKey memory key, int24 tickLower, int24 tickDistance) public view returns (int24) {
         int24 currentTick = getCurrentTick(key.toId());
-        // tick should be not far away from the current tick, as otherwise enourmous swaps are required to reach the order range
+        // tick should be not far away from the current tick, as otherwise enormous swaps are required to reach the order range
         tickLower = int24(bound(tickLower, currentTick - tickDistance, currentTick + tickDistance));
         // tick should not breach the limits of the curve
         tickLower = int24(bound(tickLower, TickMath.MIN_TICK + key.tickSpacing, TickMath.MAX_TICK - key.tickSpacing));
@@ -322,7 +322,7 @@ contract LimitOrderHookNativeTest is HookTest {
             uint256 lp2Balance0Before = key.currency0.balanceOf(address(lp2));
             uint256 lp2Balance1Before = key.currency1.balanceOf(address(lp2));
 
-            // lp2 cancells, receiving all the fees accrued and deleting the order.
+            // lp2 cancels, receiving all the fees accrued and deleting the order.
             vm.prank(lp2);
             hook.cancelOrder(key, tickLower, zeroForOne, address(lp2));
 

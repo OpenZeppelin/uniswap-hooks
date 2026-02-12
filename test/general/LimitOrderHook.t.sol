@@ -373,8 +373,8 @@ contract LimitOrderHookTest is HookTest {
         assertTrue(feesExpected0 > 0 || feesExpected1 > 0);
 
         // all fees accrued go to the last user to cancel the order
-        assertEq(balanceUser0After - balanceUser0Before, int256(delta.amount0()) - int256(feesExpected0));
-        assertEq(balanceUser1After - balanceUser1Before, int256(delta.amount1()) - int256(feesExpected1));
+        assertEq(balanceUser0After - balanceUser0Before, int256(delta.amount0()));
+        assertEq(balanceUser1After - balanceUser1Before, int256(delta.amount1()));
     }
 
     function test_placeOrder_feesAccrued() public {

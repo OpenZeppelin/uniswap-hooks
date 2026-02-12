@@ -17,9 +17,15 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IHookEvents} from "src/interfaces/IHookEvents.sol";
 import {IPoolManagerEvents} from "test/utils/interfaces/IPoolManagerEvents.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 
 // @dev Set of utilities to test Hooks.
 contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
+    using StateLibrary for IPoolManager;
+    using TickMath for uint160;
+    using LiquidityAmounts for uint160;
+
     IPoolManager constant POOL_MANAGER = IPoolManager(address(0x000000000004444c5dc75cB358380D2e3dE08A90));
 
     function deployFreshManager() internal override {
@@ -38,6 +44,34 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
     ) internal returns (PoolKey memory _key, PoolId id) {
         (_key, id) = initPool(_currency0, _currency1, hooks, fee, tickSpacing, sqrtPriceX96);
         modifyLiquidityRouter.modifyLiquidity{value: msg.value}(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
+    }
+
+    // @dev Calculate the expected amounts of currency0 and currency1 for a given liquidity and tick range.
+    function calculateAmountsForLiquidity(PoolKey memory key, int24 tickLower, int24 tickUpper, uint128 liquidity)
+        public
+        view
+        returns (uint256 amount0Expected, uint256 amount1Expected)
+    {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(key.toId());
+        (amount0Expected, amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96, TickMath.getSqrtPriceAtTick(tickLower), TickMath.getSqrtPriceAtTick(tickUpper), liquidity
+        );
+    }
+
+    // @dev Overload for calculating expected amounts of currency0 and currency1 for a given liquidity and tick.
+    // Note: since the tickUpper is not provided, the expected amounts are for one tick spacing wide range.
+    function calculateAmountsForLiquidity(PoolKey memory key, int24 tickLower, uint128 liquidity)
+        public
+        view
+        returns (uint256 amount0Expected, uint256 amount1Expected)
+    {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(key.toId());
+        (amount0Expected, amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96,
+            TickMath.getSqrtPriceAtTick(tickLower),
+            TickMath.getSqrtPriceAtTick(tickLower + key.tickSpacing),
+            liquidity
+        );
     }
 
     // @dev Calculate the current `feesAccrued` for a given position.
@@ -87,6 +121,17 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
             tickLower: tickLower, tickUpper: tickUpper, liquidityDelta: liquidity, salt: salt
         });
         return modifyLiquidityRouter.modifyLiquidity(poolKey, modifyLiquidityParams, "");
+    }
+
+    /// @dev Get the current tick for a given pool.
+    function getCurrentTick(PoolId poolId) public view returns (int24 tick) {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
+        tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
+    }
+
+    // @dev Floored the tick to the nearest multiple of the tick spacing.
+    function flooredTick(int24 tick, int24 tickSpacing) public pure returns (int24) {
+        return (tick / tickSpacing) * tickSpacing;
     }
 
     // @dev Swaps all combinations of `zeroForOne` (true/false) and `amountSpecified` (+,-) in a given pool.

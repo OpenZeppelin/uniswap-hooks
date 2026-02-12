@@ -137,16 +137,6 @@ contract LimitOrderHookTest is HookTest {
         );
     }
 
-    // Helpers
-    function getCurrentTick(PoolId poolId) public view returns (int24 tick) {
-        (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
-        tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
-    }
-
-    function test_getTickLowerLast() public view {
-        assertEq(hook.getTickLowerLast(key.toId()), 0);
-    }
-
     function test_zeroLiquidityRevert() public {
         vm.expectRevert(LimitOrderHook.ZeroLiquidity.selector);
         hook.placeOrder(key, 0, true, 0);
@@ -179,7 +169,7 @@ contract LimitOrderHookTest is HookTest {
     }
 
     function test_zeroForOneCrossedRangeRevert() public {
-        vm.expectRevert(LimitOrderHook.CrossedRange.selector);
+        vm.expectRevert(LimitOrderHook.InvalidRange.selector);
         hook.placeOrder(key, -60, true, 1000000);
     }
 
@@ -192,7 +182,7 @@ contract LimitOrderHookTest is HookTest {
             bytes("")
         );
 
-        vm.expectRevert(LimitOrderHook.InRange.selector);
+        vm.expectRevert(LimitOrderHook.InvalidRange.selector);
         hook.placeOrder(key, 0, true, 1000000);
     }
 
@@ -210,7 +200,7 @@ contract LimitOrderHookTest is HookTest {
     }
 
     function test_notZeroForOneCrossedRangeRevert() public {
-        vm.expectRevert(LimitOrderHook.CrossedRange.selector);
+        vm.expectRevert(LimitOrderHook.InvalidRange.selector);
         hook.placeOrder(key, 0, false, 1000000);
     }
 
@@ -223,7 +213,7 @@ contract LimitOrderHookTest is HookTest {
             bytes("")
         );
 
-        vm.expectRevert(LimitOrderHook.InRange.selector);
+        vm.expectRevert(LimitOrderHook.InvalidRange.selector);
         hook.placeOrder(key, -60, false, 1000000);
     }
 
@@ -253,8 +243,8 @@ contract LimitOrderHookTest is HookTest {
         assertEq(currency0Total, 0);
         assertEq(currency1Total, 0);
         assertEq(liquidityTotal, liquidity * 2);
-        assertEq(hook.getOrderLiquidity(OrderIdLibrary.OrderId.wrap(1), address(this)), liquidity);
-        assertEq(hook.getOrderLiquidity(OrderIdLibrary.OrderId.wrap(1), user), liquidity);
+        assertEq(hook.getUserInfo(OrderIdLibrary.OrderId.wrap(1), address(this)).liquidity, liquidity);
+        assertEq(hook.getUserInfo(OrderIdLibrary.OrderId.wrap(1), user).liquidity, liquidity);
     }
 
     function test_cancelOrder() public {
@@ -500,6 +490,50 @@ contract LimitOrderHookTest is HookTest {
         assertEq(currency1Total, 0, "wrong amount of currency1");
     }
 
+    function test_withdraw_noUnderflowAfterEarlierWithdrawals() public {
+        int24 tickLower = 0;
+        uint128 liquidity = 1e18;
+
+        // First participant places order.
+        hook.placeOrder(key, tickLower, true, liquidity);
+
+        // Accrue substantial fees before the next participants join.
+        vm.startPrank(swapper);
+        for (uint256 i = 0; i < 20; ++i) {
+            swapOnPool(key, false, -5e20, TickMath.getSqrtPriceAtTick(tickSpacing / 2));
+            swapOnPool(key, true, -5e20, TickMath.getSqrtPriceAtTick(-tickSpacing));
+        }
+        vm.stopPrank();
+
+        // Second and third participants join the same order.
+        vm.prank(user);
+        hook.placeOrder(key, tickLower, true, liquidity);
+
+        vm.prank(attacker);
+        hook.placeOrder(key, tickLower, true, liquidity);
+
+        // Fill the order.
+        vm.prank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(2 * tickSpacing));
+
+        OrderIdLibrary.OrderId orderId = OrderIdLibrary.OrderId.wrap(1);
+
+        // Earlier withdrawals should not block later participants.
+        hook.withdraw(orderId, address(this));
+
+        vm.prank(user);
+        hook.withdraw(orderId, user);
+
+        vm.prank(attacker);
+        hook.withdraw(orderId, attacker);
+
+        (,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(orderId);
+
+        assertApproxEqAbs(currency0Total, 0, 1, "currency0Total should be fully withdrawable");
+        assertApproxEqAbs(currency1Total, 0, 1, "currency1Total should be fully withdrawable");
+        assertApproxEqAbs(liquidityTotal, 0, 1, "liquidityTotal should be fully withdrawable");
+    }
+
     function test_withdraw_feesAccruedFromCancel() public {
         bool zeroForOne = true;
         uint128 liquidity = 1000000;
@@ -556,9 +590,9 @@ contract LimitOrderHookTest is HookTest {
         (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
 
         assertTrue(filled, "order should be filled");
-        assertEq(currency0Total, 0, "currency0Total should be 0");
-        assertEq(currency1Total, 0, "currency1Total should be 0");
-        assertEq(liquidityTotal, 0, "liquidityTotal should be 0");
+        assertApproxEqAbs(currency0Total, 0, 1, "currency0Total should be 0");
+        assertApproxEqAbs(currency1Total, 0, 1, "currency1Total should be 0");
+        assertApproxEqAbs(liquidityTotal, 0, 1, "liquidityTotal should be 0");
 
         // cancel the order is the same as remove liquidity from the pool in the range (0, tickSpacing)
         vm.startPrank(user);
@@ -566,8 +600,18 @@ contract LimitOrderHookTest is HookTest {
         vm.stopPrank();
 
         // the fees are added to the balance of the user who withdraws the order
-        assertEq(balanceUser0After - balanceUser0Before, int256(delta.amount0()) + int256(initialFeesExpected0));
-        assertEq(balanceUser1After - balanceUser1Before, int256(delta.amount1()) + int256(initialFeesExpected1));
+        assertApproxEqAbs(
+            balanceUser0After - balanceUser0Before,
+            int256(delta.amount0()) + int256(initialFeesExpected0),
+            1,
+            "withdrawer should have received delta + fees"
+        );
+        assertApproxEqAbs(
+            balanceUser1After - balanceUser1Before,
+            int256(delta.amount1()) + int256(initialFeesExpected1),
+            1,
+            "withdrawer should have received delta + fees"
+        );
     }
 
     function test_withdraw_feesAccruedJIT() public {
@@ -683,9 +727,9 @@ contract LimitOrderHookTest is HookTest {
 
         (,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
 
-        assertEq(liquidityTotal, 0, "liquidityTotal should be 0");
-        assertEq(currency0Total, 0, "currency0Total should be 0");
-        assertEq(currency1Total, 0, "currency1Total should be 0");
+        assertApproxEqAbs(liquidityTotal, 0, 1, "liquidityTotal should be 0");
+        assertApproxEqAbs(currency0Total, 0, 1, "currency0Total should be 0");
+        assertApproxEqAbs(currency1Total, 0, 1, "currency1Total should be 0");
 
         assertApproxEqAbs(
             balanceAttacker0After - balanceAttacker0Before,

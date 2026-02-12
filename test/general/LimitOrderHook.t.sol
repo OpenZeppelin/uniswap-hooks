@@ -6,15 +6,12 @@ import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
-import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 // Internal imports
@@ -85,29 +82,6 @@ contract LimitOrderHookTest is HookTest {
 
         vm.label(Currency.unwrap(currency0), "currency0");
         vm.label(Currency.unwrap(currency1), "currency1");
-    }
-
-    function calculateExpectedFees(
-        IPoolManager manager,
-        PoolId poolId,
-        address owner,
-        int24 tickLower,
-        int24 tickUpper,
-        bytes32 salt
-    ) internal view returns (int128, int128) {
-        bytes32 positionKey = Position.calculatePositionKey(owner, tickLower, tickUpper, salt);
-        (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128) =
-            StateLibrary.getPositionInfo(manager, poolId, positionKey);
-
-        (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
-            StateLibrary.getFeeGrowthInside(manager, poolId, tickLower, tickUpper);
-
-        uint256 feesExpected0 =
-            FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity, FixedPoint128.Q128);
-        uint256 feesExpected1 =
-            FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity, FixedPoint128.Q128);
-
-        return (int128(int256(feesExpected0)), int128(int256(feesExpected1)));
     }
 
     function modifyPoolLiquidityNoChecks(
@@ -299,7 +273,7 @@ contract LimitOrderHookTest is HookTest {
         // cancel the order is the same as remove liquidity from the pool in the range (0, tickSpacing)
         vm.startPrank(user);
         (int128 feesExpected0, int128 feesExpected1) =
-            calculateExpectedFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
+            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, -int256(uint256(liquidity)), 0);
         vm.stopPrank();
 
@@ -356,7 +330,7 @@ contract LimitOrderHookTest is HookTest {
         // cancel the order is the same as remove liquidity from the pool in the range (0, tickSpacing)
         vm.startPrank(user);
         (int128 feesExpected0, int128 feesExpected1) =
-            calculateExpectedFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
+            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, -int256(uint256(liquidity)), 0);
         vm.stopPrank();
 
@@ -409,7 +383,7 @@ contract LimitOrderHookTest is HookTest {
 
         vm.startPrank(user);
         (int128 feesExpected0, int128 feesExpected1) =
-            calculateExpectedFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
+            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, int256(uint256(liquidity)), 0);
         vm.stopPrank();
         (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
@@ -559,7 +533,7 @@ contract LimitOrderHookTest is HookTest {
 
         vm.startPrank(user);
         (int128 initialFeesExpected0, int128 initialFeesExpected1) =
-            calculateExpectedFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
+            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, -int256(uint256(liquidity)), 0);
         vm.stopPrank();
 
@@ -646,7 +620,7 @@ contract LimitOrderHookTest is HookTest {
         // add liquidity to be equivalent as placing the order
         vm.startPrank(user);
         (int128 initialFeesExpected0, int128 initialFeesExpected1) =
-            calculateExpectedFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, tickSpacing, 0);
+            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, tickSpacing, 0);
         modifyPoolLiquidityNoChecks(noHookKey, 0, tickSpacing, int256(uint256(1e15)), 0);
         vm.stopPrank();
 

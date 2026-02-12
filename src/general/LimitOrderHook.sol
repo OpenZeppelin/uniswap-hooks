@@ -251,9 +251,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
         // note that a zeroForOne swap means that the pool is actually gaining token0, so limit
         // order fills are the opposite of swap fills, hence the inversion below
-        bool fillZeroForOne = !params.zeroForOne;
+        bool zeroForOne = !params.zeroForOne;
         for (; lower <= upper; lower += key.tickSpacing) {
-            _fillOrder(key, lower, fillZeroForOne);
+            _fillOrder(key, lower, zeroForOne);
         }
 
         return (this.afterSwap.selector, 0);
@@ -294,9 +294,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Cancels a limit order by removing liquidity from the pool.
      * NOTE: Partial cancellation is not supported, the entire liquidity added by the msg.sender will be removed.
      * NOTE: If the caller is not the last liquidity provider, fees accrued during cancellation are kept in the order
-     * and redistributed to remaining liquidity providers.
-     * NOTE: If the caller removes the last liquidity, accumulated order fees are paid out to `to` and the order id
-     * is reset to the default value.
+     * and redistributed to remaining liquidity providers. If the caller removes the last liquidity, accumulated order
+     *  fees are paid out to `to` and the order id is reset to the default value.
      */
     function cancelOrder(PoolKey calldata key, int24 tickLower, bool zeroForOne, address to) public virtual {
         OrderIdLibrary.OrderId orderId = getOrderId(key, tickLower, zeroForOne);
@@ -322,7 +321,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             key, liquidity, to, tickLower, removingAllLiquidity, orderInfo.accruedFees0, orderInfo.accruedFees1
         );
 
-        // NOTE: Once the order is completely cancelled, its id is reset and cannot be reused.
         if (removingAllLiquidity) {
             _setOrderId(key, tickLower, zeroForOne, ORDER_ID_DEFAULT);
             orderInfo.accruedFees0 = 0;
@@ -370,9 +368,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         uint256 amount1Fee =
             ((uint256(userInfo.liquidity) * orderInfo.accFee1PerLiqX128) - userInfo.feeCheckpoint1X128) >> 128;
 
-        amount0 = amount0Fill + amount0Fee;
-        amount1 = amount1Fill + amount1Fee;
-
         // delete the user state before external call
         delete orderInfo.users[msg.sender];
 
@@ -383,10 +378,10 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         orderInfo.accruedFees1 -= amount1Fee;
 
         // update total liquidity
-        orderInfo.liquidityTotal -= userInfo.liquidity;
+        orderInfo.liquidityTotal = liquidityTotal - userInfo.liquidity;
 
         // Unlock callback and transfer withdrawn currency to `to`.
-        _unlockWithdraw(orderInfo, amount0, amount1, to);
+        _unlockWithdraw(orderInfo, amount0 = amount0Fill + amount0Fee, amount1 = amount1Fill + amount1Fee, to);
 
         emit Withdraw(msg.sender, orderId, userInfo.liquidity);
     }

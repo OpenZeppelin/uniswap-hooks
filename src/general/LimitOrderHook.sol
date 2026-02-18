@@ -20,7 +20,22 @@ import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/Pool
 import {CurrencySettler} from "../utils/CurrencySettler.sol";
 import {BaseHook} from "../base/BaseHook.sol";
 
-/// @dev The order id library.
+/**
+ * @dev The OrderId library.
+ *
+ * The LimitOrderHook uses OrderIds to track distinct lifecycle instances of orders at the same pool locations.
+ *
+ * Orders are identified by an OrderKey computed as a hash of its parameters. Multiple users can add liquidity
+ * to the same OrderKey, sharing a single position owned by the hook. When an order is filled or completely
+ * cancelled, the position is removed from the pool and users withdraw their liquidity.
+ *
+ * If users later place a new order at the same order parameters, the OrderKey remains identical but maps
+ * to a new OrderId. This ensures accounting state (currency totals, liquidity mappings, filled status) remains
+ * independent between the original and subsequent orders placed at the same pool location.
+ *
+ * NOTE: OrderKey identifies location and direction, while OrderId identifies the unique lifecycle instance.
+ * An OrderKey may map to different OrderIds over time as orders are filled and recreated.
+ */
 library OrderIdLibrary {
     /// @dev The order id type.
     type OrderId is uint232;
@@ -72,17 +87,17 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /// @dev The Q128 constant for fixed point arithmetic.
     uint256 internal constant Q128 = 1 << 128;
 
-    /// @dev The info for each user.
+    /// @dev Info for each user.
     struct UserInfo {
-        /// @dev The liquidity added by the user.
+        /// @dev Liquidity added by the user.
         uint128 liquidity;
-        /// @dev The fee checkpoint for currency0.
+        /// @dev Checkpoint of {accFeePerLiqX128} at liquidity placement.
         uint256 feeCheckpoint0X128;
-        /// @dev The fee checkpoint for currency1.
+        /// @dev Fee checkpoint for currency1.
         uint256 feeCheckpoint1X128;
     }
 
-    /// @dev The info for each order id.
+    /// @dev Info for each order id.
     struct OrderInfo {
         /// @dev The currency0 of the order.
         Currency currency0;

@@ -116,6 +116,15 @@ contract LimitOrderHookTest is HookTest {
         hook.placeOrder(key, 0, true, 0);
     }
 
+    function test_placeOrder_oneLiquidityCostsTokens() public {
+        uint256 balance0Before = currency0.balanceOf(address(this));
+        uint256 balance1Before = currency1.balanceOf(address(this));
+        hook.placeOrder(key, 60, true, 1);
+        uint256 balance0After = currency0.balanceOf(address(this));
+        uint256 balance1After = currency1.balanceOf(address(this));
+        assertTrue(balance0After < balance0Before || balance1After < balance1Before, "got one liquidity for free");
+    }
+
     function test_zeroForOneRightBoundaryOfCurrentRange() public {
         int24 tickLower = 60;
         bool zeroForOne = true;

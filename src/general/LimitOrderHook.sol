@@ -91,9 +91,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     struct UserInfo {
         /// @dev Liquidity added by the user.
         uint128 liquidity;
-        /// @dev Checkpoint of {accFeePerLiqX128} at liquidity placement.
+        /// @dev Checkpoint of currency0 accumulated fees at liquidity placement.
         uint256 feeCheckpoint0X128;
-        /// @dev Fee checkpoint for currency1.
+        /// @dev Checkpoint of currency1 accumulated fees at liquidity placement.
         uint256 feeCheckpoint1X128;
     }
 

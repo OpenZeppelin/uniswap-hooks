@@ -271,7 +271,7 @@ contract LimitOrderHookFuzzTest is HookTest {
         }
 
         // calculate the fees accrued to the order.
-        (int128 fees0, int128 fees1) =
+        (uint256 fees0, uint256 fees1) =
             calculateFees(manager, key.toId(), address(hook), tickLower, tickLower + key.tickSpacing, 0);
         assertTrue(fees0 > 0 || fees1 > 0, "there should be fees accrued");
 

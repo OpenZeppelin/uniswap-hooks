@@ -422,7 +422,7 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
         swapRouter.swap(poolKey, swapParams, testSettings, "");
         swapRouter.swap(noHookKey, swapParams, testSettings, "");
 
-        (int128 feesExpected0, int128 feesExpected1) =
+        (uint256 feesExpected0, uint256 feesExpected1) =
             calculateFees(manager, noHookKey.toId(), address(modifyLiquidityRouter), TICK_LOWER, TICK_UPPER, bytes32(0));
 
         int128 feeDonation0 =

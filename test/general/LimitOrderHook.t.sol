@@ -18,6 +18,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 import {LimitOrderHookMock} from "../../src/mocks/general/LimitOrderHookMock.sol";
 import {HookTest} from "../utils/HookTest.sol";
+import {console} from "forge-std/console.sol";
 
 contract LimitOrderHookTest is HookTest {
     using StateLibrary for IPoolManager;
@@ -281,7 +282,7 @@ contract LimitOrderHookTest is HookTest {
 
         // cancel the order is the same as remove liquidity from the pool in the range (0, tickSpacing)
         vm.startPrank(user);
-        (int128 feesExpected0, int128 feesExpected1) =
+        (uint256 feesExpected0, uint256 feesExpected1) =
             calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, -int256(uint256(liquidity)), 0);
         vm.stopPrank();
@@ -338,7 +339,7 @@ contract LimitOrderHookTest is HookTest {
 
         // cancel the order is the same as remove liquidity from the pool in the range (0, tickSpacing)
         vm.startPrank(user);
-        (int128 feesExpected0, int128 feesExpected1) =
+        (uint256 feesExpected0, uint256 feesExpected1) =
             calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, -int256(uint256(liquidity)), 0);
         vm.stopPrank();
@@ -391,7 +392,7 @@ contract LimitOrderHookTest is HookTest {
         // place the order is the same as add liquidity to the pool in the range (0, tickSpacing)
 
         vm.startPrank(user);
-        (int128 feesExpected0, int128 feesExpected1) =
+        (uint256 feesExpected0, uint256 feesExpected1) =
             calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, int256(uint256(liquidity)), 0);
         vm.stopPrank();
@@ -400,8 +401,8 @@ contract LimitOrderHookTest is HookTest {
         assertFalse(filled, "order should not be filled");
         assertEq(liquidityTotal, 3 * liquidity, "liquidityTotal should be 3*liquidity");
 
-        assertEq(currency0Total, uint256(uint128(feesExpected0)), "currency0Total should be feesExpected0");
-        assertEq(currency1Total, uint256(uint128(feesExpected1)), "currency1Total should be feesExpected1");
+        assertEq(currency0Total, feesExpected0, "currency0Total should be feesExpected0");
+        assertEq(currency1Total, feesExpected1, "currency1Total should be feesExpected1");
 
         assertTrue(feesExpected0 > 0 || feesExpected1 > 0, "fees should be accrued");
 
@@ -474,47 +475,329 @@ contract LimitOrderHookTest is HookTest {
     }
 
     function test_withdraw_noUnderflowAfterEarlierWithdrawals() public {
+        uint256 FEES_0 = 90198636691739;
+        uint256 FEES_1 = 90334029396399;
+        uint256 FILL_SWAP_FEES = 27120548209305;
+        uint256 FILL_AMOUNT_1 = 9013062188225776;
+
         int24 tickLower = 0;
         uint128 liquidity = 1e18;
 
-        // First participant places order.
-        hook.placeOrder(key, tickLower, true, liquidity);
-
-        // Accrue substantial fees before the next participants join.
-        vm.startPrank(swapper);
-        for (uint256 i = 0; i < 20; ++i) {
-            swapOnPool(key, false, -5e20, TickMath.getSqrtPriceAtTick(tickSpacing / 2));
-            swapOnPool(key, true, -5e20, TickMath.getSqrtPriceAtTick(-tickSpacing));
-        }
-        vm.stopPrank();
-
-        // Second and third participants join the same order.
-        vm.prank(user);
-        hook.placeOrder(key, tickLower, true, liquidity);
-
-        vm.prank(attacker);
-        hook.placeOrder(key, tickLower, true, liquidity);
-
-        // Fill the order.
-        vm.prank(swapper);
-        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(2 * tickSpacing));
-
         OrderIdLibrary.OrderId orderId = OrderIdLibrary.OrderId.wrap(1);
 
-        // Earlier withdrawals should not block later participants.
-        hook.withdraw(orderId, address(this));
+        {
+            // First participant places order.
+            hook.placeOrder(key, tickLower, true, liquidity);
 
-        vm.prank(user);
-        hook.withdraw(orderId, user);
+            {
+                (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(orderId);
+                (
+                    ,
+                    uint256 filledAmount0,
+                    uint256 filledAmount1,
+                    uint256 accruedFees0,
+                    uint256 accruedFees1,
+                    uint256 accFee0PerLiqX128,
+                    uint256 accFee1PerLiqX128,
+                ) = hook.getExtendedtOrderInfo(orderId);
 
-        vm.prank(attacker);
-        hook.withdraw(orderId, attacker);
+                console.log("--------------------------------");
+                console.log("PLACED ORDER");
+                console.log("liquidityTotal", liquidityTotal);
+                console.log("filledAmount0", filledAmount0);
+                console.log("filledAmount1", filledAmount1);
+                console.log("accruedFees0", accruedFees0);
+                console.log("accruedFees1", accruedFees1);
+                console.log("accFee0PerLiqX128", accFee0PerLiqX128);
+                console.log("accFee1PerLiqX128", accFee1PerLiqX128);
+                assertEq(filled, false, "order should not be filled");
+                assertEq(liquidityTotal, 1e18, "liquidityTotal should be 1e18");
+                assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+                assertEq(filledAmount1, 0, "filledAmount1 should be 0");
+                assertEq(accruedFees0, 0, "accruedFees0 should be 0");
+                assertEq(accruedFees1, 0, "accruedFees1 should be 0");
+                assertEq(accFee0PerLiqX128, 0, "accFee0PerLiqX128 should be 0");
+                assertEq(accFee1PerLiqX128, 0, "accFee1PerLiqX128 should be 0");
+            }
+            {
+                (uint256 accruedFees0InPool, uint256 accruedFees1InPool) =
+                    calculateFees(manager, key.toId(), address(hook), tickLower, tickLower + key.tickSpacing, 0);
+                console.log("accruedFees0InPool", accruedFees0InPool);
+                console.log("accruedFees1InPool", accruedFees1InPool);
+                assertEq(accruedFees0InPool, 0, "accruedFees0InPool should be 0");
+                assertEq(accruedFees1InPool, 0, "accruedFees1InPool should be 0");
+            }
+        }
 
-        (,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(orderId);
+        {
+            // Accrue substantial fees before the next participants join.
+            vm.startPrank(swapper);
+            for (uint256 i = 0; i < 20; ++i) {
+                swapOnPool(key, false, -5e20, TickMath.getSqrtPriceAtTick(tickSpacing / 2));
+                swapOnPool(key, true, -5e20, TickMath.getSqrtPriceAtTick(-tickSpacing));
+            }
+            vm.stopPrank();
 
-        assertApproxEqAbs(currency0Total, 0, 1, "currency0Total should be fully withdrawable");
-        assertApproxEqAbs(currency1Total, 0, 1, "currency1Total should be fully withdrawable");
-        assertApproxEqAbs(liquidityTotal, 0, 1, "liquidityTotal should be fully withdrawable");
+            {
+                (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(orderId);
+                (
+                    ,
+                    uint256 filledAmount0,
+                    uint256 filledAmount1,
+                    uint256 accruedFees0,
+                    uint256 accruedFees1,
+                    uint256 accFee0PerLiqX128,
+                    uint256 accFee1PerLiqX128,
+                ) = hook.getExtendedtOrderInfo(orderId);
+                console.log("--------------------------------");
+                console.log("GENERATED FEES");
+                console.log("liquidityTotal", liquidityTotal);
+                console.log("filledAmount0", filledAmount0);
+                console.log("filledAmount1", filledAmount1);
+                console.log("accruedFees0", accruedFees0);
+                console.log("accruedFees1", accruedFees1);
+                console.log("accFee0PerLiqX128", accFee0PerLiqX128);
+                console.log("accFee1PerLiqX128", accFee1PerLiqX128);
+                assertEq(filled, false, "order should not be filled");
+                assertEq(liquidityTotal, 1e18, "liquidityTotal should be 1e18");
+                assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+                assertEq(filledAmount1, 0, "filledAmount1 should be 0");
+                assertEq(accruedFees0, 0, "accruedFees0 should be 0");
+                assertEq(accruedFees1, 0, "accruedFees1 should be 0");
+                assertEq(accFee0PerLiqX128, 0, "accFee0PerLiqX128 should be 0");
+                assertEq(accFee1PerLiqX128, 0, "accFee1PerLiqX128 should be 0");
+            }
+            {
+                (uint256 accruedFees0InPool, uint256 accruedFees1InPool) =
+                    calculateFees(manager, key.toId(), address(hook), tickLower, tickLower + key.tickSpacing, 0);
+                console.log("accruedFees0InPool", accruedFees0InPool);
+                console.log("accruedFees1InPool", accruedFees1InPool);
+                assertEq(accruedFees0InPool, FEES_0, "accruedFees0InPool should be FEES_0");
+                assertEq(accruedFees1InPool, FEES_1, "accruedFees1InPool should be FEES_1");
+            }
+        }
+
+        {
+            // Second participant places order.
+            vm.prank(user);
+            hook.placeOrder(key, tickLower, true, liquidity);
+
+            {
+                (filled,,,,, liquidityTotal) = hook.getOrderInfo(orderId);
+                (
+                    ,
+                    uint256 filledAmount0,
+                    uint256 filledAmount1,
+                    uint256 accruedFees0,
+                    uint256 accruedFees1,
+                    uint256 accFee0PerLiqX128,
+                    uint256 accFee1PerLiqX128,
+                ) = hook.getExtendedtOrderInfo(orderId);
+                console.log("--------------------------------");
+                console.log("ADDED LIQUIDITY 2");
+                console.log("liquidityTotal", liquidityTotal);
+                console.log("filledAmount0", filledAmount0);
+                console.log("filledAmount1", filledAmount1);
+                console.log("accruedFees0", accruedFees0);
+                console.log("accruedFees1", accruedFees1);
+                console.log("accFee0PerLiqX128", accFee0PerLiqX128);
+                console.log("accFee1PerLiqX128", accFee1PerLiqX128);
+                assertEq(filled, false, "order should not be filled");
+                assertEq(liquidityTotal, 2e18, "liquidityTotal should be 3e18");
+                assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+                assertEq(filledAmount1, 0, "filledAmount1 should be 0");
+                assertEq(accruedFees0, FEES_0, "accruedFees0 should be 0");
+                assertEq(accruedFees1, FEES_1, "accruedFees1 should be 0");
+            }
+
+            {
+                (uint256 accruedFees0InPool, uint256 accruedFees1InPool) =
+                    calculateFees(manager, key.toId(), address(user), tickLower, tickLower + key.tickSpacing, 0);
+                console.log("accruedFees0InPool", accruedFees0InPool);
+                console.log("accruedFees1InPool", accruedFees1InPool);
+                assertEq(accruedFees0InPool, 0, "accruedFees0InPool should be 0");
+                assertEq(accruedFees1InPool, 0, "accruedFees1InPool should be 0");
+            }
+        }
+
+        {
+            // Third participant places order.
+            vm.prank(attacker);
+            hook.placeOrder(key, tickLower, true, liquidity);
+
+            {
+                (filled,,,,, liquidityTotal) = hook.getOrderInfo(orderId);
+                (
+                    ,
+                    uint256 filledAmount0,
+                    uint256 filledAmount1,
+                    uint256 accruedFees0,
+                    uint256 accruedFees1,
+                    uint256 accFee0PerLiqX128,
+                    uint256 accFee1PerLiqX128,
+                ) = hook.getExtendedtOrderInfo(orderId);
+                console.log("--------------------------------");
+                console.log("ADDED LIQUIDITY 3");
+                console.log("liquidityTotal", liquidityTotal);
+                console.log("filledAmount0", filledAmount0);
+                console.log("filledAmount1", filledAmount1);
+                console.log("accruedFees0", accruedFees0);
+                console.log("accruedFees1", accruedFees1);
+                console.log("accFee0PerLiqX128", accFee0PerLiqX128);
+                console.log("accFee1PerLiqX128", accFee1PerLiqX128);
+                assertEq(filled, false, "order should not be filled");
+                assertEq(liquidityTotal, 3e18, "liquidityTotal should be 3e18");
+                assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+                assertEq(filledAmount1, 0, "filledAmount1 should be 0");
+                assertEq(accruedFees0, FEES_0, "accruedFees0 should be 0");
+                assertEq(accruedFees1, FEES_1, "accruedFees1 should be 0");
+            }
+
+            (uint256 accruedFees0InPool, uint256 accruedFees1InPool) =
+                calculateFees(manager, key.toId(), address(user), tickLower, tickLower + key.tickSpacing, 0);
+            console.log("accruedFees0InPool", accruedFees0InPool);
+            console.log("accruedFees1InPool", accruedFees1InPool);
+            assertEq(accruedFees0InPool, 0, "accruedFees0InPool should be 0");
+            assertEq(accruedFees1InPool, 0, "accruedFees1InPool should be 0");
+        }
+
+        {
+            // Fill the order.
+            vm.prank(swapper);
+            swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(2 * tickSpacing));
+
+            {
+                (filled,,,,, liquidityTotal) = hook.getOrderInfo(orderId);
+                (
+                    ,
+                    uint256 filledAmount0,
+                    uint256 filledAmount1,
+                    uint256 accruedFees0,
+                    uint256 accruedFees1,
+                    uint256 accFee0PerLiqX128,
+                    uint256 accFee1PerLiqX128,
+                ) = hook.getExtendedtOrderInfo(orderId);
+                console.log("--------------------------------");
+                console.log("FILLED ORDER");
+                console.log("liquidityTotal", liquidityTotal);
+                console.log("filledAmount0", filledAmount0);
+                console.log("filledAmount1", filledAmount1);
+                console.log("accruedFees0", accruedFees0);
+                console.log("accruedFees1", accruedFees1);
+                console.log("accFee0PerLiqX128", accFee0PerLiqX128);
+                console.log("accFee1PerLiqX128", accFee1PerLiqX128);
+                assertEq(filled, true, "order should be filled");
+                assertEq(liquidityTotal, 3e18, "liquidityTotal should be 3e18");
+                assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+                assertEq(filledAmount1, FILL_AMOUNT_1, "filledAmount1 should be FILL_AMOUNT_1");
+                assertEq(accruedFees0, FEES_0, "accruedFees0 should be FEES_0");
+                assertEq(accruedFees1, FEES_1 + FILL_SWAP_FEES, "accruedFees1 should be FEES_1 + FILL_SWAP_FEES");
+            }
+            {
+                (uint256 accruedFees0InPool, uint256 accruedFees1InPool) =
+                    calculateFees(manager, key.toId(), address(user), tickLower, tickLower + key.tickSpacing, 0);
+                console.log("accruedFees0InPool", accruedFees0InPool);
+                console.log("accruedFees1InPool", accruedFees1InPool);
+                assertEq(accruedFees0InPool, 0, "accruedFees0InPool should be 0");
+                assertEq(accruedFees1InPool, 0, "accruedFees1InPool should be 0");
+            }
+        }
+
+        {
+            // First participant withdraws.
+            hook.withdraw(orderId, address(this));
+            (filled,,,,, liquidityTotal) = hook.getOrderInfo(orderId);
+            (
+                ,
+                uint256 filledAmount0,
+                uint256 filledAmount1,
+                uint256 accruedFees0,
+                uint256 accruedFees1,
+                uint256 accFee0PerLiqX128,
+                uint256 accFee1PerLiqX128,
+            ) = hook.getExtendedtOrderInfo(orderId);
+            console.log("--------------------------------");
+            console.log("WITHDRAW 1");
+            console.log("liquidityTotal", liquidityTotal);
+            console.log("filledAmount0", filledAmount0);
+            console.log("filledAmount1", filledAmount1);
+            console.log("accruedFees0", accruedFees0);
+            console.log("accruedFees1", accruedFees1);
+            console.log("accFee0PerLiqX128", accFee0PerLiqX128);
+            console.log("accFee1PerLiqX128", accFee1PerLiqX128);
+            assertEq(filled, true, "order should be filled");
+            assertEq(liquidityTotal, 2e18, "liquidityTotal should be 2e18");
+            assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+            assertApproxEqAbs(
+                filledAmount1, FILL_AMOUNT_1 * 2 / 3, 1, "filledAmount1 should be (FILL_AMOUNT_1 / 3) * 2"
+            );
+            assertApproxEqAbs(accruedFees0, 0, 1, "accruedFees0 should be 0");
+            assertApproxEqAbs(
+                accruedFees1, FILL_SWAP_FEES * 2 / 3, 1, "accruedFees1 should be (FILL_SWAP_FEES / 3) * 2"
+            );
+        }
+
+        {
+            // Second participant withdraws.
+            vm.prank(user);
+            hook.withdraw(orderId, user);
+
+            (filled,,,,, liquidityTotal) = hook.getOrderInfo(orderId);
+            (
+                ,
+                uint256 filledAmount0,
+                uint256 filledAmount1,
+                uint256 accruedFees0,
+                uint256 accruedFees1,
+                uint256 accFee0PerLiqX128,
+                uint256 accFee1PerLiqX128,
+            ) = hook.getExtendedtOrderInfo(orderId);
+            console.log("--------------------------------");
+            console.log("WITHDRAW 2");
+            console.log("liquidityTotal", liquidityTotal);
+            console.log("filledAmount0", filledAmount0);
+            console.log("filledAmount1", filledAmount1);
+            console.log("accruedFees0", accruedFees0);
+            console.log("accruedFees1", accruedFees1);
+            console.log("accFee0PerLiqX128", accFee0PerLiqX128);
+            console.log("accFee1PerLiqX128", accFee1PerLiqX128);
+            assertEq(filled, true, "order should be filled");
+            assertEq(liquidityTotal, 1e18, "liquidityTotal should be 1e18");
+            assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+            assertApproxEqAbs(filledAmount1, FILL_AMOUNT_1 * 1 / 3, 2, "filledAmount1 should be (FILL_AMOUNT_1 / 3)");
+            assertApproxEqAbs(accruedFees0, 0, 2, "accruedFees0 should be 0");
+            assertApproxEqAbs(accruedFees1, FILL_SWAP_FEES * 1 / 3, 2, "accruedFees1 should be (FILL_SWAP_FEES / 3)");
+        }
+
+        {
+            // Third participant withdraws.
+            vm.prank(attacker);
+            hook.withdraw(orderId, attacker);
+
+            (filled,,,,, liquidityTotal) = hook.getOrderInfo(orderId);
+            (
+                ,
+                uint256 filledAmount0,
+                uint256 filledAmount1,
+                uint256 accruedFees0,
+                uint256 accruedFees1,
+                uint256 accFee0PerLiqX128,
+                uint256 accFee1PerLiqX128,
+            ) = hook.getExtendedtOrderInfo(orderId);
+            console.log("--------------------------------");
+            console.log("WITHDRAW 3");
+            console.log("liquidityTotal", liquidityTotal);
+            console.log("filledAmount0", filledAmount0);
+            console.log("filledAmount1", filledAmount1);
+            console.log("accruedFees0", accruedFees0);
+            console.log("accruedFees1", accruedFees1);
+            assertEq(filled, true, "order should be filled");
+            assertEq(liquidityTotal, 0, "liquidityTotal should be 0");
+            assertEq(filledAmount0, 0, "filledAmount0 should be 0");
+            assertEq(filledAmount1, 0, "filledAmount1 should be 0");
+            assertEq(accruedFees0, 0, "accruedFees0 should be 0");
+            assertEq(accruedFees1, 0, "accruedFees1 should be 0");
+        }
     }
 
     function test_withdraw_feesAccruedFromCancel() public {
@@ -541,7 +824,7 @@ contract LimitOrderHookTest is HookTest {
         hook.cancelOrder(key, 0, zeroForOne, address(this));
 
         vm.startPrank(user);
-        (int128 initialFeesExpected0, int128 initialFeesExpected1) =
+        (uint256 initialFeesExpected0, uint256 initialFeesExpected1) =
             calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
         BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, -int256(uint256(liquidity)), 0);
         vm.stopPrank();
@@ -628,7 +911,7 @@ contract LimitOrderHookTest is HookTest {
 
         // add liquidity to be equivalent as placing the order
         vm.startPrank(user);
-        (int128 initialFeesExpected0, int128 initialFeesExpected1) =
+        (uint256 initialFeesExpected0, uint256 initialFeesExpected1) =
             calculateFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, tickSpacing, 0);
         modifyPoolLiquidityNoChecks(noHookKey, 0, tickSpacing, int256(uint256(1e15)), 0);
         vm.stopPrank();

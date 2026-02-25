@@ -82,7 +82,7 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         int24 tickLower,
         int24 tickUpper,
         bytes32 salt
-    ) internal view returns (int128, int128) {
+    ) internal view returns (uint256, uint256) {
         bytes32 positionKey = Position.calculatePositionKey(owner, tickLower, tickUpper, salt);
         (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128) =
             StateLibrary.getPositionInfo(manager, poolId, positionKey);
@@ -93,7 +93,7 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         uint256 fees0 = FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity, FixedPoint128.Q128);
         uint256 fees1 = FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity, FixedPoint128.Q128);
 
-        return (int128(int256(fees0)), int128(int256(fees1)));
+        return (fees0, fees1);
     }
 
     // @dev Calculate the current feeDelta for a given position.
@@ -105,8 +105,8 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         int24 tickUpper,
         bytes32 salt
     ) internal view returns (BalanceDelta feeDelta) {
-        (int128 fees0, int128 fees1) = calculateFees(manager, poolId, owner, tickLower, tickUpper, salt);
-        return toBalanceDelta(fees0, fees1);
+        (uint256 fees0, uint256 fees1) = calculateFees(manager, poolId, owner, tickLower, tickUpper, salt);
+        return toBalanceDelta(int128(int256(fees0)), int128(int256(fees1)));
     }
 
     // @dev Modify the liquidity of a given position.

@@ -34,6 +34,11 @@ abstract contract BaseHook is IHooks {
     IPoolManager public immutable poolManager;
 
     /**
+     * @dev The pool is not authorized to use this hook.
+     */
+    error InvalidPool();
+
+    /**
      * @dev The hook function is not implemented.
      */
     error HookNotImplemented();
@@ -56,6 +61,16 @@ abstract contract BaseHook is IHooks {
      */
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
+        _;
+    }
+
+    /**
+     * @dev Restrict the function to only be called for pools that have this hook
+     * registered as their `key.hooks` hook.
+     * NOTE: A Pool can only have a single `key.hooks` hook and can only be set at pool initialization.
+     */
+    modifier onlyValidPools(IHooks hooks) {
+        if (hooks != this) revert InvalidPool();
         _;
     }
 

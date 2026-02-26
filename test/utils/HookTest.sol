@@ -17,9 +17,17 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IHookEvents} from "src/interfaces/IHookEvents.sol";
 import {IPoolManagerEvents} from "test/utils/interfaces/IPoolManagerEvents.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 
 // @dev Set of utilities to test Hooks.
 contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
+    using StateLibrary for IPoolManager;
+    using TickMath for uint160;
+    using LiquidityAmounts for uint160;
+
     IPoolManager constant POOL_MANAGER = IPoolManager(address(0x000000000004444c5dc75cB358380D2e3dE08A90));
 
     function deployFreshManager() internal override {
@@ -40,6 +48,34 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         modifyLiquidityRouter.modifyLiquidity{value: msg.value}(_key, LIQUIDITY_PARAMS, ZERO_BYTES);
     }
 
+    // @dev Calculate the expected amounts of currency0 and currency1 for a given liquidity and tick range.
+    function calculateAmountsForLiquidity(PoolKey memory key, int24 tickLower, int24 tickUpper, uint128 liquidity)
+        public
+        view
+        returns (uint256 amount0Expected, uint256 amount1Expected)
+    {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(key.toId());
+        (amount0Expected, amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96, TickMath.getSqrtPriceAtTick(tickLower), TickMath.getSqrtPriceAtTick(tickUpper), liquidity
+        );
+    }
+
+    // @dev Overload for calculating expected amounts of currency0 and currency1 for a given liquidity and tick.
+    // Note: since the tickUpper is not provided, the expected amounts are for one tick spacing wide range.
+    function calculateAmountsForLiquidity(PoolKey memory key, int24 tickLower, uint128 liquidity)
+        public
+        view
+        returns (uint256 amount0Expected, uint256 amount1Expected)
+    {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(key.toId());
+        (amount0Expected, amount1Expected) = LiquidityAmounts.getAmountsForLiquidity(
+            sqrtPriceX96,
+            TickMath.getSqrtPriceAtTick(tickLower),
+            TickMath.getSqrtPriceAtTick(tickLower + key.tickSpacing),
+            liquidity
+        );
+    }
+
     // @dev Calculate the current `feesAccrued` for a given position.
     function calculateFees(
         IPoolManager manager,
@@ -48,7 +84,7 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         int24 tickLower,
         int24 tickUpper,
         bytes32 salt
-    ) internal view returns (int128, int128) {
+    ) internal view returns (uint256, uint256) {
         bytes32 positionKey = Position.calculatePositionKey(owner, tickLower, tickUpper, salt);
         (uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128) =
             StateLibrary.getPositionInfo(manager, poolId, positionKey);
@@ -56,10 +92,15 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
             StateLibrary.getFeeGrowthInside(manager, poolId, tickLower, tickUpper);
 
-        uint256 fees0 = FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity, FixedPoint128.Q128);
-        uint256 fees1 = FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity, FixedPoint128.Q128);
+        uint256 feedGrowthDelta0 =
+            feeGrowthInside0X128 > feeGrowthInside0LastX128 ? feeGrowthInside0X128 - feeGrowthInside0LastX128 : 0;
+        uint256 feedGrowthDelta1 =
+            feeGrowthInside1X128 > feeGrowthInside1LastX128 ? feeGrowthInside1X128 - feeGrowthInside1LastX128 : 0;
 
-        return (int128(int256(fees0)), int128(int256(fees1)));
+        uint256 fees0 = FullMath.mulDiv(feedGrowthDelta0, liquidity, FixedPoint128.Q128);
+        uint256 fees1 = FullMath.mulDiv(feedGrowthDelta1, liquidity, FixedPoint128.Q128);
+
+        return (fees0, fees1);
     }
 
     // @dev Calculate the current feeDelta for a given position.
@@ -71,8 +112,8 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         int24 tickUpper,
         bytes32 salt
     ) internal view returns (BalanceDelta feeDelta) {
-        (int128 fees0, int128 fees1) = calculateFees(manager, poolId, owner, tickLower, tickUpper, salt);
-        return toBalanceDelta(fees0, fees1);
+        (uint256 fees0, uint256 fees1) = calculateFees(manager, poolId, owner, tickLower, tickUpper, salt);
+        return toBalanceDelta(int128(int256(fees0)), int128(int256(fees1)));
     }
 
     // @dev Modify the liquidity of a given position.
@@ -89,11 +130,39 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         return modifyLiquidityRouter.modifyLiquidity(poolKey, modifyLiquidityParams, "");
     }
 
+    /// @dev Get the current tick for a given pool.
+    function getCurrentTick(PoolId poolId) public view returns (int24 tick) {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
+        tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
+    }
+
+    // @dev Floored the tick to the nearest multiple of the tick spacing.
+    function flooredTick(int24 tick, int24 tickSpacing) public pure returns (int24) {
+        return (tick / tickSpacing) * tickSpacing;
+    }
+
     // @dev Swaps all combinations of `zeroForOne` (true/false) and `amountSpecified` (+,-) in a given pool.
     function swapAllCombinations(PoolKey memory poolKey, uint256 amount) internal {
         for (uint256 i = 0; i < 4; i++) {
             swap(poolKey, i < 2 ? false : true, i % 2 == 0 ? -int256(amount) : int256(amount), ZERO_BYTES);
         }
+    }
+
+    // @dev Swaps on a given pool with a `sqrtPriceLimitX96` parameter.
+    function swapWithTickLimit(PoolKey memory poolKey, bool zeroForOne, int256 amountSpecified, int24 tickLimit)
+        internal
+        returns (BalanceDelta)
+    {
+        return swapRouter.swap(
+            poolKey,
+            SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: amountSpecified,
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(tickLimit)
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
     }
 
     // Exclude from coverage report

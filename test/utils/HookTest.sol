@@ -90,8 +90,13 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
             StateLibrary.getFeeGrowthInside(manager, poolId, tickLower, tickUpper);
 
-        uint256 fees0 = FullMath.mulDiv(feeGrowthInside0X128 - feeGrowthInside0LastX128, liquidity, FixedPoint128.Q128);
-        uint256 fees1 = FullMath.mulDiv(feeGrowthInside1X128 - feeGrowthInside1LastX128, liquidity, FixedPoint128.Q128);
+        uint256 feedGrowthDelta0 =
+            feeGrowthInside0X128 > feeGrowthInside0LastX128 ? feeGrowthInside0X128 - feeGrowthInside0LastX128 : 0;
+        uint256 feedGrowthDelta1 =
+            feeGrowthInside1X128 > feeGrowthInside1LastX128 ? feeGrowthInside1X128 - feeGrowthInside1LastX128 : 0;
+
+        uint256 fees0 = FullMath.mulDiv(feedGrowthDelta0, liquidity, FixedPoint128.Q128);
+        uint256 fees1 = FullMath.mulDiv(feedGrowthDelta1, liquidity, FixedPoint128.Q128);
 
         return (fees0, fees1);
     }

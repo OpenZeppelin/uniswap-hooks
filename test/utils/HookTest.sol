@@ -19,6 +19,8 @@ import {IHookEvents} from "src/interfaces/IHookEvents.sol";
 import {IPoolManagerEvents} from "test/utils/interfaces/IPoolManagerEvents.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 
 // @dev Set of utilities to test Hooks.
 contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
@@ -144,6 +146,23 @@ contract HookTest is Test, Deployers, IPoolManagerEvents, IHookEvents {
         for (uint256 i = 0; i < 4; i++) {
             swap(poolKey, i < 2 ? false : true, i % 2 == 0 ? -int256(amount) : int256(amount), ZERO_BYTES);
         }
+    }
+
+    // @dev Swaps on a given pool with a `sqrtPriceLimitX96` parameter.
+    function swapWithTickLimit(PoolKey memory poolKey, bool zeroForOne, int256 amountSpecified, int24 tickLimit)
+        internal
+        returns (BalanceDelta)
+    {
+        return swapRouter.swap(
+            poolKey,
+            SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: amountSpecified,
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(tickLimit)
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
     }
 
     // Exclude from coverage report

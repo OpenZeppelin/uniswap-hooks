@@ -20,8 +20,8 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
 
 /**
  * @dev Base implementation for applying hook fees to the unspecified currency of the swap.
- * These fees are independent of the pool's LP fee and are charged as a percentage of the output
- * amount after the swap completes.
+ * These fees are independent of the pool's LP fee and are charged as a percentage of the
+ * unspecified amount after the swap completes.
  *
  * NOTE: It is left to the implementing contract to handle the accumulated hook fees, such as distributing
  * or withdrawing them via ERC-6909 claims.
@@ -57,7 +57,7 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
     /**
      * @dev Hooks into the `afterSwap` hook to apply the hook fee to the unspecified currency.
      *
-     * NOTE: The fee is calculated as a percentage of the output amount and taken as ERC-6909 claims.
+     * NOTE: The fee is calculated as a percentage of the unspecified amount and taken as ERC-6909 claims.
      */
     function _afterSwap(
         address sender,

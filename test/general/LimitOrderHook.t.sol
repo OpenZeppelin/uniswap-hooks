@@ -372,9 +372,10 @@ contract LimitOrderHookTest is HookTest {
 
         assertTrue(feesExpected0 > 0 || feesExpected1 > 0);
 
-        // all fees accrued go to the last user to cancel the order
-        assertEq(balanceUser0After - balanceUser0Before, int256(delta.amount0()) - int256(feesExpected0));
-        assertEq(balanceUser1After - balanceUser1Before, int256(delta.amount1()) - int256(feesExpected1));
+        // all fees accrued go to the last user to cancel the order, so their balance change
+        // equals the full mirror delta (principal + position fees).
+        assertEq(balanceUser0After - balanceUser0Before, int256(delta.amount0()));
+        assertEq(balanceUser1After - balanceUser1Before, int256(delta.amount1()));
     }
 
     function test_placeOrder_feesAccrued() public {
@@ -764,5 +765,317 @@ contract LimitOrderHookTest is HookTest {
 
         vm.expectRevert(LimitOrderHook.NotFilled.selector);
         hook.withdraw(OrderIdLibrary.OrderId.wrap(1), address(this));
+    }
+
+    /// @dev Final cancellation releases the hook's ERC-6909 fee claims accrued by an earlier intermediate cancel.
+    function test_cancelOrder_finalCancel_releasesAccruedFees() public {
+        bool zeroForOne = true;
+        uint128 liquidity = 1e15;
+
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+        vm.prank(user);
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 0);
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0);
+
+        // accrue fees on the 2L position without crossing the order's tick
+        vm.prank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+
+        // intermediate cancellation: accrued fees are minted to the hook as ERC-6909 claims
+        hook.cancelOrder(key, 0, zeroForOne, address(this));
+
+        uint256 hookBal0 = manager.balanceOf(address(hook), currency0.toId());
+        uint256 hookBal1 = manager.balanceOf(address(hook), currency1.toId());
+        assertTrue(hookBal0 > 0 || hookBal1 > 0, "fees should accrue to hook on intermediate cancel");
+
+        (,,, uint256 c0Total, uint256 c1Total,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
+        assertEq(c0Total, hookBal0, "currency0Total should match hook claims");
+        assertEq(c1Total, hookBal1, "currency1Total should match hook claims");
+
+        // final cancellation: the hook's claims should be released as part of cancelling the order
+        vm.prank(user);
+        hook.cancelOrder(key, 0, zeroForOne, user);
+
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 0, "hook retained currency0 claims");
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0, "hook retained currency1 claims");
+
+        assertTrue(
+            OrderIdLibrary.equals(hook.getOrderId(key, 0, zeroForOne), OrderIdLibrary.OrderId.wrap(0)),
+            "order id should be reset"
+        );
+        (filled,,, currency0Total, currency1Total, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
+        assertFalse(filled);
+        assertEq(liquidityTotal, 0);
+        assertEq(currency0Total, 0);
+        assertEq(currency1Total, 0);
+    }
+
+    /// @dev Final canceller receives principal + previously accrued fees, matched against the no-hook mirror.
+    function test_cancelOrder_finalCancel_receivesPriorFees() public {
+        bool zeroForOne = true;
+        uint128 liquidity = 1e15;
+
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        vm.startPrank(user);
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+        modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, int256(uint256(2 * liquidity)), 0);
+        vm.stopPrank();
+
+        vm.startPrank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+        swapOnPool(noHookKey, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+        vm.stopPrank();
+
+        // intermediate cancel on `key` mints accrued fees to the hook
+        hook.cancelOrder(key, 0, zeroForOne, address(this));
+
+        // capture the position fees on the mirror pool before removing one user's worth.
+        // delta = principal_for_L + position_fees, so it equals what the final canceller should receive.
+        (int128 feesExpected0, int128 feesExpected1) =
+            calculateExpectedFees(manager, noHookKey.toId(), address(modifyLiquidityNoChecks), 0, key.tickSpacing, 0);
+        assertTrue(feesExpected0 > 0 || feesExpected1 > 0, "fees should have accrued");
+
+        vm.prank(user);
+        BalanceDelta delta = modifyPoolLiquidityNoChecks(noHookKey, 0, key.tickSpacing, -int256(uint256(liquidity)), 0);
+
+        int256 balance0Before = int256(currency0.balanceOf(user));
+        int256 balance1Before = int256(currency1.balanceOf(user));
+        vm.prank(user);
+        hook.cancelOrder(key, 0, zeroForOne, user);
+        int256 balance0After = int256(currency0.balanceOf(user));
+        int256 balance1After = int256(currency1.balanceOf(user));
+
+        assertEq(balance0After - balance0Before, int256(delta.amount0()), "currency0 mismatch on final cancel");
+        assertEq(balance1After - balance1Before, int256(delta.amount1()), "currency1 mismatch on final cancel");
+    }
+
+    /// @dev Fee claims accumulated across multiple intermediate cancels are all released to the final canceller.
+    function test_cancelOrder_finalCancel_threeParticipants() public {
+        bool zeroForOne = true;
+        uint128 liquidity = 1e15;
+
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+        vm.prank(user);
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+        vm.prank(attacker);
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        // first batch of fees on the 3L position
+        vm.prank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+
+        hook.cancelOrder(key, 0, zeroForOne, address(this));
+
+        uint256 hookBal0AfterFirst = manager.balanceOf(address(hook), currency0.toId());
+        uint256 hookBal1AfterFirst = manager.balanceOf(address(hook), currency1.toId());
+        assertTrue(hookBal0AfterFirst > 0 || hookBal1AfterFirst > 0, "fees should accrue on first cancel");
+
+        // second batch of fees on the 2L position; bring the price back into range first
+        vm.startPrank(swapper);
+        swapOnPool(key, true, -1e20, TickMath.getSqrtPriceAtTick(0));
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+        vm.stopPrank();
+
+        vm.prank(user);
+        hook.cancelOrder(key, 0, zeroForOne, user);
+
+        uint256 hookBal0BeforeFinal = manager.balanceOf(address(hook), currency0.toId());
+        uint256 hookBal1BeforeFinal = manager.balanceOf(address(hook), currency1.toId());
+
+        assertTrue(
+            hookBal0BeforeFinal > hookBal0AfterFirst || hookBal1BeforeFinal > hookBal1AfterFirst,
+            "second intermediate cancel should add fees"
+        );
+
+        (,,, uint256 c0TotalBeforeFinal, uint256 c1TotalBeforeFinal,) =
+            hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
+        assertEq(c0TotalBeforeFinal, hookBal0BeforeFinal);
+        assertEq(c1TotalBeforeFinal, hookBal1BeforeFinal);
+
+        uint256 cBal0Before = currency0.balanceOf(attacker);
+        uint256 cBal1Before = currency1.balanceOf(attacker);
+        vm.prank(attacker);
+        hook.cancelOrder(key, 0, zeroForOne, attacker);
+
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 0, "hook retained currency0 claims");
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0, "hook retained currency1 claims");
+
+        // final canceller's balance increase covers at least the previously accumulated claims
+        assertGe(
+            currency0.balanceOf(attacker) - cBal0Before,
+            hookBal0BeforeFinal,
+            "final canceller should receive prior currency0 fees"
+        );
+        assertGe(
+            currency1.balanceOf(attacker) - cBal1Before,
+            hookBal1BeforeFinal,
+            "final canceller should receive prior currency1 fees"
+        );
+    }
+
+    /// @dev With a single participant the cancel is also the final cancel; no claims are stranded.
+    function test_cancelOrder_finalCancel_singleParticipant() public {
+        bool zeroForOne = true;
+        uint128 liquidity = 1e15;
+
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        vm.prank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+
+        hook.cancelOrder(key, 0, zeroForOne, address(this));
+
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 0);
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0);
+
+        assertTrue(
+            OrderIdLibrary.equals(hook.getOrderId(key, 0, zeroForOne), OrderIdLibrary.OrderId.wrap(0)),
+            "order id should be reset"
+        );
+    }
+
+    /// @dev Fee claims minted to the hook by the place callback (not just by intermediate cancels)
+    /// are also released to the canceller on final cancellation.
+    function test_cancelOrder_finalCancel_releasesPlaceCallbackFees() public {
+        bool zeroForOne = true;
+        uint128 liquidity = 1e15;
+
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        // accrue fees in-range, then push the price below the position so we can re-place without
+        // hitting the in-range check
+        vm.startPrank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+        swapOnPool(key, true, -1e20, TickMath.getSqrtPriceAtTick(-key.tickSpacing));
+        vm.stopPrank();
+
+        // re-placement triggers the place callback, which mints the position's accrued fees to the hook
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        uint256 hookBal0 = manager.balanceOf(address(hook), currency0.toId());
+        uint256 hookBal1 = manager.balanceOf(address(hook), currency1.toId());
+        assertTrue(hookBal0 > 0 || hookBal1 > 0, "place callback should mint fee claims to the hook");
+
+        (,,, uint256 c0Total, uint256 c1Total,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
+        assertEq(c0Total, hookBal0, "currency0Total should match hook claims");
+        assertEq(c1Total, hookBal1, "currency1Total should match hook claims");
+
+        // single canceller -> removingAllLiquidity == true. The pre-existing claims must be released.
+        hook.cancelOrder(key, 0, zeroForOne, address(this));
+
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 0, "hook retained currency0 claims");
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0, "hook retained currency1 claims");
+    }
+
+    /// @dev On final cancellation, the principal and the released prior fees go to `to`, not to msg.sender.
+    function test_cancelOrder_finalCancel_separateRecipient() public {
+        bool zeroForOne = true;
+        uint128 liquidity = 1e15;
+
+        address recipient = makeAddr("recipient");
+
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+        vm.prank(user);
+        hook.placeOrder(key, 0, zeroForOne, liquidity);
+
+        vm.prank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+
+        hook.cancelOrder(key, 0, zeroForOne, address(this));
+
+        uint256 hookBal0BeforeFinal = manager.balanceOf(address(hook), currency0.toId());
+        uint256 hookBal1BeforeFinal = manager.balanceOf(address(hook), currency1.toId());
+        assertTrue(hookBal0BeforeFinal > 0 || hookBal1BeforeFinal > 0, "intermediate cancel should mint fee claims");
+
+        uint256 senderBal0Before = currency0.balanceOf(user);
+        uint256 senderBal1Before = currency1.balanceOf(user);
+
+        vm.prank(user);
+        hook.cancelOrder(key, 0, zeroForOne, recipient);
+
+        // msg.sender's balance is unchanged
+        assertEq(currency0.balanceOf(user), senderBal0Before, "msg.sender should not receive currency0");
+        assertEq(currency1.balanceOf(user), senderBal1Before, "msg.sender should not receive currency1");
+
+        // recipient receives at least the previously stranded claims plus their principal
+        assertGe(currency0.balanceOf(recipient), hookBal0BeforeFinal, "recipient should receive prior currency0 fees");
+        assertGe(currency1.balanceOf(recipient), hookBal1BeforeFinal, "recipient should receive prior currency1 fees");
+
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 0);
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0);
+    }
+
+    /// @dev Final cancellation of one order must not touch another order's accounting or hook claims.
+    function test_cancelOrder_finalCancel_doesNotAffectOtherOrders() public {
+        uint128 liquidity = 1e15;
+        int24 tickA = 0;
+        int24 tickB = -key.tickSpacing;
+
+        // order A: zeroForOne=true at tick 0, position [0, tickSpacing) - filled when price crosses up through 0
+        // order B: zeroForOne=false at tick -tickSpacing, position [-tickSpacing, 0) - filled when price crosses down through 0
+        // both can be placed at the boundary currentTick=0 without hitting in-range / wrong-side reverts.
+        hook.placeOrder(key, tickA, true, liquidity);
+        vm.prank(user);
+        hook.placeOrder(key, tickA, true, liquidity);
+
+        hook.placeOrder(key, tickB, false, liquidity);
+        vm.prank(user);
+        hook.placeOrder(key, tickB, false, liquidity);
+
+        OrderIdLibrary.OrderId orderAId = hook.getOrderId(key, tickA, true);
+        OrderIdLibrary.OrderId orderBId = hook.getOrderId(key, tickB, false);
+
+        // accrue fees on A by swapping up into [0, tickSpacing); the bucketed tick stays at 0 so no fill triggers
+        vm.prank(swapper);
+        swapOnPool(key, false, -1e20, TickMath.getSqrtPriceAtTick(key.tickSpacing / 2));
+
+        // accrue fees on B by swapping back through 0 into [-tickSpacing, 0); the cross-tick check at tick 0
+        // looks for a zeroForOne=false order at tickLower=0, which doesn't exist - so no fill.
+        vm.prank(swapper);
+        swapOnPool(key, true, -1e20, TickMath.getSqrtPriceAtTick(-key.tickSpacing / 2));
+
+        // intermediate cancels mint each order's fees to the hook independently
+        hook.cancelOrder(key, tickA, true, address(this));
+        hook.cancelOrder(key, tickB, false, address(this));
+
+        (,,, uint256 c0TotalA, uint256 c1TotalA,) = hook.getOrderInfo(orderAId);
+        (,,, uint256 c0TotalB, uint256 c1TotalB,) = hook.getOrderInfo(orderBId);
+
+        // hook's claim balances equal the sum of both orders' currency*Total
+        assertEq(
+            manager.balanceOf(address(hook), currency0.toId()),
+            c0TotalA + c0TotalB,
+            "hook currency0 claims should equal sum"
+        );
+        assertEq(
+            manager.balanceOf(address(hook), currency1.toId()),
+            c1TotalA + c1TotalB,
+            "hook currency1 claims should equal sum"
+        );
+
+        // final cancel of order A
+        vm.prank(user);
+        hook.cancelOrder(key, tickA, true, user);
+
+        // order B's accounting is untouched
+        (,,, uint256 c0TotalBAfter, uint256 c1TotalBAfter, uint128 liquidityTotalB) = hook.getOrderInfo(orderBId);
+        assertEq(c0TotalBAfter, c0TotalB, "order B currency0Total should be unchanged");
+        assertEq(c1TotalBAfter, c1TotalB, "order B currency1Total should be unchanged");
+        assertEq(liquidityTotalB, liquidity, "order B liquidity should be unchanged");
+
+        // hook still holds exactly order B's claims
+        assertEq(
+            manager.balanceOf(address(hook), currency0.toId()),
+            c0TotalB,
+            "hook should still hold order B's currency0 claims"
+        );
+        assertEq(
+            manager.balanceOf(address(hook), currency1.toId()),
+            c1TotalB,
+            "hook should still hold order B's currency1 claims"
+        );
     }
 }

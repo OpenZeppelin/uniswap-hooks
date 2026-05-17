@@ -8,10 +8,11 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {BalanceDelta, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
@@ -66,6 +67,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     using StateLibrary for IPoolManager;
     using OrderIdLibrary for OrderIdLibrary.OrderId;
     using CurrencySettler for Currency;
+    using SafeCast for uint256;
 
     /// @dev The info for each order id.
     struct OrderInfo {
@@ -101,13 +103,15 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         uint128 liquidity;
     }
 
-    /// @dev Struct of callback data for the cancel callback.
+    /// @dev Struct of callback data for the cancel callback. `currencyTotalSnapshot` packs the
+    /// pre-zeroing `currency0Total` / `currency1Total` and is only consumed on final cancellation.
     struct CancelCallbackData {
         PoolKey key;
         int24 tickLower;
         int256 liquidityDelta;
         address to;
         bool removingAllLiquidity;
+        BalanceDelta currencyTotalSnapshot;
     }
 
     /// @dev Struct of callback data for the withdraw callback
@@ -342,6 +346,10 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         // subtract the liquidity from the total liquidity
         orderInfo.liquidityTotal -= liquidity;
 
+        // snapshot the currency totals before zeroing so the callback can release the hook-held
+        // ERC-6909 claims they represent to the final canceller.
+        BalanceDelta currencyTotalSnapshot =
+            toBalanceDelta(orderInfo.currency0Total.toInt128(), orderInfo.currency1Total.toInt128());
         if (removingAllLiquidity) {
             _setOrderId(key, tickLower, zeroForOne, ORDER_ID_DEFAULT);
             orderInfo.currency0Total = 0;
@@ -353,28 +361,29 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         // by the position, since the limit order is a liquidity addition.
         // Note that `amount0Fee` and `amount1Fee` are the fees accrued by the position and will not be transferred to
         // the `to` address. Instead, they will be added to the order info (benefiting the remaining limit order placers).
+        CancelCallbackData memory cancelData = CancelCallbackData({
+            key: key,
+            tickLower: tickLower,
+            liquidityDelta: -int256(uint256(liquidity)),
+            to: to,
+            removingAllLiquidity: removingAllLiquidity,
+            currencyTotalSnapshot: currencyTotalSnapshot
+        });
         (uint256 amount0Fee, uint256 amount1Fee) = abi.decode(
-            poolManager.unlock(
-                abi.encode(
-                    CallbackData(
-                        CallbackType.Cancel,
-                        abi.encode(
-                            CancelCallbackData(key, tickLower, -int256(uint256(liquidity)), to, removingAllLiquidity)
-                        )
-                    )
-                )
-            ),
+            poolManager.unlock(abi.encode(CallbackData(CallbackType.Cancel, abi.encode(cancelData)))),
             (uint256, uint256)
         );
 
-        // add the fees to the order info
-        // note that the currency totals must be updated after poolManager call as they depend on the returned values of the callback.
-        // This is safe as these functions are only callable on the trusted poolManager
-        unchecked {
-            // slither-disable-next-line reentrancy-no-eth
-            orderInfo.currency0Total += amount0Fee;
-            // slither-disable-next-line reentrancy-no-eth
-            orderInfo.currency1Total += amount1Fee;
+        if (!removingAllLiquidity) {
+            // add the fees to the order info
+            // note that the currency totals must be updated after poolManager call as they depend on the returned values of the callback.
+            // This is safe as these functions are only callable on the trusted poolManager
+            unchecked {
+                // slither-disable-next-line reentrancy-no-eth
+                orderInfo.currency0Total += amount0Fee;
+                // slither-disable-next-line reentrancy-no-eth
+                orderInfo.currency1Total += amount1Fee;
+            }
         }
 
         // emit the cancel event
@@ -523,7 +532,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /**
      * @dev Internal handler for cancel order callbacks. Takes `cancelData` containing the cancellation details and
      * removes liquidity from the pool. Returns accrued fees `(amount0Fee, amount1Fee)` which are allocated to remaining
-     * limit order placers, or to the cancelling user if they're removing all liquidity.
+     * limit order placers, or, on final cancellation, releases the hook's prior ERC-6909 fee claims to the canceller.
      */
     function _handleCancelCallback(CancelCallbackData memory cancelData)
         internal
@@ -569,9 +578,19 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             // so we need to subtract the fees from the `cancelDelta` to get the principal delta
             principalDelta = cancelDelta - feesAccrued;
         } else {
-            // if the `removingAllLiquidity` flag is true, the fees accrued will be allocated to the placer of the last limit order being cancelled
-            // so we can just use the `cancelDelta` as the principal delta
-            principalDelta = cancelDelta;
+            // burn the hook's prior fee claims so the released amounts can be folded into `principalDelta`
+            // and taken from the pool to the canceller below.
+            BalanceDelta currencyTotalSnapshot = cancelData.currencyTotalSnapshot;
+            int128 currencyTotalSnapshot0 = currencyTotalSnapshot.amount0();
+            int128 currencyTotalSnapshot1 = currencyTotalSnapshot.amount1();
+            if (currencyTotalSnapshot0 > 0) {
+                poolManager.burn(address(this), cancelData.key.currency0.toId(), uint128(currencyTotalSnapshot0));
+            }
+            if (currencyTotalSnapshot1 > 0) {
+                poolManager.burn(address(this), cancelData.key.currency1.toId(), uint128(currencyTotalSnapshot1));
+            }
+
+            principalDelta = cancelDelta + currencyTotalSnapshot;
         }
 
         // if the amount of currency0 is positive, take the currency0 from the pool and send it to the `to` address

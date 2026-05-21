@@ -14,6 +14,9 @@ import {BaseOracleHook} from "../BaseOracleHook.sol";
 contract V3OracleAdapter {
     using StateLibrary for IPoolManager;
 
+    /// @notice Thrown when `observations(uint256)` is called with an index that does not fit in `uint16`.
+    error IndexOutOfRange();
+
     /// @notice The BaseOracleHook contract this adapter interacts with.
     BaseOracleHook public immutable baseOracleHook;
 
@@ -78,6 +81,8 @@ contract V3OracleAdapter {
             bool initialized
         )
     {
+        if (index > type(uint16).max) revert IndexOutOfRange();
+
         (blockTimestamp,, tickCumulative,, initialized) = baseOracleHook.observationsById(poolId, uint16(index));
 
         secondsPerLiquidityCumulativeX128 = 0;

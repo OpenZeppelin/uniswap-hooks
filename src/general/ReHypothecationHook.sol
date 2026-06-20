@@ -58,8 +58,9 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * executed and the posterior payment from the user, preventing swaps from being executed until the PoolManager accumulates enough tokens.
  * Altrough it is very unlikely to happen, it can be mitigated by maintaining some permanent pool liquidity alongside rehypothecated liquidity.
  *
- * WARNING: Liquidity additions and removals may be affected by slippage. Users can protect against unexpected slippage
- * in general by verifying the amount received is as expected, using a wrapper that performs these checks.
+ * WARNING: Liquidity additions and removals may be affected by slippage. Use the slippage-protected overloads of
+ * {addReHypothecatedLiquidity} and {removeReHypothecatedLiquidity}, which take maximum-input / minimum-output bounds,
+ * to protect against unexpected price or yield-source movements between transaction signing and execution.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis.
  * We do not give any warranties and will not be liable for any losses incurred through any use of
@@ -91,6 +92,12 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
 
     /// @dev Error thrown when the refund fails.
     error RefundFailed();
+
+    /// @dev Error thrown when the required input amounts exceed the caller-provided maximums (slippage protection).
+    error ExcessiveInput();
+
+    /// @dev Error thrown when the returned output amounts fall below the caller-provided minimums (slippage protection).
+    error InsufficientOutput();
 
     /**
      * @dev Emitted when a `sender` adds rehypothecated `shares` to the `poolKey` pool,
@@ -140,7 +147,16 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * - Sender must have sufficient token balances
      * - Sender must have approved the hook to spend the required tokens
      */
-    function addReHypothecatedLiquidity(uint256 shares)
+    function addReHypothecatedLiquidity(uint256 shares) public payable virtual returns (BalanceDelta delta) {
+        return addReHypothecatedLiquidity(shares, type(uint256).max, type(uint256).max);
+    }
+
+    /**
+     * @dev Slippage-protected variant of {addReHypothecatedLiquidity}. Reverts with {ExcessiveInput} if the required
+     * `amount0` or `amount1` (see {previewMint}) exceeds `amount0Max` or `amount1Max` respectively, protecting against
+     * sandwiching and price/yield-source movements between transaction signing and execution.
+     */
+    function addReHypothecatedLiquidity(uint256 shares, uint256 amount0Max, uint256 amount1Max)
         public
         payable
         virtual
@@ -151,6 +167,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         if (shares == 0) revert ZeroShares();
 
         (uint256 amount0, uint256 amount1) = previewMint(shares);
+        if (amount0 > amount0Max || amount1 > amount1Max) revert ExcessiveInput();
 
         _transferFromSenderToHook(_poolKey.currency0, amount0, msg.sender);
         _transferFromSenderToHook(_poolKey.currency1, amount1, msg.sender);
@@ -178,11 +195,26 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * - Pool must be initialized
      * - Sender must have sufficient shares for the desired liquidity withdrawal
      */
-    function removeReHypothecatedLiquidity(uint256 shares) public virtual nonReentrant returns (BalanceDelta delta) {
+    function removeReHypothecatedLiquidity(uint256 shares) public virtual returns (BalanceDelta delta) {
+        return removeReHypothecatedLiquidity(shares, 0, 0);
+    }
+
+    /**
+     * @dev Slippage-protected variant of {removeReHypothecatedLiquidity}. Reverts with {InsufficientOutput} if the
+     * returned `amount0` or `amount1` (see {previewRedeem}) is below `amount0Min` or `amount1Min` respectively,
+     * protecting against sandwiching and price/yield-source movements between transaction signing and execution.
+     */
+    function removeReHypothecatedLiquidity(uint256 shares, uint256 amount0Min, uint256 amount1Min)
+        public
+        virtual
+        nonReentrant
+        returns (BalanceDelta delta)
+    {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
         if (shares == 0) revert ZeroShares();
 
         (uint256 amount0, uint256 amount1) = previewRedeem(shares);
+        if (amount0 < amount0Min || amount1 < amount1Min) revert InsufficientOutput();
 
         _burn(msg.sender, shares);
 

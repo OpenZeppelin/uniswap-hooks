@@ -147,6 +147,53 @@ contract LimitOrderHookTest is HookTest {
         assertEq(hook.getTickLowerLast(key.toId()), 0);
     }
 
+    /**
+     * @dev Reproduces issue #132 (https://github.com/OpenZeppelin/uniswap-hooks/issues/132).
+     *
+     * When `_tickLowerLasts` is stale — as it is left whenever a subclass performs an internal swap,
+     * which Uniswap V4 excludes from the `afterSwap` callback via self-call protection — `_getCrossedTicks`
+     * computes a fill window that no longer matches the live price. `_fillOrder` then fills an order whose
+     * position the price has NOT converted into the target currency: it mints/credits the *deposited*
+     * currency, marks the order `filled`, and resets the order id, permanently consuming the order.
+     *
+     * Without the guard in `_fillOrder` this test fails (the order is filled and `currency1` is credited
+     * to a `oneForZero` order that expected `currency0`). With the guard the fill is skipped and the order
+     * remains active and cancellable.
+     */
+    function test_fillOrder_skipsWhenPositionNotConverted_issue132() public {
+        int24 orderTick = 180; // tickUpper = 240
+        bool zeroForOne = false; // oneForZero order: deposit currency1, expect currency0
+        uint128 liquidity = 1_000_000;
+
+        // 1. Move the price up to ~tick 300 so the oneForZero order at 180 is placeable (position all currency1).
+        swapOnPool(key, false, -1e18, TickMath.getSqrtPriceAtTick(300));
+        assertGe(getCurrentTick(key.toId()), 240);
+
+        // 2. Place the oneForZero order below the current price.
+        hook.placeOrder(key, orderTick, zeroForOne, liquidity);
+
+        // 3. Simulate the stale `_tickLowerLasts` a subclass internal swap leaves behind (reset to init value 0).
+        hook.setTickLowerLast(key.toId(), 0);
+
+        // 4. A DOWN swap landing ABOVE the order's range (tick still > 240). `_getCrossedTicks` uses the stale
+        //    last (0) -> window [0, currentTickLower - spacing] which includes tick 180, so `_afterSwap` calls
+        //    `_fillOrder(key, 180, false)` while the position is still entirely currency1 (not converted).
+        swapOnPool(key, true, -1e18, TickMath.getSqrtPriceAtTick(250));
+        assertGt(getCurrentTick(key.toId()), orderTick + tickSpacing); // price still above the order's range
+
+        // With the guard, the order must NOT be filled, no wrong-token credit, and it stays cancellable.
+        Currency oc0;
+        Currency oc1;
+        (filled, oc0, oc1, currency0Total, currency1Total, liquidityTotal) =
+            hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(1));
+        assertFalse(filled, "order must not be filled while position is not converted");
+        assertEq(currency1Total, 0, "no wrong-token (currency1) should be credited");
+        assertEq(currency0Total, 0, "no currency0 credited either");
+
+        // The placer can still recover the deposited currency1 by cancelling.
+        hook.cancelOrder(key, orderTick, zeroForOne, address(this));
+    }
+
     function test_zeroLiquidityRevert() public {
         vm.expectRevert(LimitOrderHook.ZeroLiquidity.selector);
         hook.placeOrder(key, 0, true, 0);

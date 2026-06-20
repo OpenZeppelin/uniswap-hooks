@@ -618,6 +618,23 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
         // if the order is not default (not initialized), fill it
         if (!orderId.equals(ORDER_ID_DEFAULT)) {
+            // Defense-in-depth: only fill when the live price confirms the position at
+            // [tickLower, tickLower + tickSpacing] is fully converted into the target currency.
+            // `_getCrossedTicks` may propose a tick whose position is not (fully) converted when
+            // `_tickLowerLasts` is stale (e.g. a subclass performed an internal swap, which Uniswap V4
+            // excludes from the `afterSwap` callback via self-call protection). Filling such an order
+            // would mint and credit the wrong currency and irrecoverably consume the order. If the
+            // position is not fully converted, skip the fill and leave the order active so it can be
+            // filled on a later crossing or cancelled by its placer.
+            (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(key.toId());
+            if (zeroForOne) {
+                // selling currency0 for currency1: fully in currency1 only when price >= upper boundary
+                if (sqrtPriceX96 < TickMath.getSqrtPriceAtTick(tickLower + key.tickSpacing)) return;
+            } else {
+                // selling currency1 for currency0: fully in currency0 only when price <= lower boundary
+                if (sqrtPriceX96 > TickMath.getSqrtPriceAtTick(tickLower)) return;
+            }
+
             // get the order info
             OrderInfo storage orderInfo = _orderInfos[orderId];
 
@@ -698,6 +715,17 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      */
     function getTickLowerLast(PoolId poolId) public view returns (int24) {
         return _tickLowerLasts[poolId];
+    }
+
+    /**
+     * @dev Updates the stored `tickLowerLast` for a `poolId`. Exposed to subclasses so that hooks which
+     * perform internal swaps can keep `_tickLowerLasts` consistent with the live price. Uniswap V4 excludes
+     * a hook's own swaps from the `afterSwap` callback (self-call protection in `Hooks.sol`), so `_afterSwap`
+     * does not run for them and `_tickLowerLasts` would otherwise go stale, causing `_getCrossedTicks` to
+     * compute an incorrect fill window. Subclasses performing internal swaps MUST call this afterwards.
+     */
+    function _setTickLowerLast(PoolId poolId, int24 tickLower) internal {
+        _tickLowerLasts[poolId] = tickLower;
     }
 
     /**

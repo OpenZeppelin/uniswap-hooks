@@ -63,16 +63,9 @@ abstract contract LiquidityPenaltyHook is BaseHook {
     error NoLiquidityToReceiveDonation();
 
     /**
-     * @dev The minimum value for the {blockNumberOffset}.
+     * @dev The minimum value for the {getBlockNumberOffset}.
      */
     uint48 public constant MIN_BLOCK_NUMBER_OFFSET = 1;
-
-    /**
-     * @dev The minimum time window (in blocks) that must pass after adding liquidity before it can be
-     * removed without any penalty. During this period, JIT attacks are deterred through fee withholding
-     * and penalties. Higher values provide stronger JIT protection but may discourage legitimate LPs.
-     */
-    uint48 public immutable blockNumberOffset;
 
     /**
      * @dev Tracks the `lastAddedLiquidityBlock` for a liquidity position.
@@ -83,14 +76,6 @@ abstract contract LiquidityPenaltyHook is BaseHook {
      * @dev Tracks the `withheldFees` for a liquidity position.
      */
     mapping(PoolId poolId => mapping(bytes32 positionKey => BalanceDelta delta)) private _withheldFees;
-
-    /**
-     * @dev Sets the {getBlockNumberOffset} and the {poolManager} address.
-     */
-    constructor(uint48 _blockNumberOffset) {
-        if (_blockNumberOffset < MIN_BLOCK_NUMBER_OFFSET) revert BlockNumberOffsetTooLow();
-        blockNumberOffset = _blockNumberOffset;
-    }
 
     /**
      * @dev Tracks `lastAddedLiquidityBlock` and withholds `feeDelta` if liquidity was recently added within
@@ -110,7 +95,7 @@ abstract contract LiquidityPenaltyHook is BaseHook {
         bytes32 positionKey = Position.calculatePositionKey(sender, params.tickLower, params.tickUpper, params.salt);
 
         // If liquidity was added recently within the `blockNumberOffset`, retain the feeDelta in this hook.
-        if (_getBlockNumber() - getLastAddedLiquidityBlock(poolId, positionKey) < blockNumberOffset) {
+        if (_getBlockNumber() - getLastAddedLiquidityBlock(poolId, positionKey) < getBlockNumberOffset()) {
             _updateLastAddedLiquidityBlock(poolId, positionKey);
             _takeFeesToHook(key, positionKey, feeDelta);
 
@@ -155,7 +140,7 @@ abstract contract LiquidityPenaltyHook is BaseHook {
         uint48 lastAddedLiquidityBlock = getLastAddedLiquidityBlock(poolId, positionKey);
 
         if (
-            _getBlockNumber() - lastAddedLiquidityBlock < blockNumberOffset
+            _getBlockNumber() - lastAddedLiquidityBlock < getBlockNumberOffset()
                 && totalFees != BalanceDeltaLibrary.ZERO_DELTA
         ) {
             BalanceDelta liquidityPenalty = _calculateLiquidityPenalty(totalFees, lastAddedLiquidityBlock);
@@ -185,6 +170,19 @@ abstract contract LiquidityPenaltyHook is BaseHook {
      */
     function _getBlockNumber() internal view virtual returns (uint48) {
         return uint48(block.number);
+    }
+
+    /**
+     * @dev The minimum time window (in blocks) that must pass after adding liquidity before it can be
+     * removed without any penalty. During this period, JIT attacks are deterred through fee withholding
+     * and penalties. Higher values provide stronger JIT protection but may discourage legitimate LPs.
+     *
+     * Defaults to 16 blocks. Override to customize the offset for a specific deployment instead of configuring
+     * it through the constructor. The returned value MUST be `>= MIN_BLOCK_NUMBER_OFFSET`: it is used as the
+     * divisor in {_calculateLiquidityPenalty}, so a value of `0` would cause a division by zero.
+     */
+    function getBlockNumberOffset() public view virtual returns (uint48) {
+        return 16;
     }
 
     /**
@@ -249,6 +247,7 @@ abstract contract LiquidityPenaltyHook is BaseHook {
         returns (BalanceDelta liquidityPenalty)
     {
         uint48 currentBlockNumber = _getBlockNumber();
+        uint48 blockNumberOffset = getBlockNumberOffset();
 
         unchecked {
             uint256 amount0LiquidityPenalty = FullMath.mulDiv(

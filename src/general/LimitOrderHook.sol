@@ -741,6 +741,20 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
+     * @dev Get the checkpoint of an order for a given order id and owner. Takes an {OrderId} `orderId` and `owner`
+     * address and returns the amounts of `currency0` and `currency1` that had already accrued to the order the last
+     * time the owner placed liquidity into it. These amounts are excluded from the owner's withdrawable balance.
+     */
+    function getOrderCheckpoint(OrderIdLibrary.OrderId orderId, address owner)
+        external
+        view
+        returns (uint256 amountCurrency0, uint256 amountCurrency1)
+    {
+        CheckpointCurrencies storage checkpoint = _orderInfos[orderId].checkpoints[owner];
+        return (checkpoint.amountCurrency0, checkpoint.amountCurrency1);
+    }
+
+    /**
      * @dev Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick calculated
      * from the pool's current sqrt price.
      */

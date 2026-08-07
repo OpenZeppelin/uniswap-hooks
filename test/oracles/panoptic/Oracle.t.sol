@@ -280,6 +280,29 @@ contract OracleLibTest is Test {
         assertEq(oracle.indexBase(), 0);
     }
 
+    function test_observations_revertsOnIndexOverflow() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 1}));
+
+        // type(uint16).max still fits in uint16; the underlying [65535] storage array
+        // bounds-check reverts via Panic(0x32), matching V3's behavior at the storage edge.
+        vm.expectRevert();
+        oracle.observations(uint256(type(uint16).max));
+
+        // Anything above type(uint16).max must revert with IndexOutOfRange instead of
+        // silently aliasing to `index mod 65536`.
+        vm.expectRevert(V3OracleAdapter.V3OracleAdapterIndexOutOfRange.selector);
+        oracle.observations(uint256(type(uint16).max) + 1);
+
+        vm.expectRevert(V3OracleAdapter.V3OracleAdapterIndexOutOfRange.selector);
+        oracle.observations(70000);
+
+        vm.expectRevert(V3TruncatedOracleAdapter.V3TruncatedOracleAdapterIndexOutOfRange.selector);
+        oracle.observationsTruncated(uint256(type(uint16).max) + 1);
+
+        vm.expectRevert(V3TruncatedOracleAdapter.V3TruncatedOracleAdapterIndexOutOfRange.selector);
+        oracle.observationsTruncated(70000);
+    }
+
     function test_initialize_cardinalityIsOne() public {
         oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 1}));
         assertEq(oracle.cardinality(), 1);

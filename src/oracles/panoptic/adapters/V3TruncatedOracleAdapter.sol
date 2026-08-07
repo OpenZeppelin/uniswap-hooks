@@ -15,7 +15,7 @@ contract V3TruncatedOracleAdapter {
     using StateLibrary for IPoolManager;
 
     /// @notice Thrown when `observations(uint256)` is called with an index that does not fit in `uint16`.
-    error IndexOutOfRange();
+    error V3TruncatedOracleAdapterIndexOutOfRange();
 
     /// @notice The BaseOracleHook contract this adapter interacts with.
     BaseOracleHook public immutable baseOracleHook;
@@ -81,7 +81,9 @@ contract V3TruncatedOracleAdapter {
             bool initialized
         )
     {
-        if (index > type(uint16).max) revert IndexOutOfRange();
+        if (index > type(uint16).max) {
+            revert V3TruncatedOracleAdapterIndexOutOfRange();
+        }
 
         (blockTimestamp,,, tickCumulativeTruncated, initialized) =
             baseOracleHook.observationsById(poolId, uint16(index));

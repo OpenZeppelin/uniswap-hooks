@@ -290,16 +290,16 @@ contract OracleLibTest is Test {
 
         // Anything above type(uint16).max must revert with IndexOutOfRange instead of
         // silently aliasing to `index mod 65536`.
-        vm.expectRevert(V3OracleAdapter.IndexOutOfRange.selector);
+        vm.expectRevert(V3OracleAdapter.V3OracleAdapterIndexOutOfRange.selector);
         oracle.observations(uint256(type(uint16).max) + 1);
 
-        vm.expectRevert(V3OracleAdapter.IndexOutOfRange.selector);
+        vm.expectRevert(V3OracleAdapter.V3OracleAdapterIndexOutOfRange.selector);
         oracle.observations(70000);
 
-        vm.expectRevert(V3TruncatedOracleAdapter.IndexOutOfRange.selector);
+        vm.expectRevert(V3TruncatedOracleAdapter.V3TruncatedOracleAdapterIndexOutOfRange.selector);
         oracle.observationsTruncated(uint256(type(uint16).max) + 1);
 
-        vm.expectRevert(V3TruncatedOracleAdapter.IndexOutOfRange.selector);
+        vm.expectRevert(V3TruncatedOracleAdapter.V3TruncatedOracleAdapterIndexOutOfRange.selector);
         oracle.observationsTruncated(70000);
     }
 

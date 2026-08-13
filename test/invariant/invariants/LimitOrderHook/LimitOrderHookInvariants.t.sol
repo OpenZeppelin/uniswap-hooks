@@ -1,0 +1,357 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import {console} from "forge-std/console.sol";
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+
+import {OrderIdLibrary} from "src/general/LimitOrderHook.sol";
+import {LimitOrderHookMock} from "src/mocks/general/LimitOrderHookMock.sol";
+import {HookTest} from "test/utils/HookTest.sol";
+import {LimitOrderHookHandler} from "../../handlers/LimitOrderHook/LimitOrderHookHandler.sol";
+
+/// @dev Campaign for {LimitOrderHook} invariants. See `LimitOrderHook.invariants.md`.
+contract LimitOrderHookInvariantsTest is HookTest {
+    using StateLibrary for IPoolManager;
+
+    LimitOrderHookMock hook;
+    LimitOrderHookHandler handler;
+
+    address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
+    address carol = makeAddr("carol");
+    address dave = makeAddr("dave");
+
+    /// @dev Bounds for the `liquidity` parameter fuzzer to use.
+    uint256 constant LIQUIDITY_MIN_BOUND = 1e8;
+    uint256 constant LIQUIDITY_MAX_BOUND = 1e14;
+
+    /// @dev Bounds for the `amount` parameter fuzzer to use.
+    uint256 constant AMOUNT_MIN_BOUND = 1e15;
+    uint256 constant AMOUNT_MAX_BOUND = 1e20;
+
+    /// @dev Slack for accumulated `mulDiv` truncation. Each credit and payout share strands at most a wei,
+    /// so it grows with the call count, not with the amounts.
+    uint256 constant ROUNDING_TOLERANCE = 4096;
+
+    function setUp() public {
+        deployFreshManagerAndRouters();
+        deployMintAndApprove2Currencies();
+
+        hook = LimitOrderHookMock(address(uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG)));
+        deployCodeTo(
+            "src/mocks/general/LimitOrderHookMock.sol:LimitOrderHookMock", abi.encode(address(manager)), address(hook)
+        );
+
+        (key,) = initPool(currency0, currency1, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
+
+        address[] memory actors = new address[](4);
+        actors[0] = alice;
+        actors[1] = bob;
+        actors[2] = carol;
+        actors[3] = dave;
+
+        int24[] memory ticks = new int24[](4);
+        ticks[0] = -2 * key.tickSpacing;
+        ticks[1] = -key.tickSpacing;
+        ticks[2] = key.tickSpacing;
+        ticks[3] = 2 * key.tickSpacing;
+
+        handler = new LimitOrderHookHandler(
+            hook,
+            manager,
+            swapRouter,
+            key,
+            actors,
+            ticks,
+            LIQUIDITY_MIN_BOUND,
+            LIQUIDITY_MAX_BOUND,
+            AMOUNT_MIN_BOUND,
+            AMOUNT_MAX_BOUND
+        );
+
+        for (uint256 i; i < actors.length; ++i) {
+            _fund(actors[i]);
+        }
+        _fund(address(handler));
+
+        targetContract(address(handler));
+    }
+
+    function _fund(address who) private {
+        IERC20Minimal(Currency.unwrap(currency0)).transfer(who, 1e28);
+        IERC20Minimal(Currency.unwrap(currency1)).transfer(who, 1e28);
+
+        vm.startPrank(who);
+        IERC20Minimal(Currency.unwrap(currency0)).approve(address(hook), type(uint256).max);
+        IERC20Minimal(Currency.unwrap(currency1)).approve(address(hook), type(uint256).max);
+        IERC20Minimal(Currency.unwrap(currency0)).approve(address(swapRouter), type(uint256).max);
+        IERC20Minimal(Currency.unwrap(currency1)).approve(address(swapRouter), type(uint256).max);
+        vm.stopPrank();
+    }
+
+    /// @dev INV-F-01: an order's total liquidity equals the sum of its owners' liquidity.
+    /// Assumes the order id and actor sets are complete, which the handler guarantees.
+    function invariant_F01_orderLiquidityEqualsSumOfOwnerShares() public view {
+        uint232[] memory orderIds = handler.orderIds();
+        address[] memory actors = handler.actors();
+
+        for (uint256 i; i < orderIds.length; ++i) {
+            OrderIdLibrary.OrderId id = OrderIdLibrary.OrderId.wrap(orderIds[i]);
+
+            (,,,,,,, uint128 liquidityTotal) = hook.getOrderInfo(id);
+
+            uint256 ownedLiquidity;
+            for (uint256 a; a < actors.length; ++a) {
+                ownedLiquidity += hook.getUserInfo(id, actors[a]).liquidity;
+            }
+
+            assertEq(uint256(liquidityTotal), ownedLiquidity, "INV-F-01: liquidityTotal is not the sum of owner shares");
+        }
+    }
+
+    /// @dev INV-F-02: a fully withdrawn order holds no liquidity.
+    function invariant_F02_fullyWithdrawnOrderHoldsNoLiquidity() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (!handler.ghost_wasFullyWithdrawn(ids[i])) continue;
+
+            (,,,,,,, uint128 liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            assertEq(liquidityTotal, 0, "INV-F-02: fully withdrawn order still records liquidity");
+        }
+    }
+
+    /// @dev INV-F-03: a fully withdrawn order has no remaining principal.
+    function invariant_F03_fullyWithdrawnOrderHasNoRemainingPrincipal() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (!handler.ghost_wasFullyWithdrawn(ids[i])) continue;
+
+            (,,, uint256 principal0, uint256 principal1,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            assertEq(principal0, 0, "INV-F-03: fully withdrawn order records currency0 principal");
+            assertEq(principal1, 0, "INV-F-03: fully withdrawn order records currency1 principal");
+        }
+    }
+
+    /// @dev INV-F-04: an order is filled as soon as the price crosses its tick.
+    function invariant_F04_noActiveOrderSurvivesThePriceCrossingIt() public view {
+        int24 tickLowerNow = handler.currentTickLower();
+        int24[] memory ticks = handler.ticks();
+
+        for (uint256 i; i < ticks.length; ++i) {
+            _assertActiveOrderIsBehindThePrice(ticks[i], true, tickLowerNow);
+            _assertActiveOrderIsBehindThePrice(ticks[i], false, tickLowerNow);
+        }
+    }
+
+    /// @dev No-op when no order is active at the key.
+    function _assertActiveOrderIsBehindThePrice(int24 tickLower, bool zeroForOne, int24 tickLowerNow) private view {
+        if (handler.orderId(tickLower, zeroForOne) == 0) return;
+
+        if (zeroForOne) {
+            assertLe(tickLowerNow, tickLower, "INV-F-04: the price rose past a live zeroForOne order");
+        } else {
+            assertGe(tickLowerNow, tickLower, "INV-F-04: the price fell past a live oneForZero order");
+        }
+    }
+
+    /// @dev INV-F-05: a filled order cannot be cancelled. `cancelOrder` resolves the order from its key,
+    /// so it can only reach a filled order if a live key still points at one.
+    function invariant_F05_noLiveKeyResolvesToAFilledOrder() public view {
+        int24[] memory ticks = handler.ticks();
+
+        // An order key is (tickLower, zeroForOne), so each tick holds at most one order per direction.
+        for (uint256 i; i < ticks.length; ++i) {
+            _assertActiveOrderIsNotFilled(ticks[i], true);
+            _assertActiveOrderIsNotFilled(ticks[i], false);
+        }
+    }
+
+    /// @dev No-op when no order is active at the key.
+    function _assertActiveOrderIsNotFilled(int24 tickLower, bool zeroForOne) private view {
+        uint232 id = handler.orderId(tickLower, zeroForOne);
+        if (id == 0) return;
+
+        (bool filled,,,,,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
+        assertFalse(filled, "INV-F-05: a live key resolves to a filled order");
+    }
+
+    /// @dev INV-F-06: the recorded tick lower tracks the pool price. `_afterSwap` diffs the current tick
+    /// against it to decide which ticks a swap crossed, so drift leaves orders in the gap unfilled.
+    function invariant_F06_recordedTickLowerTracksThePoolPrice() public view {
+        assertEq(
+            hook.getTickLowerLast(key.toId()),
+            handler.currentTickLower(),
+            "INV-F-06: the recorded tick lower does not match the pool price"
+        );
+    }
+
+    /// @dev INV-S-01: the hook holds every amount it owes, being each order's recorded principal plus the
+    /// fees owed to its owners.
+    /// Assumes the order id and actor sets are complete, which the handler guarantees.
+    function invariant_S01_hookHoldsEveryAmountItOwes() public view {
+        uint232[] memory orderIds = handler.orderIds();
+        address[] memory actors = handler.actors();
+
+        uint256 owed0;
+        uint256 owed1;
+
+        for (uint256 i; i < orderIds.length; ++i) {
+            (,,, uint256 principal0, uint256 principal1,,,) =
+                hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(orderIds[i]));
+
+            owed0 += principal0;
+            owed1 += principal1;
+
+            for (uint256 a; a < actors.length; ++a) {
+                (uint256 fees0, uint256 fees1) = handler.feesOwed(orderIds[i], actors[a]);
+                owed0 += fees0;
+                owed1 += fees1;
+            }
+        }
+
+        uint256 claims0 = handler.claimsOf(currency0, address(hook));
+        uint256 claims1 = handler.claimsOf(currency1, address(hook));
+
+        assertGe(claims0, owed0, "INV-S-01: currency0 claims fall short of what the hook owes");
+        assertGe(claims1, owed1, "INV-S-01: currency1 claims fall short of what the hook owes");
+
+        assertApproxEqAbs(
+            claims0,
+            owed0,
+            ROUNDING_TOLERANCE,
+            "INV-S-01: currency0 claims exceeds the rounding tolerance of what the hook owes"
+        );
+        assertApproxEqAbs(
+            claims1,
+            owed1,
+            ROUNDING_TOLERANCE,
+            "INV-S-01: currency1 claims exceeds the rounding tolerance of what the hook owes"
+        );
+    }
+
+    /// @dev INV-C-01: an order id is reset only after its last canceller. A retired key over an order that
+    /// still has owners strands them; a live key over an empty order is addressable with nothing to cancel.
+    /// Scoped to unfilled orders, since a fill retires the key while the liquidity is still recorded.
+    function invariant_C01_orderIdIsResetOnlyAfterTheLastCanceller() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            (bool filled,,,,,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            if (handler.ghost_wasFullyCancelled(ids[i])) {
+                assertTrue(handler.orderIdWasRemoved(ids[i]), "INV-C-01: fully cancelled order id was not reset");
+            }
+            if (!filled && !handler.ghost_wasFullyCancelled(ids[i])) {
+                assertFalse(handler.orderIdWasRemoved(ids[i]), "INV-C-01: partially cancelled order id was reset");
+            }
+        }
+    }
+
+    /// @dev INV-C-03: a fully cancelled order holds no liquidity. `ghost_wasFullyCancelled` counts owners
+    /// joining and leaving and reads neither `liquidityTotal` nor `principalCredited`.
+    function invariant_C03_fullyCancelledOrderHoldsNoLiquidity() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (!handler.ghost_wasFullyCancelled(ids[i])) continue;
+
+            (,,,,,,, uint128 liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            assertEq(liquidityTotal, 0, "INV-C-03: fully cancelled order still records liquidity");
+        }
+    }
+
+    /// @dev INV-C-04: a fully cancelled order holds no principal. A cancelled order never filled and only a
+    /// fill credits principal, so the correct value is not "paid out" but "never recorded". Fails if the
+    /// cancel path writes to the principal ledger.
+    function invariant_C04_fullyCancelledOrderHoldsNoPrincipal() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (!handler.ghost_wasFullyCancelled(ids[i])) continue;
+
+            (,,, uint256 principal0, uint256 principal1,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            assertEq(principal0, 0, "INV-C-04: fully cancelled order records currency0 principal");
+            assertEq(principal1, 0, "INV-C-04: fully cancelled order records currency1 principal");
+        }
+    }
+
+    /// @dev Coverage for one sequence. Actions count the calls that reached the hook, so the gap against
+    /// `depth` is what the handler's guards discarded. Orders count the states the invariants quantify over,
+    /// each of which reports a vacuous pass while its count is zero.
+    function afterInvariant() public view {
+        _reportActions();
+        _reportOrders();
+    }
+
+    function _reportActions() private view {
+        uint256 placeOrder = handler.calls("placeOrder");
+        uint256 cancelOrder = handler.calls("cancelOrder");
+        uint256 withdraw = handler.calls("withdraw");
+        uint256 swapTo = handler.calls("swapTo");
+        uint256 swapRoundTrip = handler.calls("swapRoundTrip");
+
+        console.log("--- actions ---");
+        console.log("placeOrder      ", placeOrder);
+        console.log("cancelOrder     ", cancelOrder);
+        console.log("withdraw        ", withdraw);
+        console.log("swapTo          ", swapTo);
+        console.log("swapRoundTrip   ", swapRoundTrip);
+        console.log("total           ", placeOrder + cancelOrder + withdraw + swapTo + swapRoundTrip);
+
+        assertGt(placeOrder, 0, "placeOrder was not excercised");
+        assertGt(cancelOrder, 0, "cancelOrder was not excercised");
+        assertGt(withdraw, 0, "withdraw was not excercised");
+        assertGt(swapTo, 0, "swapTo was not excercised");
+        assertGt(swapRoundTrip, 0, "swapRoundTrip was not excercised");
+    }
+
+    function _reportOrders() private view {
+        uint256 orderCount = handler.orderIdCount();
+        uint256 fillCount = handler.ghost_fillCount();
+        uint256 cancelCount = handler.ghost_cancelCount();
+        uint256 fullyWithdrawnCount = handler.ghost_fullyWithdrawnCount();
+        (uint256 multiWithdrawer, uint256 multiCanceller) = _multiExitCounts();
+
+        // every created order is filled, fully cancelled, or still open, so the three partition the count
+        console.log("--- orders ---");
+        console.log("created         ", orderCount);
+        console.log("open            ", orderCount - fillCount - cancelCount);
+        console.log("filled          ", fillCount);
+        console.log("fully withdrawn ", fullyWithdrawnCount);
+        console.log("fully cancelled ", cancelCount);
+        console.log("multi owner     ", handler.ghost_multipleOwnerCount());
+        console.log("multi withdrawer fully withdrawn", multiWithdrawer);
+        console.log("multi canceller fully cancelled", multiCanceller);
+
+        assertGt(orderCount, 0, "no order was created");
+        assertGt(fillCount, 0, "no order was filled");
+        assertGt(fullyWithdrawnCount, 0, "no order was fully withdrawn");
+        assertGt(multiWithdrawer, 0, "no fully withdrawn order had multiple withdrawers");
+        assertGt(multiCanceller, 0, "no fully cancelled order had multiple cancellers");
+    }
+
+    /// @dev Orders whose exit was split across more than one actor.
+    function _multiExitCounts() private view returns (uint256 multiWithdrawer, uint256 multiCanceller) {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (handler.ghost_wasFullyWithdrawn(ids[i]) && handler.withdrawersOf(ids[i]).length > 1) {
+                ++multiWithdrawer;
+            }
+            if (handler.ghost_wasFullyCancelled(ids[i]) && handler.cancellersOf(ids[i]).length > 1) {
+                ++multiCanceller;
+            }
+        }
+    }
+}

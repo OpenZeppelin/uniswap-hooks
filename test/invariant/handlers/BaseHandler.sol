@@ -4,11 +4,31 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {AddressSet, LibAddressSet} from "../helpers/AddressSet.sol";
 import {TickSet, LibTickSet} from "../helpers/TickSet.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IERC6909Claims} from "@uniswap/v4-core/src/interfaces/external/IERC6909Claims.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
 /**
  * @dev Shared state for managed (handler-based) invariant testing.
  */
 abstract contract BaseHandler is Test {
+    using StateLibrary for IPoolManager;
+    using CurrencyLibrary for Currency;
+
+    // --------------- State --------------- //
+
+    IPoolManager public manager;
+    PoolSwapTest public swapRouter;
+    PoolKey public key;
+    PoolId public poolId;
+
     // --------------- Actors --------------- //
 
     using LibAddressSet for AddressSet;
@@ -87,5 +107,71 @@ abstract contract BaseHandler is Test {
     /// @dev Record an action that reached the target.
     function _recordCall(bytes32 name) internal {
         calls[name]++;
+    }
+
+    /// @dev Record an action that reached the target.
+    modifier recordCall(bytes32 name) {
+        _;
+        _recordCall(name);
+    }
+
+    // --------------- Utils --------------- //
+
+    /// @dev Returns the balance of a currency for an address.
+    function _balanceOf(Currency currency, address who) internal view returns (uint256) {
+        return IERC20(Currency.unwrap(currency)).balanceOf(who);
+    }
+
+    /// @dev Returns the ERC-6909 claim balance `who` holds in the `PoolManager` for a currency.
+    function _claimsOf(Currency currency, address who) internal view returns (uint256) {
+        return IERC6909Claims(address(manager)).balanceOf(who, currency.toId());
+    }
+
+    /// @dev Returns the ERC-6909 claim balance `who` holds in the `PoolManager` for a currency.
+    function claimsOf(Currency currency, address who) external view returns (uint256) {
+        return _claimsOf(currency, who);
+    }
+
+    /// @dev Returns the current tick of the poolId
+    function _currentTick() internal view returns (int24) {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
+        return TickMath.getTickAtSqrtPrice(sqrtPriceX96);
+    }
+
+    /// @dev Returns the current tick rounded down to a multiple of `tickSpacing`, rounding towards
+    /// negative infinity for negative ticks.
+    function _currentTickLower() internal view returns (int24) {
+        int24 tick = _currentTick();
+
+        int24 compressed = tick / key.tickSpacing;
+        if (tick < 0 && tick % key.tickSpacing != 0) compressed--;
+
+        return compressed * key.tickSpacing;
+    }
+
+    /// @dev Returns the current tick of the poolId.
+    function currentTick() external view returns (int24) {
+        return _currentTick();
+    }
+
+    /// @dev Returns the current tick rounded down to a multiple of `tickSpacing`.
+    function currentTickLower() external view returns (int24) {
+        return _currentTickLower();
+    }
+
+    // --------------- Swap Utils --------------- //
+
+    /// @dev Swap up to `amount` in through the router, stopping at `tickLimit`.
+    function _swap(bool zeroForOne, uint256 amount, int24 tickLimit) internal virtual {
+        swapRouter.swap(
+            key,
+            SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: -int256(amount),
+                sqrtPriceLimitX96: TickMath.getSqrtPriceAtTick(tickLimit)
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ""
+        );
     }
 }

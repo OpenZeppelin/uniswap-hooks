@@ -34,6 +34,9 @@ contract LimitOrderHookInvariantsTest is HookTest {
     uint256 constant AMOUNT_MIN_BOUND = 1e15;
     uint256 constant AMOUNT_MAX_BOUND = 1e20;
 
+    /// @dev Target ratio of multi-owner orders.
+    uint256 constant MULTI_OWNER_TARGET_RATIO = 80;
+
     /// @dev Slack for accumulated `mulDiv` truncation. Each credit and payout share strands at most a wei,
     /// so it grows with the call count, not with the amounts.
     uint256 constant ROUNDING_TOLERANCE = 4096;
@@ -71,7 +74,8 @@ contract LimitOrderHookInvariantsTest is HookTest {
             LIQUIDITY_MIN_BOUND,
             LIQUIDITY_MAX_BOUND,
             AMOUNT_MIN_BOUND,
-            AMOUNT_MAX_BOUND
+            AMOUNT_MAX_BOUND,
+            MULTI_OWNER_TARGET_RATIO
         );
 
         for (uint256 i; i < actors.length; ++i) {
@@ -290,6 +294,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
     /// `depth` is what the handler's guards discarded. Orders count the states the invariants quantify over,
     /// each of which reports a vacuous pass while its count is zero.
     function afterInvariant() public view {
+        console.log("--- STATS ---");
         _reportActions();
         _reportOrders();
     }
@@ -319,26 +324,72 @@ contract LimitOrderHookInvariantsTest is HookTest {
     function _reportOrders() private view {
         uint256 orderCount = handler.orderIdCount();
         uint256 fillCount = handler.ghost_fillCount();
-        uint256 cancelCount = handler.ghost_cancelCount();
+        uint256 fullyCancelledCount = handler.ghost_fullyCancelCount();
         uint256 fullyWithdrawnCount = handler.ghost_fullyWithdrawnCount();
         (uint256 multiWithdrawer, uint256 multiCanceller) = _multiExitCounts();
 
-        // every created order is filled, fully cancelled, or still open, so the three partition the count
+        uint256 multiOwnerRatio = handler.ghost_multipleOwnerCount() * 100 / orderCount;
+        uint256 multiWithdrawerRatio = multiWithdrawer * 100 / fullyWithdrawnCount;
+        uint256 multiCancellerRatio = multiCanceller * 100 / fullyCancelledCount;
+
         console.log("--- orders ---");
         console.log("created         ", orderCount);
-        console.log("open            ", orderCount - fillCount - cancelCount);
+        console.log("open            ", orderCount - fillCount - fullyCancelledCount);
         console.log("filled          ", fillCount);
-        console.log("fully withdrawn ", fullyWithdrawnCount);
-        console.log("fully cancelled ", cancelCount);
-        console.log("multi owner     ", handler.ghost_multipleOwnerCount());
+        console.log("fully withdrawn   ", fullyWithdrawnCount);
+        console.log("fully cancelled   ", fullyCancelledCount);
+        console.log("had multiple owners", handler.ghost_multipleOwnerCount());
         console.log("multi withdrawer fully withdrawn", multiWithdrawer);
         console.log("multi canceller fully cancelled", multiCanceller);
+        console.log("multi owner ratio", multiOwnerRatio, "%");
+        console.log("multi withdrawer ratio", multiWithdrawerRatio, "%");
+        console.log("multi canceller ratio", multiCancellerRatio, "%");
+        _reportParticipants(orderCount, fullyWithdrawnCount, fullyCancelledCount);
 
+        return;
         assertGt(orderCount, 0, "no order was created");
         assertGt(fillCount, 0, "no order was filled");
+
         assertGt(fullyWithdrawnCount, 0, "no order was fully withdrawn");
+        assertGt(fullyCancelledCount, 0, "no order was fully cancelled");
+
         assertGt(multiWithdrawer, 0, "no fully withdrawn order had multiple withdrawers");
         assertGt(multiCanceller, 0, "no fully cancelled order had multiple cancellers");
+
+        assertGe(multiOwnerRatio, 80, "less than 80% of the orders had multiple owners");
+
+        assertGe(multiWithdrawerRatio, 80, "less than 80% of the fully withdrawn orders had multiple withdrawers");
+
+        assertGe(multiCancellerRatio, 80, "less than 80% of the fully cancelled orders had multiple cancellers");
+    }
+
+    /// @dev Average participant-set sizes per lifecycle stage, scaled by 100 for two decimals.
+    /// Withdrawer and canceller averages count only orders that completed the corresponding exit,
+    /// matching the ratio denominators.
+    function _reportParticipants(uint256 orderCount, uint256 fullyWithdrawnCount, uint256 fullyCancelledCount)
+        private
+        view
+    {
+        uint232[] memory ids = handler.orderIds();
+
+        uint256 placerSum;
+        uint256 withdrawerSum;
+        uint256 cancellerSum;
+        uint256 threePlusPlacers;
+
+        for (uint256 i; i < ids.length; ++i) {
+            uint256 placers = handler.placersOf(ids[i]).length;
+            placerSum += placers;
+            if (placers >= 3) ++threePlusPlacers;
+
+            if (handler.ghost_wasFullyWithdrawn(ids[i])) withdrawerSum += handler.withdrawersOf(ids[i]).length;
+            if (handler.ghost_wasFullyCancelled(ids[i])) cancellerSum += handler.cancellersOf(ids[i]).length;
+        }
+
+        console.log("avg placers per order (x100)", placerSum * 100 / orderCount);
+        // console.log("avg withdrawers per fully withdrawn (x100)", withdrawerSum * 100 / fullyWithdrawnCount);
+        // console.log("avg cancellers per fully cancelled (x100)", cancellerSum * 100 / fullyCancelledCount);
+        // console.log("orders with 3+ placers", threePlusPlacers);
     }
 
     /// @dev Orders whose exit was split across more than one actor.

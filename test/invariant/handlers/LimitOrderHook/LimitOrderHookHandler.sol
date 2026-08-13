@@ -37,10 +37,15 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Scale of the hook's per-liquidity fee accumulators.
     uint256 public constant Q128 = 1 << 128;
 
+    /// @dev Bounds for the `liquidity` parameter fuzzer to use.
     uint256 public immutable LIQUIDITY_MIN_BOUND;
     uint256 public immutable LIQUIDITY_MAX_BOUND;
+    /// @dev Bounds for the `amount` parameter fuzzer to use.
     uint256 public immutable AMOUNT_MIN_BOUND;
     uint256 public immutable AMOUNT_MAX_BOUND;
+
+    /// @dev Target ratio of multi-owner orders.
+    uint256 public immutable MULTI_OWNER_TARGET_RATIO;
 
     /// @dev Every order id the handler has caused to be created, with the key it was created for.
     OrderIdSet internal ghost_orderIds;
@@ -60,7 +65,7 @@ contract LimitOrderHookHandler is BaseHandler {
 
     /// @dev Sticky record of every fully cancelled order, and how many.
     mapping(uint232 orderId => bool) public ghost_wasFullyCancelled;
-    uint256 public ghost_cancelCount;
+    uint256 public ghost_fullyCancelCount;
 
     /// @dev Sticky record of every filled order every owner has withdrawn from, and how many.
     mapping(uint232 orderId => bool) public ghost_wasFullyWithdrawn;
@@ -86,7 +91,8 @@ contract LimitOrderHookHandler is BaseHandler {
         uint256 liquidityMinBound_,
         uint256 liquidityMaxBound_,
         uint256 amountMinBound_,
-        uint256 amountMaxBound_
+        uint256 amountMaxBound_,
+        uint256 multiOwnerTargetRatio_
     ) {
         hook = hook_;
         manager = manager_;
@@ -101,6 +107,7 @@ contract LimitOrderHookHandler is BaseHandler {
         LIQUIDITY_MAX_BOUND = liquidityMaxBound_;
         AMOUNT_MIN_BOUND = amountMinBound_;
         AMOUNT_MAX_BOUND = amountMaxBound_;
+        MULTI_OWNER_TARGET_RATIO = multiOwnerTargetRatio_;
 
         IERC20Minimal(Currency.unwrap(key_.currency0)).approve(address(swapRouter_), type(uint256).max);
         IERC20Minimal(Currency.unwrap(key_.currency1)).approve(address(swapRouter_), type(uint256).max);
@@ -108,48 +115,88 @@ contract LimitOrderHookHandler is BaseHandler {
 
     // ------------------ FUZZABLE SURFACE ------------------ //
 
-    function placeOrder(uint256 actorSeed, uint256 tickSeed, bool zeroForOne, uint256 liquiditySeed)
-        external
-        ghost_syncOrderState
-        recordCall("placeOrder")
-    {
-        int24 tickLower = _tickFromSeed(tickSeed);
+    function placeOrder(
+        uint256 actorSeed,
+        uint256 tickSeed,
+        bool zeroForOne,
+        uint256 liquiditySeed,
+        uint256 orderIdSeed
+    ) external ghost_syncOrderState recordCall("placeOrder") {
+        uint256 multiOwnerRatio =
+            ghost_orderIds.count() > 0 ? ghost_multipleOwnerCount * 100 / ghost_orderIds.count() : 0;
 
-        // The hook reverts if the order is not placeable.
-        vm.assume(_placeable(tickLower, zeroForOne));
+        // If the `MULTI_OWNER_TARGET_RATIO` is not reached, join a live order, otherwise default to new order.
+        uint232 liveId = multiOwnerRatio < MULTI_OWNER_TARGET_RATIO ? _liveOrderFromSeed(orderIdSeed) : 0;
+
+        // If `liveId` is a valid order, use it, otherwise create a new order.
+        OrderKey memory orderKey =
+            liveId != 0 ? ghost_orderIds.keyOf(liveId) : OrderKey(_tickFromSeed(tickSeed), zeroForOne);
+
+        vm.assume(_placeable(orderKey.tickLower, orderKey.zeroForOne));
 
         address actor = _actorFromSeed(actorSeed);
         uint128 liquidity = uint128(bound(liquiditySeed, LIQUIDITY_MIN_BOUND, LIQUIDITY_MAX_BOUND));
 
         vm.prank(actor);
-        hook.placeOrder(key, tickLower, zeroForOne, liquidity);
+        hook.placeOrder(key, orderKey.tickLower, orderKey.zeroForOne, liquidity);
 
-        uint232 id = _orderId(tickLower, zeroForOne);
-        ghost_orderIds.add(id, OrderKey(tickLower, zeroForOne));
+        // The id only exists once the order is placed. Placing at a retired key mints a fresh id,
+        // so reading it after the call also registers rejoins correctly.
+        uint232 id = _orderId(orderKey.tickLower, orderKey.zeroForOne);
+        ghost_orderIds.add(id, orderKey);
+
         ghost_placers[id].add(actor);
         _ghost_joinOrder(id, actor);
     }
 
+    /**
+     * @dev A live order id picked from `seed`, or zero when none is live. An order is live until it
+     * fills or its last liquidity is cancelled, which the sticky ghosts already track.
+     *
+     * Rotates the id set from `seed` rather than indexing into it, because most recorded ids are
+     * retired and a random pick would discard the call more often than not.
+     */
+    function _liveOrderFromSeed(uint256 seed) private view returns (uint232) {
+        uint256 count = ghost_orderIds.count();
+        if (count == 0) return 0;
+
+        uint256 offset = seed % count;
+        for (uint256 i; i < count; ++i) {
+            uint232 id = ghost_orderIds.ids[(offset + i) % count];
+            if (!ghost_wasFilled[id] && !ghost_wasFullyCancelled[id]) return id;
+        }
+
+        return 0;
+    }
+
+    /// @dev A filled order id with shares still to withdraw, picked from `seed`, or zero when none
+    /// exists. Rotates the id set from `seed` for the same reason as `_liveOrderFromSeed`.
+    function _filledOrderFromSeed(uint256 seed) private view returns (uint232) {
+        uint256 count = ghost_orderIds.count();
+        if (count == 0) return 0;
+
+        uint256 offset = seed % count;
+        for (uint256 i; i < count; ++i) {
+            uint232 id = ghost_orderIds.ids[(offset + i) % count];
+            if (ghost_wasFilled[id] && !ghost_wasFullyWithdrawn[id]) return id;
+        }
+
+        return 0;
+    }
+
     /// @dev Cancelling an order removes liquidity from the order
     /// and collects accrued fees from swaps into the order
-    function cancelOrder(uint256 actorSeed, uint256 tickSeed, bool zeroForOne)
-        external
-        ghost_syncOrderState
-        recordCall("cancelOrder")
-    {
-        int24 tickLower = _tickFromSeed(tickSeed);
-
-        uint232 id = _orderId(tickLower, zeroForOne);
+    function cancelOrder(uint256 actorSeed, uint256 idSeed) external ghost_syncOrderState recordCall("cancelOrder") {
+        uint232 id = _liveOrderFromSeed(idSeed);
         vm.assume(id != 0);
-
-        (bool filled,,,) = _orderInfo(id);
-        vm.assume(!filled);
 
         address actor = _ownerFromSeed(id, actorSeed);
         vm.assume(actor != address(0));
 
+        OrderKey memory orderKey = ghost_orderIds.keyOf(id);
+
         vm.prank(actor);
-        hook.cancelOrder(key, tickLower, zeroForOne, actor);
+        hook.cancelOrder(key, orderKey.tickLower, orderKey.zeroForOne, actor);
 
         ghost_cancellers[id].add(actor);
         _ghost_exitOrder(id, actor);
@@ -158,12 +205,8 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Withdrawing an order removes liquidity from the order
     /// and collects accrued fees from swaps into the order
     function withdraw(uint256 actorSeed, uint256 idSeed) external ghost_syncOrderState recordCall("withdraw") {
-        vm.assume(ghost_orderIds.count() > 0);
-
-        uint232 id = ghost_orderIds.rand(idSeed);
-
-        (bool filled,,,) = _orderInfo(id);
-        vm.assume(filled);
+        uint232 id = _filledOrderFromSeed(idSeed);
+        vm.assume(id != 0);
 
         address actor = _ownerFromSeed(id, actorSeed);
         vm.assume(actor != address(0));
@@ -298,7 +341,7 @@ contract LimitOrderHookHandler is BaseHandler {
 
             if (everyOwnerExited && !filled && !ghost_wasFullyCancelled[id]) {
                 ghost_wasFullyCancelled[id] = true;
-                ++ghost_cancelCount;
+                ++ghost_fullyCancelCount;
             }
 
             if (everyOwnerExited && filled && !ghost_wasFullyWithdrawn[id]) {

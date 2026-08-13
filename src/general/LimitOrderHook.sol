@@ -561,12 +561,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         uint128 liquidity = withdrawData.liquidity;
         uint128 liquidityTotal = orderInfo.liquidityTotal;
 
-        // the owner's share of the principal the fill credited to the order. The principal is credited once
-        // and never grows, so splitting it pro-rata while the total liquidity decreases alongside it is exact
-        // and independent of the order in which the owners withdraw.
-        uint256 principal0 = FullMath.mulDiv(orderInfo.principalCredited0, liquidity, liquidityTotal);
-        uint256 principal1 = FullMath.mulDiv(orderInfo.principalCredited1, liquidity, liquidityTotal);
-
+        (uint256 principal0, uint256 principal1) = _principalOwed(orderInfo, liquidity);
         (uint256 owed0, uint256 owed1) = _feesOwed(orderInfo, orderInfo.userInfo[withdrawData.owner]);
 
         amount0 = principal0 + owed0;
@@ -731,6 +726,24 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
+     * @dev Returns ``liquidity``'s share of the principal credited to `orderInfo`, which is what a withdrawal
+     * of that liquidity pays out. The principal is credited once by the fill and never grows, so splitting it
+     * pro-rata while the total liquidity decreases alongside it is exact and independent of the order in
+     * which the owners withdraw.
+     */
+    function _principalOwed(OrderInfo storage orderInfo, uint128 liquidity)
+        private
+        view
+        returns (uint256 amount0, uint256 amount1)
+    {
+        if (liquidity == 0) return (0, 0);
+
+        uint128 liquidityTotal = orderInfo.liquidityTotal;
+        amount0 = FullMath.mulDiv(orderInfo.principalCredited0, liquidity, liquidityTotal);
+        amount1 = FullMath.mulDiv(orderInfo.principalCredited1, liquidity, liquidityTotal);
+    }
+
+    /**
      * @dev Returns the fees owed to `userInfo`, given by its liquidity's share of the accumulator growth
      * since its checkpoints. Fees are only paid out on cancellation or withdrawal, so an owner holding
      * liquidity is owed everything its checkpoints have accrued.
@@ -861,6 +874,35 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      */
     function getUserInfo(OrderIdLibrary.OrderId orderId, address owner) external view returns (UserInfo memory) {
         return _orderInfos[orderId].userInfo[owner];
+    }
+
+    /**
+     * @dev Get the fees owed to an owner of an order. Takes an {OrderId} `orderId` and `owner` address and
+     * returns the fees owed to the owner.
+     */
+    function feesOwed(OrderIdLibrary.OrderId orderId, address owner)
+        external
+        view
+        returns (uint256 amount0, uint256 amount1)
+    {
+        return _feesOwed(_orderInfos[orderId], _orderInfos[orderId].userInfo[owner]);
+    }
+
+    /**
+     * @dev Get the principal owed to an owner of an order. Takes an {OrderId} `orderId` and `owner` address
+     * and returns the owner's share of the principal the fill credited to the order. Zero until the order
+     * fills, since only a fill credits principal.
+     *
+     * NOTE: This is what a withdrawal would pay out now. Withdrawals by other owners leave their truncation
+     * dust to the remaining ones, so the share can grow but never shrink.
+     */
+    function principalOwed(OrderIdLibrary.OrderId orderId, address owner)
+        external
+        view
+        returns (uint256 amount0, uint256 amount1)
+    {
+        OrderInfo storage orderInfo = _orderInfos[orderId];
+        return _principalOwed(orderInfo, orderInfo.userInfo[owner].liquidity);
     }
 
     /**

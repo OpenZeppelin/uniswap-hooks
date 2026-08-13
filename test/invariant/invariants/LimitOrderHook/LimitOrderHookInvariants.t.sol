@@ -26,19 +26,16 @@ contract LimitOrderHookInvariantsTest is HookTest {
     address carol = makeAddr("carol");
     address dave = makeAddr("dave");
 
-    /// @dev Bounds for the `liquidity` parameter fuzzer to use.
+    /// @dev Fuzzer bounds for `liquidity`.
     uint256 constant LIQUIDITY_MIN_BOUND = 1e8;
     uint256 constant LIQUIDITY_MAX_BOUND = 1e14;
 
-    /// @dev Bounds for the `amount` parameter fuzzer to use.
+    /// @dev Fuzzer bounds for `amount`.
     uint256 constant AMOUNT_MIN_BOUND = 1e15;
     uint256 constant AMOUNT_MAX_BOUND = 1e20;
 
-    /// @dev Target ratio of multi-owner orders.
-    uint256 constant MULTI_OWNER_TARGET_RATIO = 80;
-
-    /// @dev Slack for accumulated `mulDiv` truncation. Each credit and payout share strands at most a wei,
-    /// so it grows with the call count, not with the amounts.
+    /// @dev Slack for `mulDiv` truncation: at most a wei per credit or payout, so it grows with the
+    /// call count, not the amounts.
     uint256 constant ROUNDING_TOLERANCE = 4096;
 
     function setUp() public {
@@ -74,8 +71,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
             LIQUIDITY_MIN_BOUND,
             LIQUIDITY_MAX_BOUND,
             AMOUNT_MIN_BOUND,
-            AMOUNT_MAX_BOUND,
-            MULTI_OWNER_TARGET_RATIO
+            AMOUNT_MAX_BOUND
         );
 
         for (uint256 i; i < actors.length; ++i) {
@@ -98,9 +94,8 @@ contract LimitOrderHookInvariantsTest is HookTest {
         vm.stopPrank();
     }
 
-    /// @dev INV-F-01: an order's total liquidity equals the sum of its owners' liquidity.
-    /// Assumes the order id and actor sets are complete, which the handler guarantees.
-    function invariant_F01_orderLiquidityEqualsSumOfOwnerShares() public view {
+    /// @dev INV-L-01: an order's total liquidity equals the sum of its owners' liquidity.
+    function invariant_L01_orderLiquidityEqualsSumOfOwnerShares() public view {
         uint232[] memory orderIds = handler.orderIds();
         address[] memory actors = handler.actors();
 
@@ -114,39 +109,12 @@ contract LimitOrderHookInvariantsTest is HookTest {
                 ownedLiquidity += hook.getUserInfo(id, actors[a]).liquidity;
             }
 
-            assertEq(uint256(liquidityTotal), ownedLiquidity, "INV-F-01: liquidityTotal is not the sum of owner shares");
+            assertEq(uint256(liquidityTotal), ownedLiquidity, "INV-L-01: liquidityTotal is not the sum of owner shares");
         }
     }
 
-    /// @dev INV-F-02: a fully withdrawn order holds no liquidity.
-    function invariant_F02_fullyWithdrawnOrderHoldsNoLiquidity() public view {
-        uint232[] memory ids = handler.orderIds();
-
-        for (uint256 i; i < ids.length; ++i) {
-            if (!handler.ghost_wasFullyWithdrawn(ids[i])) continue;
-
-            (,,,,,,, uint128 liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
-
-            assertEq(liquidityTotal, 0, "INV-F-02: fully withdrawn order still records liquidity");
-        }
-    }
-
-    /// @dev INV-F-03: a fully withdrawn order has no remaining principal.
-    function invariant_F03_fullyWithdrawnOrderHasNoRemainingPrincipal() public view {
-        uint232[] memory ids = handler.orderIds();
-
-        for (uint256 i; i < ids.length; ++i) {
-            if (!handler.ghost_wasFullyWithdrawn(ids[i])) continue;
-
-            (,,, uint256 principal0, uint256 principal1,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
-
-            assertEq(principal0, 0, "INV-F-03: fully withdrawn order records currency0 principal");
-            assertEq(principal1, 0, "INV-F-03: fully withdrawn order records currency1 principal");
-        }
-    }
-
-    /// @dev INV-F-04: an order is filled as soon as the price crosses its tick.
-    function invariant_F04_noActiveOrderSurvivesThePriceCrossingIt() public view {
+    /// @dev INV-L-02: an order is filled as soon as the price crosses its tick.
+    function invariant_L02_noActiveOrderSurvivesThePriceCrossingIt() public view {
         int24 tickLowerNow = handler.currentTickLower();
         int24[] memory ticks = handler.ticks();
 
@@ -161,18 +129,53 @@ contract LimitOrderHookInvariantsTest is HookTest {
         if (handler.orderId(tickLower, zeroForOne) == 0) return;
 
         if (zeroForOne) {
-            assertLe(tickLowerNow, tickLower, "INV-F-04: the price rose past a live zeroForOne order");
+            assertLe(tickLowerNow, tickLower, "INV-L-02: the price rose past a live zeroForOne order");
         } else {
-            assertGe(tickLowerNow, tickLower, "INV-F-04: the price fell past a live oneForZero order");
+            assertGe(tickLowerNow, tickLower, "INV-L-02: the price fell past a live oneForZero order");
         }
     }
 
-    /// @dev INV-F-05: a filled order cannot be cancelled. `cancelOrder` resolves the order from its key,
-    /// so it can only reach a filled order if a live key still points at one.
-    function invariant_F05_noLiveKeyResolvesToAFilledOrder() public view {
+    /// @dev INV-L-03: the recorded tick lower tracks the pool price. Drift leaves orders in the gap unfilled.
+    function invariant_L03_recordedTickLowerTracksThePoolPrice() public view {
+        assertEq(
+            hook.getTickLowerLast(key.toId()),
+            handler.currentTickLower(),
+            "INV-L-03: the recorded tick lower does not match the pool price"
+        );
+    }
+
+    /// @dev INV-F-01: a fully withdrawn order holds no liquidity.
+    function invariant_F01_fullyWithdrawnOrderHoldsNoLiquidity() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (!handler.ghost_wasFullyWithdrawn(ids[i])) continue;
+
+            (,,,,,,, uint128 liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            assertEq(liquidityTotal, 0, "INV-F-01: fully withdrawn order still records liquidity");
+        }
+    }
+
+    /// @dev INV-F-02: a fully withdrawn order has no remaining principal.
+    function invariant_F02_fullyWithdrawnOrderHasNoRemainingPrincipal() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (!handler.ghost_wasFullyWithdrawn(ids[i])) continue;
+
+            (,,, uint256 principal0, uint256 principal1,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            assertEq(principal0, 0, "INV-F-02: fully withdrawn order records currency0 principal");
+            assertEq(principal1, 0, "INV-F-02: fully withdrawn order records currency1 principal");
+        }
+    }
+
+    /// @dev INV-F-03: a filled order cannot be cancelled, since `cancelOrder` only reaches an order
+    /// through a live key.
+    function invariant_F03_noLiveKeyResolvesToAFilledOrder() public view {
         int24[] memory ticks = handler.ticks();
 
-        // An order key is (tickLower, zeroForOne), so each tick holds at most one order per direction.
         for (uint256 i; i < ticks.length; ++i) {
             _assertActiveOrderIsNotFilled(ticks[i], true);
             _assertActiveOrderIsNotFilled(ticks[i], false);
@@ -185,22 +188,10 @@ contract LimitOrderHookInvariantsTest is HookTest {
         if (id == 0) return;
 
         (bool filled,,,,,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
-        assertFalse(filled, "INV-F-05: a live key resolves to a filled order");
+        assertFalse(filled, "INV-F-03: a live key resolves to a filled order");
     }
 
-    /// @dev INV-F-06: the recorded tick lower tracks the pool price. `_afterSwap` diffs the current tick
-    /// against it to decide which ticks a swap crossed, so drift leaves orders in the gap unfilled.
-    function invariant_F06_recordedTickLowerTracksThePoolPrice() public view {
-        assertEq(
-            hook.getTickLowerLast(key.toId()),
-            handler.currentTickLower(),
-            "INV-F-06: the recorded tick lower does not match the pool price"
-        );
-    }
-
-    /// @dev INV-S-01: the hook holds every amount it owes, being each order's recorded principal plus the
-    /// fees owed to its owners.
-    /// Assumes the order id and actor sets are complete, which the handler guarantees.
+    /// @dev INV-S-01: the hook's claims cover every order's recorded principal plus the fees owed to its owners.
     function invariant_S01_hookHoldsEveryAmountItOwes() public view {
         uint232[] memory orderIds = handler.orderIds();
         address[] memory actors = handler.actors();
@@ -242,9 +233,8 @@ contract LimitOrderHookInvariantsTest is HookTest {
         );
     }
 
-    /// @dev INV-C-01: an order id is reset only after its last canceller. A retired key over an order that
-    /// still has owners strands them; a live key over an empty order is addressable with nothing to cancel.
-    /// Scoped to unfilled orders, since a fill retires the key while the liquidity is still recorded.
+    /// @dev INV-C-01: an order id is reset only after its last canceller. Scoped to unfilled orders,
+    /// since a fill retires the key while the liquidity is still recorded.
     function invariant_C01_orderIdIsResetOnlyAfterTheLastCanceller() public view {
         uint232[] memory ids = handler.orderIds();
 
@@ -260,8 +250,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
         }
     }
 
-    /// @dev INV-C-03: a fully cancelled order holds no liquidity. `ghost_wasFullyCancelled` counts owners
-    /// joining and leaving and reads neither `liquidityTotal` nor `principalCredited`.
+    /// @dev INV-C-03: a fully cancelled order holds no liquidity.
     function invariant_C03_fullyCancelledOrderHoldsNoLiquidity() public view {
         uint232[] memory ids = handler.orderIds();
 
@@ -274,9 +263,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
         }
     }
 
-    /// @dev INV-C-04: a fully cancelled order holds no principal. A cancelled order never filled and only a
-    /// fill credits principal, so the correct value is not "paid out" but "never recorded". Fails if the
-    /// cancel path writes to the principal ledger.
+    /// @dev INV-C-04: a fully cancelled order holds no principal, since only a fill credits principal.
     function invariant_C04_fullyCancelledOrderHoldsNoPrincipal() public view {
         uint232[] memory ids = handler.orderIds();
 
@@ -290,9 +277,8 @@ contract LimitOrderHookInvariantsTest is HookTest {
         }
     }
 
-    /// @dev Coverage for one sequence. Actions count the calls that reached the hook, so the gap against
-    /// `depth` is what the handler's guards discarded. Orders count the states the invariants quantify over,
-    /// each of which reports a vacuous pass while its count is zero.
+    /// @dev Per-sequence coverage report: actions that reached the hook and the states the
+    /// invariants quantify over.
     function afterInvariant() public view {
         console.log("--- STATS ---");
         _reportActions();
@@ -314,11 +300,11 @@ contract LimitOrderHookInvariantsTest is HookTest {
         console.log("swapRoundTrip   ", swapRoundTrip);
         console.log("total           ", placeOrder + cancelOrder + withdraw + swapTo + swapRoundTrip);
 
-        assertGt(placeOrder, 0, "placeOrder was not excercised");
-        assertGt(cancelOrder, 0, "cancelOrder was not excercised");
-        assertGt(withdraw, 0, "withdraw was not excercised");
-        assertGt(swapTo, 0, "swapTo was not excercised");
-        assertGt(swapRoundTrip, 0, "swapRoundTrip was not excercised");
+        assertGt(placeOrder, 0, "placeOrder was not exercised");
+        assertGt(cancelOrder, 0, "cancelOrder was not exercised");
+        assertGt(withdraw, 0, "withdraw was not exercised");
+        assertGt(swapTo, 0, "swapTo was not exercised");
+        assertGt(swapRoundTrip, 0, "swapRoundTrip was not exercised");
     }
 
     function _reportOrders() private view {
@@ -344,52 +330,11 @@ contract LimitOrderHookInvariantsTest is HookTest {
         console.log("multi owner ratio", multiOwnerRatio, "%");
         console.log("multi withdrawer ratio", multiWithdrawerRatio, "%");
         console.log("multi canceller ratio", multiCancellerRatio, "%");
-        _reportParticipants(orderCount, fullyWithdrawnCount, fullyCancelledCount);
 
-        return;
         assertGt(orderCount, 0, "no order was created");
         assertGt(fillCount, 0, "no order was filled");
-
         assertGt(fullyWithdrawnCount, 0, "no order was fully withdrawn");
         assertGt(fullyCancelledCount, 0, "no order was fully cancelled");
-
-        assertGt(multiWithdrawer, 0, "no fully withdrawn order had multiple withdrawers");
-        assertGt(multiCanceller, 0, "no fully cancelled order had multiple cancellers");
-
-        assertGe(multiOwnerRatio, 80, "less than 80% of the orders had multiple owners");
-
-        assertGe(multiWithdrawerRatio, 80, "less than 80% of the fully withdrawn orders had multiple withdrawers");
-
-        assertGe(multiCancellerRatio, 80, "less than 80% of the fully cancelled orders had multiple cancellers");
-    }
-
-    /// @dev Average participant-set sizes per lifecycle stage, scaled by 100 for two decimals.
-    /// Withdrawer and canceller averages count only orders that completed the corresponding exit,
-    /// matching the ratio denominators.
-    function _reportParticipants(uint256 orderCount, uint256 fullyWithdrawnCount, uint256 fullyCancelledCount)
-        private
-        view
-    {
-        uint232[] memory ids = handler.orderIds();
-
-        uint256 placerSum;
-        uint256 withdrawerSum;
-        uint256 cancellerSum;
-        uint256 threePlusPlacers;
-
-        for (uint256 i; i < ids.length; ++i) {
-            uint256 placers = handler.placersOf(ids[i]).length;
-            placerSum += placers;
-            if (placers >= 3) ++threePlusPlacers;
-
-            if (handler.ghost_wasFullyWithdrawn(ids[i])) withdrawerSum += handler.withdrawersOf(ids[i]).length;
-            if (handler.ghost_wasFullyCancelled(ids[i])) cancellerSum += handler.cancellersOf(ids[i]).length;
-        }
-
-        console.log("avg placers per order (x100)", placerSum * 100 / orderCount);
-        // console.log("avg withdrawers per fully withdrawn (x100)", withdrawerSum * 100 / fullyWithdrawnCount);
-        // console.log("avg cancellers per fully cancelled (x100)", cancellerSum * 100 / fullyCancelledCount);
-        // console.log("orders with 3+ placers", threePlusPlacers);
     }
 
     /// @dev Orders whose exit was split across more than one actor.

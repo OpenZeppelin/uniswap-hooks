@@ -20,12 +20,12 @@ import {AddressSet, LibAddressSet} from "../../helpers/AddressSet.sol";
 /**
  * @dev Handler for `LimitOrderHook` invariant campaigns.
  *
- * Fuzzeable surface of this handler:
- * - placeOrder
- * - cancelOrder
- * - withdraw
- * - swapTo
- * - swapRoundTrip
+ * Fuzzable surface:
+ * - `placeOrder`
+ * - `cancelOrder`
+ * - `withdraw`
+ * - `swapTo`
+ * - `swapRoundTrip`
  */
 contract LimitOrderHookHandler is BaseHandler {
     using StateLibrary for IPoolManager;
@@ -37,20 +37,20 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Scale of the hook's per-liquidity fee accumulators.
     uint256 public constant Q128 = 1 << 128;
 
-    /// @dev Bounds for the `liquidity` parameter fuzzer to use.
+    /// @dev Fuzzer bounds for `liquidity`.
     uint256 public immutable LIQUIDITY_MIN_BOUND;
     uint256 public immutable LIQUIDITY_MAX_BOUND;
-    /// @dev Bounds for the `amount` parameter fuzzer to use.
+    /// @dev Fuzzer bounds for `amount`.
     uint256 public immutable AMOUNT_MIN_BOUND;
     uint256 public immutable AMOUNT_MAX_BOUND;
 
     /// @dev Target ratio of multi-owner orders.
-    uint256 public immutable MULTI_OWNER_TARGET_RATIO;
+    uint256 public immutable MULTI_OWNER_TARGET_RATIO = 80;
 
-    /// @dev Every order id the handler has caused to be created, with the key it was created for.
+    /// @dev Every order id the handler has caused to be created, with its key.
     OrderIdSet internal ghost_orderIds;
 
-    /// @dev Sets of actors that placed into, cancelled from, and withdrew from each order.
+    /// @dev Actors that placed into, cancelled from, and withdrew from each order.
     mapping(uint232 orderId => AddressSet) internal ghost_placers;
     mapping(uint232 orderId => AddressSet) internal ghost_cancellers;
     mapping(uint232 orderId => AddressSet) internal ghost_withdrawers;
@@ -59,26 +59,44 @@ contract LimitOrderHookHandler is BaseHandler {
     mapping(uint232 orderId => mapping(address owner => bool)) internal ghost_isOwner;
     mapping(uint232 orderId => uint256) public ghost_activeOwners;
 
-    /// @dev Sticky record of every order observed filled, and how many.
+    /// @dev Sticky record of every order observed filled.
     mapping(uint232 orderId => bool) public ghost_wasFilled;
     uint256 public ghost_fillCount;
 
-    /// @dev Sticky record of every fully cancelled order, and how many.
+    /// @dev Sticky record of every fully cancelled order.
     mapping(uint232 orderId => bool) public ghost_wasFullyCancelled;
     uint256 public ghost_fullyCancelCount;
 
-    /// @dev Sticky record of every filled order every owner has withdrawn from, and how many.
+    /// @dev Sticky record of every filled order every owner has withdrawn from.
     mapping(uint232 orderId => bool) public ghost_wasFullyWithdrawn;
     uint256 public ghost_fullyWithdrawnCount;
 
-    /// @dev Sticky record of every order that ever held multiple owners at once, and how many.
+    /// @dev Sticky record of every order that ever held multiple owners at once.
     mapping(uint232 orderId => bool) public ghost_hadMultipleOwners;
     uint256 public ghost_multipleOwnerCount;
+
+    /// @dev Entitlement per (order, placer) captured before the current action.
+    mapping(uint232 orderId => mapping(address owner => uint256 entitlement0)) public ghost_entitlement0;
+    mapping(uint232 orderId => mapping(address owner => uint256 entitlement1)) public ghost_entitlement1;
+
+    /// @dev Actor exempt from the entitlement monotonicity assertion, set by the action before it
+    /// calls the hook.
+    address internal _entitlementExempt;
 
     /// @dev Sync the sticky order state ghosts after each action.
     modifier ghost_syncOrderState() {
         _;
         _ghost_syncOrderState();
+    }
+
+    /// @dev INV-S-02: an action never reduces the entitlement of an owner that did not perform it.
+    /// The performing actor is exempt: exits collect their entitlement, and a top-up carries a wei
+    /// of checkpoint truncation.
+    modifier assertMonotonicEntitlements() {
+        _snapshotEntitlements();
+        _;
+        _assertEntitlementsMonotonic(_entitlementExempt);
+        _entitlementExempt = address(0);
     }
 
     constructor(
@@ -91,8 +109,7 @@ contract LimitOrderHookHandler is BaseHandler {
         uint256 liquidityMinBound_,
         uint256 liquidityMaxBound_,
         uint256 amountMinBound_,
-        uint256 amountMaxBound_,
-        uint256 multiOwnerTargetRatio_
+        uint256 amountMaxBound_
     ) {
         hook = hook_;
         manager = manager_;
@@ -107,7 +124,6 @@ contract LimitOrderHookHandler is BaseHandler {
         LIQUIDITY_MAX_BOUND = liquidityMaxBound_;
         AMOUNT_MIN_BOUND = amountMinBound_;
         AMOUNT_MAX_BOUND = amountMaxBound_;
-        MULTI_OWNER_TARGET_RATIO = multiOwnerTargetRatio_;
 
         IERC20Minimal(Currency.unwrap(key_.currency0)).approve(address(swapRouter_), type(uint256).max);
         IERC20Minimal(Currency.unwrap(key_.currency1)).approve(address(swapRouter_), type(uint256).max);
@@ -115,20 +131,20 @@ contract LimitOrderHookHandler is BaseHandler {
 
     // ------------------ FUZZABLE SURFACE ------------------ //
 
+    /// @dev Places a new order or joins an existing live order.
     function placeOrder(
         uint256 actorSeed,
         uint256 tickSeed,
         bool zeroForOne,
         uint256 liquiditySeed,
         uint256 orderIdSeed
-    ) external ghost_syncOrderState recordCall("placeOrder") {
+    ) external assertMonotonicEntitlements ghost_syncOrderState recordCall("placeOrder") {
         uint256 multiOwnerRatio =
             ghost_orderIds.count() > 0 ? ghost_multipleOwnerCount * 100 / ghost_orderIds.count() : 0;
 
-        // If the `MULTI_OWNER_TARGET_RATIO` is not reached, join a live order, otherwise default to new order.
+        // Below the multi-owner target, bias toward joining an already existing live order.
         uint232 liveId = multiOwnerRatio < MULTI_OWNER_TARGET_RATIO ? _liveOrderFromSeed(orderIdSeed) : 0;
 
-        // If `liveId` is a valid order, use it, otherwise create a new order.
         OrderKey memory orderKey =
             liveId != 0 ? ghost_orderIds.keyOf(liveId) : OrderKey(_tickFromSeed(tickSeed), zeroForOne);
 
@@ -137,11 +153,10 @@ contract LimitOrderHookHandler is BaseHandler {
         address actor = _actorFromSeed(actorSeed);
         uint128 liquidity = uint128(bound(liquiditySeed, LIQUIDITY_MIN_BOUND, LIQUIDITY_MAX_BOUND));
 
+        _entitlementExempt = actor;
         vm.prank(actor);
         hook.placeOrder(key, orderKey.tickLower, orderKey.zeroForOne, liquidity);
 
-        // The id only exists once the order is placed. Placing at a retired key mints a fresh id,
-        // so reading it after the call also registers rejoins correctly.
         uint232 id = _orderId(orderKey.tickLower, orderKey.zeroForOne);
         ghost_orderIds.add(id, orderKey);
 
@@ -149,44 +164,13 @@ contract LimitOrderHookHandler is BaseHandler {
         _ghost_joinOrder(id, actor);
     }
 
-    /**
-     * @dev A live order id picked from `seed`, or zero when none is live. An order is live until it
-     * fills or its last liquidity is cancelled, which the sticky ghosts already track.
-     *
-     * Rotates the id set from `seed` rather than indexing into it, because most recorded ids are
-     * retired and a random pick would discard the call more often than not.
-     */
-    function _liveOrderFromSeed(uint256 seed) private view returns (uint232) {
-        uint256 count = ghost_orderIds.count();
-        if (count == 0) return 0;
-
-        uint256 offset = seed % count;
-        for (uint256 i; i < count; ++i) {
-            uint232 id = ghost_orderIds.ids[(offset + i) % count];
-            if (!ghost_wasFilled[id] && !ghost_wasFullyCancelled[id]) return id;
-        }
-
-        return 0;
-    }
-
-    /// @dev A filled order id with shares still to withdraw, picked from `seed`, or zero when none
-    /// exists. Rotates the id set from `seed` for the same reason as `_liveOrderFromSeed`.
-    function _filledOrderFromSeed(uint256 seed) private view returns (uint232) {
-        uint256 count = ghost_orderIds.count();
-        if (count == 0) return 0;
-
-        uint256 offset = seed % count;
-        for (uint256 i; i < count; ++i) {
-            uint232 id = ghost_orderIds.ids[(offset + i) % count];
-            if (ghost_wasFilled[id] && !ghost_wasFullyWithdrawn[id]) return id;
-        }
-
-        return 0;
-    }
-
-    /// @dev Cancelling an order removes liquidity from the order
-    /// and collects accrued fees from swaps into the order
-    function cancelOrder(uint256 actorSeed, uint256 idSeed) external ghost_syncOrderState recordCall("cancelOrder") {
+    /// @dev Removes the actor's liquidity and collects their accrued fees.
+    function cancelOrder(uint256 actorSeed, uint256 idSeed)
+        external
+        assertMonotonicEntitlements
+        ghost_syncOrderState
+        recordCall("cancelOrder")
+    {
         uint232 id = _liveOrderFromSeed(idSeed);
         vm.assume(id != 0);
 
@@ -195,6 +179,7 @@ contract LimitOrderHookHandler is BaseHandler {
 
         OrderKey memory orderKey = ghost_orderIds.keyOf(id);
 
+        _entitlementExempt = actor;
         vm.prank(actor);
         hook.cancelOrder(key, orderKey.tickLower, orderKey.zeroForOne, actor);
 
@@ -202,15 +187,20 @@ contract LimitOrderHookHandler is BaseHandler {
         _ghost_exitOrder(id, actor);
     }
 
-    /// @dev Withdrawing an order removes liquidity from the order
-    /// and collects accrued fees from swaps into the order
-    function withdraw(uint256 actorSeed, uint256 idSeed) external ghost_syncOrderState recordCall("withdraw") {
+    /// @dev Collects the actor's share of a filled order: principal plus accrued fees.
+    function withdraw(uint256 actorSeed, uint256 idSeed)
+        external
+        assertMonotonicEntitlements
+        ghost_syncOrderState
+        recordCall("withdraw")
+    {
         uint232 id = _filledOrderFromSeed(idSeed);
         vm.assume(id != 0);
 
         address actor = _ownerFromSeed(id, actorSeed);
         vm.assume(actor != address(0));
 
+        _entitlementExempt = actor;
         vm.prank(actor);
         hook.withdraw(OrderIdLibrary.OrderId.wrap(id), actor);
 
@@ -218,9 +208,13 @@ contract LimitOrderHookHandler is BaseHandler {
         _ghost_exitOrder(id, actor);
     }
 
-    /// @dev Move the price to an arbitrary candidate tick, crossing whatever lies between.
-    /// Fills every order the price moves past.
-    function swapTo(uint256 tickSeed, uint256 amountSeed) external ghost_syncOrderState recordCall("swapTo") {
+    /// @dev Move the price toward a candidate tick, filling every order it crosses.
+    function swapTo(uint256 tickSeed, uint256 amountSeed)
+        external
+        assertMonotonicEntitlements
+        ghost_syncOrderState
+        recordCall("swapTo")
+    {
         int24 target = _tickFromSeed(tickSeed);
         int24 current = _currentTick();
         vm.assume(target != current);
@@ -228,15 +222,11 @@ contract LimitOrderHookHandler is BaseHandler {
         _swap(target < current, bound(amountSeed, AMOUNT_MIN_BOUND, AMOUNT_MAX_BOUND), target);
     }
 
-    /**
-     * @dev Price excursion into a tick range and back out, without crossing it.
-     *
-     * Fees accrue to any order at that tick and no order fills. Modelled as one action because a
-     * round trip is a single market event, and because splitting it makes the fee-accrual state two
-     * rare steps instead of one, which the fuzzer reaches far less often.
-     */
+    /// @dev Price excursion into a tick range and back out, without crossing it: fees accrue and no
+    /// order fills. One action because the fuzzer rarely composes it from two.
     function swapRoundTrip(uint256 tickSeed, uint256 amountSeed)
         external
+        assertMonotonicEntitlements
         ghost_syncOrderState
         recordCall("swapRoundTrip")
     {
@@ -274,13 +264,14 @@ contract LimitOrderHookHandler is BaseHandler {
         return ghost_orderIds.keyOf(id);
     }
 
-    /// @dev Order id registered for `tickLower` and `zeroForOne`, or zero when no order is active there.
-    /// A non-zero result means the order is live, since the hook retires the key on fill and on the last cancel.
+    /// @dev Order id active at the key, or zero. Non-zero implies live, since the hook retires the
+    /// key on fill and on the last cancel.
     function orderId(int24 tickLower, bool zeroForOne) public view returns (uint232) {
         return _orderId(tickLower, zeroForOne);
     }
 
     /// @dev Whether the key `id` was created for has stopped resolving to it.
+    /// An order is removed after it is filled or its last liquidity is cancelled.
     function orderIdWasRemoved(uint232 id) public view returns (bool) {
         return _orderIdWasRemoved(id);
     }
@@ -300,8 +291,8 @@ contract LimitOrderHookHandler is BaseHandler {
         return ghost_withdrawers[id].addrs;
     }
 
-    /// @dev Fees `actor` has accrued in order `id` and not yet collected: the growth of the order's
-    /// per-liquidity accumulators since the actor's checkpoint, scaled by their liquidity.
+    /// @dev Uncollected fees of `actor` in `id`: accumulator growth since their checkpoint, scaled
+    /// by their liquidity.
     function feesOwed(uint232 id, address actor) public view returns (uint256 owed0, uint256 owed1) {
         LimitOrderHook.UserInfo memory userInfo = hook.getUserInfo(OrderIdLibrary.OrderId.wrap(id), actor);
         if (userInfo.liquidity == 0) return (0, 0);
@@ -312,31 +303,44 @@ contract LimitOrderHookHandler is BaseHandler {
         owed1 = Math.mulDiv(acc1 - userInfo.feeCheckpoint1X128, userInfo.liquidity, Q128);
     }
 
+    /// @dev ``actor``'s share of the principal still recorded in `id`, pro-rata by liquidity.
+    function principalOwed(uint232 id, address actor) public view returns (uint256 principal0, uint256 principal1) {
+        uint256 liquidity = _liquidityOf(id, actor);
+        if (liquidity == 0) return (0, 0);
+
+        (, uint256 principalCredited0, uint256 principalCredited1, uint128 liquidityTotal) = _orderInfo(id);
+        principal0 = Math.mulDiv(principalCredited0, liquidity, liquidityTotal);
+        principal1 = Math.mulDiv(principalCredited1, liquidity, liquidityTotal);
+    }
+
+    /// @dev Everything the hook owes `actor` in `id`: fees plus principal share. Recomputed from raw
+    /// hook state rather than the hook's own views, so a broken view cannot vouch for itself.
+    function entitlementOf(uint232 id, address actor) public view returns (uint256 owed0, uint256 owed1) {
+        (uint256 fees0, uint256 fees1) = feesOwed(id, actor);
+        (uint256 principal0, uint256 principal1) = principalOwed(id, actor);
+
+        return (fees0 + principal0, fees1 + principal1);
+    }
+
     // ------------------ INTERNALS ------------------ //
 
     /**
-     * @dev Refresh the sticky lifecycle flags for every known order.
+     * @dev Refresh the sticky lifecycle flags for every known order. Runs after each action because
+     * a swap can fill orders at several ticks at once.
      *
-     * Called after each action rather than inside it, because a swap can fill orders at several ticks
-     * at once and the affected ids are not known up front.
-     *
-     * The exit flags are derived from the participant sets and never from `liquidityTotal` or
-     * `principalCredited`, which is what lets the campaign assert those two against them. Comparing
-     * counts rather than members is sound only because an actor needs liquidity to exit and liquidity
-     * only comes from placing, so the exit sets are subsets of the placers.
+     * The exit flags derive from the owner count and never from `liquidityTotal` or
+     * `principalCredited`, which is what lets the campaign assert those two against them.
      */
     function _ghost_syncOrderState() private {
         for (uint256 i; i < ghost_orderIds.count(); ++i) {
             uint232 id = ghost_orderIds.ids[i];
             (bool filled,,,) = _orderInfo(id);
 
-            // Mark the order as filled if it was not already.
             if (filled && !ghost_wasFilled[id]) {
                 ghost_wasFilled[id] = true;
                 ++ghost_fillCount;
             }
 
-            // No owner is left, so every one of them exited.
             bool everyOwnerExited = ghost_activeOwners[id] == 0;
 
             if (everyOwnerExited && !filled && !ghost_wasFullyCancelled[id]) {
@@ -347,6 +351,41 @@ contract LimitOrderHookHandler is BaseHandler {
             if (everyOwnerExited && filled && !ghost_wasFullyWithdrawn[id]) {
                 ghost_wasFullyWithdrawn[id] = true;
                 ++ghost_fullyWithdrawnCount;
+            }
+        }
+    }
+
+    /// @dev Capture every (order, placer) entitlement before the action.
+    function _snapshotEntitlements() private {
+        for (uint256 i; i < ghost_orderIds.count(); ++i) {
+            uint232 id = ghost_orderIds.ids[i];
+            for (uint256 j; j < ghost_placers[id].count(); ++j) {
+                address placer = ghost_placers[id].addrs[j];
+                (ghost_entitlement0[id][placer], ghost_entitlement1[id][placer]) = entitlementOf(id, placer);
+            }
+        }
+    }
+
+    /// @dev Assert no (order, placer) entitlement fell below its snapshot, except for `exempt`.
+    /// Pairs created during the action have no snapshot and pass against zero.
+    function _assertEntitlementsMonotonic(address exempt) private view {
+        for (uint256 i; i < ghost_orderIds.count(); ++i) {
+            uint232 id = ghost_orderIds.ids[i];
+            for (uint256 j; j < ghost_placers[id].count(); ++j) {
+                address placer = ghost_placers[id].addrs[j];
+                if (placer == exempt) continue;
+
+                (uint256 owed0, uint256 owed1) = entitlementOf(id, placer);
+                assertGe(
+                    owed0,
+                    ghost_entitlement0[id][placer],
+                    "INV-S-02: an action reduced a non-participant's currency0 entitlement"
+                );
+                assertGe(
+                    owed1,
+                    ghost_entitlement1[id][placer],
+                    "INV-S-02: an action reduced a non-participant's currency1 entitlement"
+                );
             }
         }
     }
@@ -372,21 +411,15 @@ contract LimitOrderHookHandler is BaseHandler {
         }
     }
 
-    /// @dev Whether the key `id` was created for has stopped resolving to it. A later `placeOrder`
-    /// at the same key allocates a fresh id, which leaves this true.
-    /// An order is retired when it is filled or cancelled.
+    /// @dev Whether the key `id` was created for has stopped resolving to it, which happens on fill
+    /// and on the last cancel. A later `placeOrder` at the key mints a fresh id, so this stays true.
     function _orderIdWasRemoved(uint232 id) private view returns (bool) {
         OrderKey memory orderKey = ghost_orderIds.keyOf(id);
         return _orderId(orderKey.tickLower, orderKey.zeroForOne) != id;
     }
 
-    /**
-     * @dev An actor holding liquidity in `id`, or the zero address when none does.
-     *
-     * Rotates the actor set from `seed` rather than indexing into it, because indexing wastes most
-     * generated calls: an order typically has one or two owners out of three actors, so a random pick
-     * misses more often than it hits and the exit paths stay under-exercised.
-     */
+    /// @dev An actor holding liquidity in `id`, or the zero address when none does. Rotates the
+    /// actor set from `seed` rather than indexing it, for an increased chance of hitting a valid owner.
     function _ownerFromSeed(uint232 id, uint256 seed) private view returns (address) {
         uint256 count = _actors.addrs.length;
         uint256 offset = seed % count;
@@ -399,16 +432,45 @@ contract LimitOrderHookHandler is BaseHandler {
         return address(0);
     }
 
-    /// @dev Whether `placeOrder` accepts this key at the current price. A `zeroForOne` order sells
-    /// currency0, so its range must sit strictly above the price; the reverse sells currency1 and
-    /// its range must sit at or below it.
+    /// @dev A live order id picked from `seed`, or zero when none is live. Rotates the id set for an
+    /// increased chance of hitting a valid live order.
+    function _liveOrderFromSeed(uint256 seed) private view returns (uint232) {
+        uint256 count = ghost_orderIds.count();
+        if (count == 0) return 0;
+
+        uint256 offset = seed % count;
+        for (uint256 i; i < count; ++i) {
+            uint232 id = ghost_orderIds.ids[(offset + i) % count];
+            if (!ghost_wasFilled[id] && !ghost_wasFullyCancelled[id]) return id;
+        }
+
+        return 0;
+    }
+
+    /// @dev A filled order id with shares still to withdraw, picked from `seed`, or zero when none exists. Rotates the id set for an
+    /// increased chance of hitting a valid filled order.
+    function _filledOrderFromSeed(uint256 seed) private view returns (uint232) {
+        uint256 count = ghost_orderIds.count();
+        if (count == 0) return 0;
+
+        uint256 offset = seed % count;
+        for (uint256 i; i < count; ++i) {
+            uint232 id = ghost_orderIds.ids[(offset + i) % count];
+            if (ghost_wasFilled[id] && !ghost_wasFullyWithdrawn[id]) return id;
+        }
+
+        return 0;
+    }
+
+    /// @dev Whether `placeOrder` accepts this key at the current price: a `zeroForOne` order's range
+    /// must sit strictly above the price, the reverse at or below it.
     function _placeable(int24 tickLower, bool zeroForOne) private view returns (bool) {
         int24 current = _currentTick();
         return zeroForOne ? current < tickLower : current >= tickLower + key.tickSpacing;
     }
 
-    /// @dev Thin unwrap over `hook.getOrderInfo`. `principal_c` is the principal the order still holds,
-    /// credited by the fill and drawn down by each withdrawal.
+    /// @dev Thin unwrap over `hook.getOrderInfo`. `principal_c` is the principal the order still
+    /// holds: credited by the fill, drawn down by each withdrawal.
     function _orderInfo(uint232 id)
         private
         view
@@ -422,8 +484,8 @@ contract LimitOrderHookHandler is BaseHandler {
         return hook.getUserInfo(OrderIdLibrary.OrderId.wrap(id), actor).liquidity;
     }
 
-    /// @dev Thin unwrap over `hook.getOrderId`. Returns zero (`ORDER_ID_DEFAULT`) when no order is
-    /// active at the key, so callers must treat zero as absence.
+    /// @dev Thin unwrap over `hook.getOrderId`. Zero (`ORDER_ID_DEFAULT`) means no order is active
+    /// at the key.
     function _orderId(int24 tickLower, bool zeroForOne) private view returns (uint232) {
         return OrderIdLibrary.OrderId.unwrap(hook.getOrderId(key, tickLower, zeroForOne));
     }

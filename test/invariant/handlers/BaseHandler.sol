@@ -48,8 +48,7 @@ abstract contract BaseHandler is Test {
         _actors.add(actor);
     }
 
-    /// @dev Pick an actor from a fuzzer seed.
-    /// NOTE: at least one actor must be registered.
+    /// @dev Pick an actor from a fuzzer seed. Requires at least one registered actor.
     function _actorFromSeed(uint256 seed) internal view returns (address) {
         return _actors.rand(seed);
     }
@@ -71,7 +70,7 @@ abstract contract BaseHandler is Test {
     /// @dev Bounded set of ticks the fuzzer can target.
     TickSet internal _ticks;
 
-    /// @dev Register `ticks_` as ticks the fuzzer can target.
+    /// @dev Register ticks for the fuzzer to target.
     function _createTicks(int24[] memory ticks_) internal {
         for (uint256 i; i < ticks_.length; ++i) {
             _createTick(ticks_[i]);
@@ -83,8 +82,7 @@ abstract contract BaseHandler is Test {
         _ticks.add(tick);
     }
 
-    /// @dev Pick a tick from a fuzzer seed.
-    /// NOTE: at least one tick must be registered.
+    /// @dev Pick a tick from a fuzzer seed. Requires at least one registered tick.
     function _tickFromSeed(uint256 seed) internal view returns (int24) {
         return _ticks.rand(seed);
     }
@@ -94,7 +92,7 @@ abstract contract BaseHandler is Test {
         return _ticks.ticks;
     }
 
-    /// @dev Returns the number of ticks.
+    /// @dev Returns the number of registered ticks.
     function tickCount() external view returns (uint256) {
         return _ticks.count();
     }
@@ -122,24 +120,23 @@ abstract contract BaseHandler is Test {
         return IERC20(Currency.unwrap(currency)).balanceOf(who);
     }
 
-    /// @dev Returns the ERC-6909 claim balance `who` holds in the `PoolManager` for a currency.
+    /// @dev ERC-6909 claim balance `who` holds in the `PoolManager` for `currency`.
     function _claimsOf(Currency currency, address who) internal view returns (uint256) {
         return IERC6909Claims(address(manager)).balanceOf(who, currency.toId());
     }
 
-    /// @dev Returns the ERC-6909 claim balance `who` holds in the `PoolManager` for a currency.
+    /// @dev Returns the ERC-6909 claim balance `who` holds in the `PoolManager` for `currency`.
     function claimsOf(Currency currency, address who) external view returns (uint256) {
         return _claimsOf(currency, who);
     }
 
-    /// @dev Returns the current tick of the poolId
+    /// @dev Current tick of the pool.
     function _currentTick() internal view returns (int24) {
         (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
         return TickMath.getTickAtSqrtPrice(sqrtPriceX96);
     }
 
-    /// @dev Returns the current tick rounded down to a multiple of `tickSpacing`, rounding towards
-    /// negative infinity for negative ticks.
+    /// @dev Current tick rounded down to a multiple of `tickSpacing`, towards negative infinity.
     function _currentTickLower() internal view returns (int24) {
         int24 tick = _currentTick();
 
@@ -149,17 +146,15 @@ abstract contract BaseHandler is Test {
         return compressed * key.tickSpacing;
     }
 
-    /// @dev Returns the current tick of the poolId.
+    /// @dev Current tick of the pool.
     function currentTick() external view returns (int24) {
         return _currentTick();
     }
 
-    /// @dev Returns the current tick rounded down to a multiple of `tickSpacing`.
+    /// @dev Current tick lower of the pool.
     function currentTickLower() external view returns (int24) {
         return _currentTickLower();
     }
-
-    // --------------- Swap Utils --------------- //
 
     /// @dev Swap up to `amount` in through the router, stopping at `tickLimit`.
     function _swap(bool zeroForOne, uint256 amount, int24 tickLimit) internal virtual {

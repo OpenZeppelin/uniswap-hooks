@@ -49,17 +49,17 @@ abstract contract BaseHandler is Test {
     }
 
     /// @dev Pick an actor from a fuzzer seed. Requires at least one registered actor.
-    function _actorFromSeed(uint256 seed) internal view returns (address) {
+    function _actorFromSeed(uint256 seed) internal virtual returns (address) {
         return _actors.rand(seed);
     }
 
     /// @dev Returns the addresses of the actors.
-    function actors() external view returns (address[] memory) {
+    function actors() public view returns (address[] memory) {
         return _actors.addrs;
     }
 
     /// @dev Returns the number of actors.
-    function actorCount() external view returns (uint256) {
+    function actorCount() public view returns (uint256) {
         return _actors.count();
     }
 
@@ -88,12 +88,12 @@ abstract contract BaseHandler is Test {
     }
 
     /// @dev Returns the registered ticks.
-    function ticks() external view returns (int24[] memory) {
+    function ticks() public view returns (int24[] memory) {
         return _ticks.ticks;
     }
 
     /// @dev Returns the number of registered ticks.
-    function tickCount() external view returns (uint256) {
+    function tickCount() public view returns (uint256) {
         return _ticks.count();
     }
 
@@ -126,7 +126,7 @@ abstract contract BaseHandler is Test {
     }
 
     /// @dev Returns the ERC-6909 claim balance `who` holds in the `PoolManager` for `currency`.
-    function claimsOf(Currency currency, address who) external view returns (uint256) {
+    function claimsOf(Currency currency, address who) public view returns (uint256) {
         return _claimsOf(currency, who);
     }
 
@@ -147,12 +147,12 @@ abstract contract BaseHandler is Test {
     }
 
     /// @dev Current tick of the pool.
-    function currentTick() external view returns (int24) {
+    function currentTick() public view returns (int24) {
         return _currentTick();
     }
 
     /// @dev Current tick lower of the pool.
-    function currentTickLower() external view returns (int24) {
+    function currentTickLower() public view returns (int24) {
         return _currentTickLower();
     }
 

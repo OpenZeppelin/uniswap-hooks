@@ -2,7 +2,8 @@
 
 - **Target contract:** `src/general/LimitOrderHook.sol` (via `src/mocks/general/LimitOrderHookMock.sol`)
 - **Campaign:** `LimitOrderHookInvariants.t.sol`
-- **Status:** the `L`, `F`, `S` and `C` blocks hold. The `P` and `A` blocks are pending.
+- **Status:** the `L`, `F`, `S` and `C` blocks hold. `P` (INV-P-01) is pending; no `A` invariants
+  are designed yet.
 
 > **Terminology.** An order carries one flag, `filled`, written only by `_fillOrder`. An order id is
 > **active** while `getOrderId` returns it (implies `filled == false`), **filled** when
@@ -47,7 +48,7 @@
 - **predicate:** `∀o: fullyWithdrawn(o) ⟹ liqTotal(o) == 0`
 - **status:** **holds.** 500 runs, 100k calls, 0 reverts.
 - Not a restatement: `fullyWithdrawn` is the handler's owner count and reads neither `liquidityTotal`
-  nor `principalCredited`. Deriving it from `liquidityTotal == 0` made this a tautology.
+  nor `principalCredited`.
 
 ### INV-F-02: A fully withdrawn order has no remaining principal
 
@@ -55,8 +56,8 @@
 - **status:** **holds.** 500 runs, 100k calls, 0 reverts.
 - Exact, no dust term: each withdrawal takes `mulDiv(P, l, L)` and the denominator shrinks alongside
   the numerator, so the last owner out has `l == L` and carries off every earlier remainder.
-- Does not cover the fee residual: the last withdrawal deletes every `userInfo`, so only INV-S-01's
-  surplus bound observes it.
+- The fee residual is out of scope: the last withdrawal deletes every `userInfo`, so no owed fees
+  remain to compare against.
 
 ### INV-F-03: A filled order cannot be cancelled
 
@@ -67,30 +68,15 @@
 
 ## P: placement and fee entitlement
 
-Both are transition properties over a single `placeOrder`, which an `invariant_` function cannot
-express, so they are asserted in the handler around the call. Both recompute
-`owed_c(o, a) = mulDiv(acc_c(o) - ckpt_c(o, a), liq(o, a), Q128)`, since the hook exposes no view.
-
-Together they bracket H-01: an absolute checkpoint entitles a placer to prior fees (INV-P-01), a
-checkpoint at `acc` forfeits what they were owed (INV-P-02). `ckpt_new = acc - owed/liqNew` is the
-only value satisfying both.
-
 ### INV-P-01: A first placement inherits no fees
 
 - **predicate:** `owed_c(o, X) == 0` after `placeOrder`, given `liq(o, X) == 0` before
 - **status:** not implemented.
-- Exact: a fresh owner has `liq == 0`, so the checkpoint is written at `acc` itself.
+- Transition property over a single `placeOrder`, to be asserted in the handler around the call.
+- This is exactly H-01: entitlement begins at the placement, so any nonzero value is a transfer of
+  the existing owners' fees to the new placer.
+- Exact, no tolerance: a fresh owner has `liq == 0`, so the checkpoint is written at `acc` itself.
 - Informative only on an order that already accrued fees; trivially true otherwise.
-
-### INV-P-02: A placement does not reduce another owner's fees
-
-- **predicate:** `∀a ≠ X: owed_c(o, a)_after >= owed_c(o, a)_before`
-- **status:** subsumed by INV-S-02, which generalizes it over every action and adds the principal.
-- Non-decreasing rather than equal: a placement collects the position's pending fees into the order
-  first, which raises every owner's entitlement.
-- Exact for other owners. The placer's own top-up needs a wei of slack, since the checkpoint rewrite
-  divides by the new liquidity and multiplies back.
-- Only meaningful on multi-owner orders; raise the placement bias before trusting it.
 
 ## S: system solvency
 
@@ -103,24 +89,20 @@ only value satisfying both.
   cannot hide behind the tolerance.
 - Assumes the hook receives claims only from its own callbacks: no donations, no third-party minting.
 
-### INV-S-02: An action never reduces a non-participant's entitlement
+### INV-S-02: An action never reduces a non-caller's entitlement
 
 - **predicate:** for every action by `X`: `∀(o, a), a ≠ X: entitlement_c(o, a)_after >= entitlement_c(o, a)_before`,
   where `entitlement_c(o, a) = owedFees_c(o, a) + mulDiv(principalCredited_c(o), liq(o, a), liqTotal(o))`
 - **status:** **holds.** 3 runs, 900 calls, 0 reverts.
-- Transition property, asserted in the handler around every action (`assertMonotonicEntitlements`).
-  S-01 says the total covers everyone; this says nobody's share is taken by someone else's action.
+- Transition property, asserted in the handler around every action (the `stateTransition` modifier).
 - The performing actor is exempt: exits collect their entitlement, and a top-up carries a wei of
   checkpoint truncation. Swaps exempt nobody.
-- Exact for non-participants, no tolerance: their checkpoint and liquidity are untouched, the
-  accumulators only grow, and a withdrawal leaves its principal truncation dust to the remaining
-  owners.
+- Exact for non-callers, no tolerance: their checkpoint and liquidity are untouched, the accumulators
+  only grow, and a withdrawal leaves its principal truncation dust to the remaining owners.
 - The handler recomputes entitlements from raw hook state (`getOrderInfo`, `getUserInfo`) rather
   than through `feesOwed`/`principalOwed`, so a broken view cannot vouch for itself.
-- Subsumes INV-P-02 and extends it to cancels, withdrawals and swaps. INV-P-01 remains separate:
-  monotonicity says nothing about the joiner, whose prior entitlement is zero.
-- **mutation checked:** dropping the withdraw exemption fails immediately, so the assertion
-  observes real entitlement movement.
+- **mutation checked:** dropping the withdraw exemption fails immediately, so the assertion observes
+  real entitlement movement.
 
 ## C: cancellation
 
@@ -131,8 +113,8 @@ only value satisfying both.
 - Both directions matter: a retired key over an owned order strands the owners; a live key over an
   empty order is addressable with nothing to cancel.
 - Unfilled only: a fill retires the key while the liquidity is still recorded.
-- `keyRetired` comes from `orderIdWasRemoved`, `fullyCancelled` from the owner count. Neither reads
-  `liquidityTotal`.
+- `keyRetired` compares the key mapping against the id, `fullyCancelled` is the handler's owner
+  count. Neither reads `liquidityTotal`.
 - **mutation checked:** retiring the key on a partial cancel (`liquidity <= liquidityTotal`) fails
   within 30 runs.
 
@@ -148,64 +130,4 @@ only value satisfying both.
 - **status:** **holds.** 500 runs, 100k calls, 0 reverts.
 - Only a fill credits principal, so the correct value is "never recorded", not "paid out". Fails if
   the cancel path writes to the principal ledger.
-- **mutation checked:** `principalCredited0 += 1` in the cancel callback fails it while INV-C-03
-  still passes.
-
-### Liveness: every owner of an unfilled order can cancel their share
-
-Covered by form 2 below. The remaining failure modes are other invariants: the `liquidityTotal`
-underflow is INV-L-01, the `modifyLiquidity` revert is INV-S-03.
-
-## Harness notes
-
-### Ghost state actually required
-
-Only the exit invariants (INV-F-01, INV-F-02, INV-C-03, INV-C-04) need a ghost, because the contract
-records no notion of "every owner has left". Everything else is readable from `getOrderInfo`,
-`getUserInfo`, and `getOrderId`.
-
-- `ghost_orderIds` is reachability, not accounting: retired ids cannot be enumerated from live state.
-- The sticky flags scope the exit invariants and, through their counts, prove coverage. An invariant
-  quantified over an unreached state is vacuous and reports `[PASS]`.
-- All derive from `ghost_activeOwners`, a membership count. Comparing sticky participant sets
-  misfired when an actor cancelled and re-placed into the same live order.
-
-### Coverage is asserted in `afterInvariant`
-
-`afterInvariant` runs once per sequence, the only place a coverage figure is readable (`invariant_`
-functions also run before the first call). Every action and quantified-over state is gated with
-`assertGt(_, 0)`, so each sequence proves it reached the states the invariants speak about.
-
-The gate is only sound for reliably reachable states: a gate on a rare state fails on unlucky
-sequences and shrinks to a meaningless counterexample. Full cancellation did exactly this at 3 per
-sequence, which drove the selection change below rather than a weaker assertion.
-
-Representative 200-call sequence: 27 orders created, 13 filled, 12 fully cancelled, 11 fully
-withdrawn; 34 placeOrder, 16 cancelOrder, 11 withdraw, 69 swapTo, 70 swapRoundTrip.
-
-### Selection pressure on the exit paths
-
-`cancelOrder` and `withdraw` used to pick an actor at random and discard ~90% of generated calls.
-Both now rotate the actor set from the seed and take the first holder (`_ownerFromSeed`); full
-cancellations went from 3 to 12 per sequence. The remaining discard is inherent: a key may hold no
-live order, and `withdraw` needs a filled one.
-
-## Not covered
-
-- **INV-S-03:** the pool's position against the hook's bookkeeping, the one thing that can make a
-  well-formed cancel or fill revert.
-- Multi-pool interactions: order ids come from one global counter and claims are per currency, so two
-  pools sharing a currency draw on the same balance. Covering it is a second pool in `setUp`, not a
-  change to any invariant here.
-
-## Liveness invariants
-
-"Every owner can withdraw/cancel" is liveness, which an invariant function cannot express. Two forms:
-
-1. Restate as a safety predicate over the state that would make the call fail. Stronger, but only
-   available when that state is readable.
-2. Attempt the call, which `fail_on_revert = true` provides for every handler action.
-
-Both exits are covered by form 2. Neither has a failure condition worth restating: the accumulators
-never decrease and a checkpoint is only written at or below the accumulator it is read against, so
-the subtraction cannot underflow.
+- **mutation checked:** adding `principalCredited0 += 1` to the cancel callback fails it.

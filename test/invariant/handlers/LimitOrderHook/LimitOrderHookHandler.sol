@@ -47,6 +47,10 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Target ratio of multi-owner orders.
     uint256 public immutable MULTI_OWNER_TARGET_RATIO = 80;
 
+    /// @dev Actor performing the current action, set by the action before it calls the hook.
+    /// Context, not a ghost: only meaningful within one action, cleared by `_postStateTransition`.
+    address internal _currentActor;
+
     /// @dev Every order id the handler has caused to be created, with its key.
     OrderIdSet internal ghost_orderIds;
 
@@ -75,28 +79,30 @@ contract LimitOrderHookHandler is BaseHandler {
     mapping(uint232 orderId => bool) public ghost_hadMultipleOwners;
     uint256 public ghost_multipleOwnerCount;
 
-    /// @dev Entitlement per (order, placer) captured before the current action.
-    mapping(uint232 orderId => mapping(address owner => uint256 entitlement0)) public ghost_entitlement0;
-    mapping(uint232 orderId => mapping(address owner => uint256 entitlement1)) public ghost_entitlement1;
+    /// @dev Entitlement per (order, placer) captured before the current action. Snapshot, not a
+    /// ghost: only meaningful until the action's assertions run.
+    mapping(uint232 orderId => mapping(address owner => uint256 entitlement0)) public snap_entitlement0;
+    mapping(uint232 orderId => mapping(address owner => uint256 entitlement1)) public snap_entitlement1;
 
-    /// @dev Actor exempt from the entitlement monotonicity assertion, set by the action before it
-    /// calls the hook.
-    address internal _entitlementExempt;
-
-    /// @dev Sync the sticky order state ghosts after each action.
-    modifier ghost_syncOrderState() {
+    /// @dev Wraps every fuzzable action: snapshots state before it and asserts the transition
+    /// invariants after it.
+    modifier stateTransition() {
+        _preStateTransition();
         _;
-        _ghost_syncOrderState();
+        _postStateTransition();
     }
 
-    /// @dev INV-S-02: an action never reduces the entitlement of an owner that did not perform it.
-    /// The performing actor is exempt: exits collect their entitlement, and a top-up carries a wei
-    /// of checkpoint truncation.
-    modifier assertMonotonicEntitlements() {
-        _snapshotEntitlements();
-        _;
-        _assertEntitlementsMonotonic(_entitlementExempt);
-        _entitlementExempt = address(0);
+    /// @dev Captures the pre-action snapshots.
+    function _preStateTransition() internal {
+        _INV_S_02_snapshotEntitlements();
+    }
+
+    /// @dev Syncs the ghosts and runs the transition assertions. Clears the actor afterwards, so
+    /// an action that sets none, like a swap, exempts nobody.
+    function _postStateTransition() internal {
+        _syncGhostOrdersState();
+        _INV_S_02_assertNonDecreasingEntitlements(_currentActor);
+        _currentActor = address(0);
     }
 
     constructor(
@@ -138,11 +144,11 @@ contract LimitOrderHookHandler is BaseHandler {
         bool zeroForOne,
         uint256 liquiditySeed,
         uint256 orderIdSeed
-    ) external assertMonotonicEntitlements ghost_syncOrderState recordCall("placeOrder") {
+    ) external recordCall("placeOrder") stateTransition {
         uint256 multiOwnerRatio =
             ghost_orderIds.count() > 0 ? ghost_multipleOwnerCount * 100 / ghost_orderIds.count() : 0;
 
-        // Below the multi-owner target, bias toward joining an already existing live order.
+        // Below the multi-owner target ratio, bias toward joining an already existing live order.
         uint232 liveId = multiOwnerRatio < MULTI_OWNER_TARGET_RATIO ? _liveOrderFromSeed(orderIdSeed) : 0;
 
         OrderKey memory orderKey =
@@ -151,35 +157,31 @@ contract LimitOrderHookHandler is BaseHandler {
         vm.assume(_placeable(orderKey.tickLower, orderKey.zeroForOne));
 
         address actor = _actorFromSeed(actorSeed);
+        vm.assume(actor != address(0));
+        _currentActor = actor;
+
         uint128 liquidity = uint128(bound(liquiditySeed, LIQUIDITY_MIN_BOUND, LIQUIDITY_MAX_BOUND));
 
-        _entitlementExempt = actor;
         vm.prank(actor);
         hook.placeOrder(key, orderKey.tickLower, orderKey.zeroForOne, liquidity);
 
         uint232 id = _orderId(orderKey.tickLower, orderKey.zeroForOne);
         ghost_orderIds.add(id, orderKey);
-
         ghost_placers[id].add(actor);
         _ghost_joinOrder(id, actor);
     }
 
     /// @dev Removes the actor's liquidity and collects their accrued fees.
-    function cancelOrder(uint256 actorSeed, uint256 idSeed)
-        external
-        assertMonotonicEntitlements
-        ghost_syncOrderState
-        recordCall("cancelOrder")
-    {
+    function cancelOrder(uint256 actorSeed, uint256 idSeed) external recordCall("cancelOrder") stateTransition {
         uint232 id = _liveOrderFromSeed(idSeed);
         vm.assume(id != 0);
 
         address actor = _ownerFromSeed(id, actorSeed);
         vm.assume(actor != address(0));
+        _currentActor = actor;
 
         OrderKey memory orderKey = ghost_orderIds.keyOf(id);
 
-        _entitlementExempt = actor;
         vm.prank(actor);
         hook.cancelOrder(key, orderKey.tickLower, orderKey.zeroForOne, actor);
 
@@ -188,19 +190,14 @@ contract LimitOrderHookHandler is BaseHandler {
     }
 
     /// @dev Collects the actor's share of a filled order: principal plus accrued fees.
-    function withdraw(uint256 actorSeed, uint256 idSeed)
-        external
-        assertMonotonicEntitlements
-        ghost_syncOrderState
-        recordCall("withdraw")
-    {
+    function withdraw(uint256 actorSeed, uint256 idSeed) external recordCall("withdraw") stateTransition {
         uint232 id = _filledOrderFromSeed(idSeed);
         vm.assume(id != 0);
 
         address actor = _ownerFromSeed(id, actorSeed);
         vm.assume(actor != address(0));
+        _currentActor = actor;
 
-        _entitlementExempt = actor;
         vm.prank(actor);
         hook.withdraw(OrderIdLibrary.OrderId.wrap(id), actor);
 
@@ -208,13 +205,8 @@ contract LimitOrderHookHandler is BaseHandler {
         _ghost_exitOrder(id, actor);
     }
 
-    /// @dev Move the price toward a candidate tick, filling every order it crosses.
-    function swapTo(uint256 tickSeed, uint256 amountSeed)
-        external
-        assertMonotonicEntitlements
-        ghost_syncOrderState
-        recordCall("swapTo")
-    {
+    /// @dev Moves the price toward a candidate tick, filling every order it crosses.
+    function swapTo(uint256 tickSeed, uint256 amountSeed) external recordCall("swapTo") stateTransition {
         int24 target = _tickFromSeed(tickSeed);
         int24 current = _currentTick();
         vm.assume(target != current);
@@ -224,12 +216,7 @@ contract LimitOrderHookHandler is BaseHandler {
 
     /// @dev Price excursion into a tick range and back out, without crossing it: fees accrue and no
     /// order fills. One action because the fuzzer rarely composes it from two.
-    function swapRoundTrip(uint256 tickSeed, uint256 amountSeed)
-        external
-        assertMonotonicEntitlements
-        ghost_syncOrderState
-        recordCall("swapRoundTrip")
-    {
+    function swapRoundTrip(uint256 tickSeed, uint256 amountSeed) external recordCall("swapRoundTrip") stateTransition {
         int24 tickLower = _tickFromSeed(tickSeed);
         int24 current = _currentTick();
 
@@ -244,6 +231,44 @@ contract LimitOrderHookHandler is BaseHandler {
         } else {
             _swap(true, amount, tickLower + key.tickSpacing / 2);
             _swap(false, amount, current);
+        }
+    }
+
+    // ------------------ STATE TRANSITION INVARIANTS ------------------ //
+
+    /// @dev Captures every (order, placer) entitlement into the snap mappings.
+    function _INV_S_02_snapshotEntitlements() private {
+        for (uint256 i; i < ghost_orderIds.count(); ++i) {
+            uint232 id = ghost_orderIds.ids[i];
+            for (uint256 j; j < ghost_placers[id].count(); ++j) {
+                address placer = ghost_placers[id].addrs[j];
+                (snap_entitlement0[id][placer], snap_entitlement1[id][placer]) = entitlementOf(id, placer);
+            }
+        }
+    }
+
+    /// @dev INV-S-02: an action never reduces the entitlement of an owner that did not perform it.
+    /// Asserts no (order, placer) entitlement fell below its snapshot, except for `exempt`. Pairs
+    /// created during the action have no snapshot and pass trivially against zero.
+    function _INV_S_02_assertNonDecreasingEntitlements(address exempt) private view {
+        for (uint256 i; i < ghost_orderIds.count(); ++i) {
+            uint232 id = ghost_orderIds.ids[i];
+            for (uint256 j; j < ghost_placers[id].count(); ++j) {
+                address placer = ghost_placers[id].addrs[j];
+                if (placer == exempt) continue;
+
+                (uint256 owed0, uint256 owed1) = entitlementOf(id, placer);
+                assertGe(
+                    owed0,
+                    snap_entitlement0[id][placer],
+                    "INV-S-02: an action reduced a non-participant's currency0 entitlement"
+                );
+                assertGe(
+                    owed1,
+                    snap_entitlement1[id][placer],
+                    "INV-S-02: an action reduced a non-participant's currency1 entitlement"
+                );
+            }
         }
     }
 
@@ -298,23 +323,24 @@ contract LimitOrderHookHandler is BaseHandler {
         if (userInfo.liquidity == 0) return (0, 0);
 
         (,,,,, uint256 acc0, uint256 acc1,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
-
         owed0 = Math.mulDiv(acc0 - userInfo.feeCheckpoint0X128, userInfo.liquidity, Q128);
         owed1 = Math.mulDiv(acc1 - userInfo.feeCheckpoint1X128, userInfo.liquidity, Q128);
     }
 
     /// @dev ``actor``'s share of the principal still recorded in `id`, pro-rata by liquidity.
+    /// Zero until the order fills, since only a fill credits principal.
     function principalOwed(uint232 id, address actor) public view returns (uint256 principal0, uint256 principal1) {
         uint256 liquidity = _liquidityOf(id, actor);
         if (liquidity == 0) return (0, 0);
 
-        (, uint256 principalCredited0, uint256 principalCredited1, uint128 liquidityTotal) = _orderInfo(id);
+        (,,, uint256 principalCredited0, uint256 principalCredited1,,, uint128 liquidityTotal) =
+            hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
         principal0 = Math.mulDiv(principalCredited0, liquidity, liquidityTotal);
         principal1 = Math.mulDiv(principalCredited1, liquidity, liquidityTotal);
     }
 
-    /// @dev Everything the hook owes `actor` in `id`: fees plus principal share. Recomputed from raw
-    /// hook state rather than the hook's own views, so a broken view cannot vouch for itself.
+    /// @dev Everything the hook owes `actor` in `id`: fees plus principal share. Recomputed from
+    /// raw hook state rather than the hook's own views, so a broken view cannot vouch for itself.
     function entitlementOf(uint232 id, address actor) public view returns (uint256 owed0, uint256 owed1) {
         (uint256 fees0, uint256 fees1) = feesOwed(id, actor);
         (uint256 principal0, uint256 principal1) = principalOwed(id, actor);
@@ -331,10 +357,10 @@ contract LimitOrderHookHandler is BaseHandler {
      * The exit flags derive from the owner count and never from `liquidityTotal` or
      * `principalCredited`, which is what lets the campaign assert those two against them.
      */
-    function _ghost_syncOrderState() private {
+    function _syncGhostOrdersState() internal {
         for (uint256 i; i < ghost_orderIds.count(); ++i) {
             uint232 id = ghost_orderIds.ids[i];
-            (bool filled,,,) = _orderInfo(id);
+            (bool filled,,,,,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
 
             if (filled && !ghost_wasFilled[id]) {
                 ghost_wasFilled[id] = true;
@@ -351,41 +377,6 @@ contract LimitOrderHookHandler is BaseHandler {
             if (everyOwnerExited && filled && !ghost_wasFullyWithdrawn[id]) {
                 ghost_wasFullyWithdrawn[id] = true;
                 ++ghost_fullyWithdrawnCount;
-            }
-        }
-    }
-
-    /// @dev Capture every (order, placer) entitlement before the action.
-    function _snapshotEntitlements() private {
-        for (uint256 i; i < ghost_orderIds.count(); ++i) {
-            uint232 id = ghost_orderIds.ids[i];
-            for (uint256 j; j < ghost_placers[id].count(); ++j) {
-                address placer = ghost_placers[id].addrs[j];
-                (ghost_entitlement0[id][placer], ghost_entitlement1[id][placer]) = entitlementOf(id, placer);
-            }
-        }
-    }
-
-    /// @dev Assert no (order, placer) entitlement fell below its snapshot, except for `exempt`.
-    /// Pairs created during the action have no snapshot and pass against zero.
-    function _assertEntitlementsMonotonic(address exempt) private view {
-        for (uint256 i; i < ghost_orderIds.count(); ++i) {
-            uint232 id = ghost_orderIds.ids[i];
-            for (uint256 j; j < ghost_placers[id].count(); ++j) {
-                address placer = ghost_placers[id].addrs[j];
-                if (placer == exempt) continue;
-
-                (uint256 owed0, uint256 owed1) = entitlementOf(id, placer);
-                assertGe(
-                    owed0,
-                    ghost_entitlement0[id][placer],
-                    "INV-S-02: an action reduced a non-participant's currency0 entitlement"
-                );
-                assertGe(
-                    owed1,
-                    ghost_entitlement1[id][placer],
-                    "INV-S-02: an action reduced a non-participant's currency1 entitlement"
-                );
             }
         }
     }
@@ -467,16 +458,6 @@ contract LimitOrderHookHandler is BaseHandler {
     function _placeable(int24 tickLower, bool zeroForOne) private view returns (bool) {
         int24 current = _currentTick();
         return zeroForOne ? current < tickLower : current >= tickLower + key.tickSpacing;
-    }
-
-    /// @dev Thin unwrap over `hook.getOrderInfo`. `principal_c` is the principal the order still
-    /// holds: credited by the fill, drawn down by each withdrawal.
-    function _orderInfo(uint232 id)
-        private
-        view
-        returns (bool filled, uint256 principal0, uint256 principal1, uint128 liquidityTotal)
-    {
-        (filled,,, principal0, principal1,,, liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
     }
 
     /// @dev Liquidity `actor` owns in order `id`.

@@ -246,7 +246,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         return (this.afterSwap.selector, 0);
     }
 
-    // ------------------------------------- Actions -------------------------------------
+    // ------------------------------------- Actions ------------------------------------- //
 
     /**
      * @dev Places a limit order by adding liquidity out of range at a specific tick. The order will be filled when the
@@ -259,12 +259,12 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
         OrderInfo storage orderInfo;
 
-        // get the order for the limit order
+        // get the order id
         OrderIdLibrary.OrderId orderId = getOrderId(key, tick, zeroForOne);
 
         // if the order is not initialized, initialize it
         if (orderId.equals(ORDER_ID_DEFAULT)) {
-            // initialize the order to the next order
+            // initialize the order with the next order id
             unchecked {
                 _setOrderId(key, tick, zeroForOne, orderId = _orderIdNext);
 
@@ -382,15 +382,10 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     // -------------------------------- Unlock callbacks --------------------------------
-    //
-    // Every callback receives the order it acts on, performs its pool operation if it has one, updates the
-    // order accounting and settles the resulting currency. All accounting lives here, so an action never
-    // mutates an order's liquidity, principal or fees itself.
 
     /**
      * @dev Handles callbacks from the `PoolManager` for order operations. Takes encoded `rawData` containing the callback type
-     * and operation-specific data. Each handler settles its own currency and returns nothing. Only callable by the
-     * PoolManager.
+     * and operation-specific data. Only callable by the PoolManager.
      */
     function unlockCallback(bytes calldata rawData) public virtual onlyPoolManager returns (bytes memory returnData) {
         CallbackData memory callbackData = abi.decode(rawData, (CallbackData));
@@ -439,11 +434,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             ZERO_BYTES
         );
 
-        uint256 amount0Fee = uint256(uint128(feesAccrued.amount0()));
-        uint256 amount1Fee = uint256(uint128(feesAccrued.amount1()));
-
         // collect the fees the position accrued into the order, over the liquidity that earned them
-        _collectFees(orderInfo, amount0Fee, amount1Fee);
+        _collectFees(orderInfo, uint256(uint128(feesAccrued.amount0())), uint256(uint128(feesAccrued.amount1())));
 
         // checkpoint the placer against the order's accumulators, over the liquidity they end up holding
         (uint256 owed0, uint256 owed1) = _feesOwed(orderInfo, userInfo);
@@ -488,10 +480,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      *
      * The fees the position accrued up to the removal are credited over the liquidity that earned them, which
      * still includes the cancelling owner's, so that owner is paid its share of them and nothing is left behind.
-     *
-     * NOTE: an owner placing and cancelling without any swap in between accrues nothing, since its checkpoints
-     * are set at the accumulators on placement and the position accrues no fees in between. Fee revenue can
-     * therefore be allocated pro-rata without a placer being able to skim it from the remaining owners.
      */
     function _handleCancelCallback(CancelCallbackData memory cancelData) internal virtual {
         OrderInfo storage orderInfo = _orderInfos[cancelData.orderId];
@@ -508,12 +496,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             ZERO_BYTES
         );
 
-        uint256 amount0Fee = uint256(uint128(feesAccrued.amount0()));
-        uint256 amount1Fee = uint256(uint128(feesAccrued.amount1()));
-
         // collect the fees the position accrued into the order, over the liquidity that earned them, which
         // still includes the liquidity being cancelled
-        _collectFees(orderInfo, amount0Fee, amount1Fee);
+        _collectFees(orderInfo, uint256(uint128(feesAccrued.amount0())), uint256(uint128(feesAccrued.amount1())));
 
         // the fees owed to the cancelling owner, including its share of the fees just credited
         (uint256 owed0, uint256 owed1) = _feesOwed(orderInfo, orderInfo.userInfo[cancelData.owner]);
@@ -606,11 +591,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
                 ZERO_BYTES
             );
 
-            // `callerDelta` is what the pool owes the hook, which is signed, so only its positive side is
-            // taken. `feesAccrued` needs no such guard, since the `poolManager` derives it from an unsigned
-            // amount and it is never negative.
-            uint256 amount0 = callerDelta.amount0() > 0 ? uint256(uint128(callerDelta.amount0())) : 0;
-            uint256 amount1 = callerDelta.amount1() > 0 ? uint256(uint128(callerDelta.amount1())) : 0;
+            uint256 amount0 = uint256(uint128(callerDelta.amount0()));
+            uint256 amount1 = uint256(uint128(callerDelta.amount1()));
 
             uint256 amount0Fee = uint256(uint128(feesAccrued.amount0()));
             uint256 amount1Fee = uint256(uint128(feesAccrued.amount1()));
@@ -618,8 +600,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             // collect the proceeds of the removed liquidity into the order, split between the fees the
             // position accrued, credited over the liquidity that earned them, and the principal, which the
             // owners share pro-rata.
-            // note that the order info must be updated after poolManager calls as it depends on the returned
-            // values. This is safe as these functions are only callable on the trusted poolManager
             // slither-disable-next-line reentrancy-no-eth
             _collectFees(orderInfo, amount0Fee, amount1Fee);
             // slither-disable-next-line reentrancy-no-eth
@@ -631,24 +611,11 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         }
     }
 
-    // -------------------------------- Order accounting --------------------------------
-    //
-    // These are `private` on purpose. The accumulators only ever increasing is what keeps a payout from
-    // underflowing, so an override must not be able to reach them.
+    // -------------------------------- Order accounting -------------------------------- //
 
     /**
      * @dev Collects `amount0` and `amount1` of fees owed by the pool into the hook and credits them to
-     * `orderInfo`, dividing them over the liquidity currently in it. The accumulators only ever increase, so
-     * the difference between one of them and an owner's checkpoint cannot underflow and is unaffected by
-     * other owners entering or exiting.
-     *
-     * IMPORTANT: must be called while the liquidity that earned the fees is still recorded in the order, so
-     * that they are divided over it.
-     *
-     * NOTE: fees collected while the order holds no liquidity have no owner to be attributed to. The hook
-     * holds them as claims that no payout draws on.
-     *
-     * NOTE: liquidityTotal is zero during  for the first
+     * `orderInfo`, dividing them over the liquidity currently in it.
      */
     function _collectFees(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
         uint128 liquidityTotal = orderInfo.liquidityTotal;
@@ -682,10 +649,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /**
      * @dev Takes `amount` of `currency` owed by the pool as claims held by the hook.
-     *
-     * Requires a delta positive from the poolManager to the hook.
-     *
-     * IMPORTANT: only callable while the `poolManager` is unlocked.
      */
     function _takeAsClaims(Currency currency, uint256 amount) private {
         // take the currency from the pool as claims for the hook
@@ -694,8 +657,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /**
      * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it.
-     *
-     * IMPORTANT: only callable while the `poolManager` is unlocked.
      */
     function _sendFromClaims(Currency currency, address to, uint256 amount) private {
         // burn the claims the hook holds for the currency
@@ -705,8 +666,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Returns the checkpoint that leaves `owed` fees owed to an owner holding `liquidity`, given the
-     * accumulator `accFeePerLiqX128` it will be read against.
+     * @dev Returns the updated checkpoint that leaves `owed` fees owed to an owner holding `liquidity`, given
+     * the accumulator `accFeePerLiqX128` it will be read against.
      *
      * Since fees owed are read as `(acc - checkpoint) * liquidity`, the checkpoint sits behind the accumulator
      * by `owed` expressed per unit of that liquidity. An owner adding liquidity is therefore re-checkpointed
@@ -723,7 +684,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Returns ``liquidity``'s share of the principal credited to `orderInfo`, which is what a withdrawal
+     * @dev Returns `liquidity`'s share of the principal credited to `orderInfo`, which is what a withdrawal
      * of that liquidity pays out. The principal is credited once by the fill and never grows, so splitting it
      * pro-rata while the total liquidity decreases alongside it is exact and independent of the order in
      * which the owners withdraw.
@@ -781,27 +742,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Returns the last recorded lower tick for a given pool. Takes a `PoolId` `poolId` and returns the
-     * stored `tickLowerLast` value.
-     */
-    function getTickLowerLast(PoolId poolId) public view returns (int24) {
-        return _tickLowerLasts[poolId];
-    }
-
-    /**
-     * @dev Retrieves the order id for a given pool position. Takes a `PoolKey` `key`, target `tickLower`, and direction
-     * `zeroForOne` indicating whether it's buying currency0 or currency1. Returns the {OrderId} associated with this
-     * position, or the default order id if no order exists.
-     */
-    function getOrderId(PoolKey memory key, int24 tickLower, bool zeroForOne)
-        public
-        view
-        returns (OrderIdLibrary.OrderId)
-    {
-        return _orderIds[keccak256(abi.encode(key, tickLower, zeroForOne))];
-    }
-
-    /**
      * @dev Internal helper that updates the order ID mapping. Takes a `PoolKey` `key`, target `tickLower`, direction
      * `zeroForOne`, and `orderId` to store. Associates the given order id with the pool position's hash.
      */
@@ -827,6 +767,27 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     function _getTick(PoolId poolId) internal view returns (int24 tick) {
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
         tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
+    }
+
+    /**
+     * @dev Returns the last recorded lower tick for a given pool. Takes a `PoolId` `poolId` and returns the
+     * stored `tickLowerLast` value.
+     */
+    function getTickLowerLast(PoolId poolId) public view returns (int24) {
+        return _tickLowerLasts[poolId];
+    }
+
+    /**
+     * @dev Retrieves the order id for a given pool position. Takes a `PoolKey` `key`, target `tickLower`, and direction
+     * `zeroForOne` indicating whether it's buying currency0 or currency1. Returns the {OrderId} associated with this
+     * position, or the default order id if no order exists.
+     */
+    function getOrderId(PoolKey memory key, int24 tickLower, bool zeroForOne)
+        public
+        view
+        returns (OrderIdLibrary.OrderId)
+    {
+        return _orderIds[keccak256(abi.encode(key, tickLower, zeroForOne))];
     }
 
     /**
@@ -871,35 +832,6 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      */
     function getUserInfo(OrderIdLibrary.OrderId orderId, address owner) external view returns (UserInfo memory) {
         return _orderInfos[orderId].userInfo[owner];
-    }
-
-    /**
-     * @dev Get the fees owed to an owner of an order. Takes an {OrderId} `orderId` and `owner` address and
-     * returns the fees owed to the owner.
-     */
-    function feesOwed(OrderIdLibrary.OrderId orderId, address owner)
-        external
-        view
-        returns (uint256 amount0, uint256 amount1)
-    {
-        return _feesOwed(_orderInfos[orderId], _orderInfos[orderId].userInfo[owner]);
-    }
-
-    /**
-     * @dev Get the principal owed to an owner of an order. Takes an {OrderId} `orderId` and `owner` address
-     * and returns the owner's share of the principal the fill credited to the order. Zero until the order
-     * fills, since only a fill credits principal.
-     *
-     * NOTE: This is what a withdrawal would pay out now. Withdrawals by other owners leave their truncation
-     * dust to the remaining ones, so the share can grow but never shrink.
-     */
-    function principalOwed(OrderIdLibrary.OrderId orderId, address owner)
-        external
-        view
-        returns (uint256 amount0, uint256 amount1)
-    {
-        OrderInfo storage orderInfo = _orderInfos[orderId];
-        return _principalOwed(orderInfo, orderInfo.userInfo[owner].liquidity);
     }
 
     /**

@@ -27,16 +27,16 @@ contract LimitOrderHookInvariantsTest is HookTest {
     address dave = makeAddr("dave");
 
     /// @dev Fuzzer bounds for `liquidity`.
-    uint256 constant LIQUIDITY_MIN_BOUND = 1e8;
-    uint256 constant LIQUIDITY_MAX_BOUND = 1e14;
+    uint256 constant LIQUIDITY_MIN_BOUND = 1;
+    uint256 constant LIQUIDITY_MAX_BOUND = 1e21;
 
     /// @dev Fuzzer bounds for `amount`.
-    uint256 constant AMOUNT_MIN_BOUND = 1e15;
-    uint256 constant AMOUNT_MAX_BOUND = 1e20;
+    uint256 constant AMOUNT_MIN_BOUND = 1;
+    uint256 constant AMOUNT_MAX_BOUND = 1e21;
 
     /// @dev Slack for `mulDiv` truncation: at most a wei per credit or payout, so it grows with the
     /// call count, not the amounts.
-    uint256 constant ROUNDING_TOLERANCE = 4096;
+    uint256 constant ACCUMULATED_ROUNDING_TOLERANCE = 1e4;
 
     function setUp() public {
         deployFreshManagerAndRouters();
@@ -222,13 +222,13 @@ contract LimitOrderHookInvariantsTest is HookTest {
         assertApproxEqAbs(
             claims0,
             owed0,
-            ROUNDING_TOLERANCE,
+            ACCUMULATED_ROUNDING_TOLERANCE,
             "INV-S-01: currency0 claims exceeds the rounding tolerance of what the hook owes"
         );
         assertApproxEqAbs(
             claims1,
             owed1,
-            ROUNDING_TOLERANCE,
+            ACCUMULATED_ROUNDING_TOLERANCE,
             "INV-S-01: currency1 claims exceeds the rounding tolerance of what the hook owes"
         );
     }

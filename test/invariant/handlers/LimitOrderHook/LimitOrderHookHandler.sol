@@ -6,10 +6,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 import {LimitOrderHookMock} from "src/mocks/general/LimitOrderHookMock.sol";
@@ -43,6 +40,9 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Fuzzer bounds for `amount`.
     uint256 public immutable AMOUNT_MIN_BOUND;
     uint256 public immutable AMOUNT_MAX_BOUND;
+
+    /// @dev Half-width of the targetable tick window, in spacings around tick zero.
+    uint256 public immutable TICK_WINDOW;
 
     /// @dev Target ratio of multi-owner orders.
     uint256 public immutable MULTI_OWNER_TARGET_RATIO = 80;
@@ -225,12 +225,14 @@ contract LimitOrderHookHandler is BaseHandler {
         // an excursion only exists if the price starts outside the range
         vm.assume(current < tickLower || current >= tickLower + key.tickSpacing);
 
+        // the return leg only exists if the first leg left the starting tick: a small swap against
+        // deep liquidity can stay inside it, and the return limit would already be exceeded
         if (current < tickLower) {
             _swap(false, amount, tickLower + key.tickSpacing / 2);
-            _swap(true, amount, current);
+            if (_currentTick() > current) _swap(true, amount, current);
         } else {
             _swap(true, amount, tickLower + key.tickSpacing / 2);
-            _swap(false, amount, current);
+            if (_currentTick() < current) _swap(false, amount, current);
         }
     }
 

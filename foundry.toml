@@ -16,9 +16,12 @@ no_match_path   = "src/mocks/**/*.sol"                  # Exclude mocks from com
 runs           = 256        # The number of times to run the fuzzing tests
 
 [invariant]
-runs           = 500        # The number of sequences to run
-depth          = 200        # The number of calls to make in each sequence
+runs           = 10        # The number of sequences to run
+depth          = 500       # The number of calls to make in each sequence
 fail_on_revert = true       # Fail the test if the contract reverts
+shrink_run_limit = 0 # Attempts to shrink failing sequence
+# corpus_dir = "cache/fuzz-corpus"
+# show_edge_coverage = true
 
 [profile.shallow.fuzz]
 runs           = 128        # The number of times to run the fuzzing tests

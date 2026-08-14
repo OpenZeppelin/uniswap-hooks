@@ -54,10 +54,8 @@ library OrderIdLibrary {
  * Once completely filled, the resulting liquidity can be withdrawn from the pool.
  *
  * IMPORTANT: Fees accrued by an order are credited per unit of liquidity, so each owner is entitled to the
- * fees earned while its liquidity was in the order and to none of those earned before it. Placing more
- * liquidity into an order does not forfeit the fees already owed to the placer, and cancelling pays those
- * fees out alongside the principal. Amounts are truncated in the order's favour, so a negligible residual
- * can remain in the hook.
+ * fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
+ * in the order's favour, so a negligible residual can remain in the hook.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -520,8 +518,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         // the fees owed to the cancelling owner, including its share of the fees just credited
         (uint256 owed0, uint256 owed1) = _feesOwed(orderInfo, orderInfo.userInfo[cancelData.owner]);
 
-        // remove the owner from the order. Only a fill credits principal, so an unfilled order records none
-        // and the fees are all the owner is owed.
+        // remove the owner from the order.
         orderInfo.liquidityTotal -= cancelData.liquidity;
         delete orderInfo.userInfo[cancelData.owner];
 

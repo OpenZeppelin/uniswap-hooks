@@ -14,8 +14,9 @@
     "lint:fix": "forge fmt",
     "lint:solhint": "npm run lint:solhint:src && npm run lint:solhint:test",
     "lint:solhint:src": "solhint --noPoster 'src/**/*.sol' --config solhint/solhint.src.config.js",
-    "lint:solhint:test": "solhint --noPoster 'test/**/*.sol' --config solhint/solhint.test.config.js",
-    "prepare": "husky"
+    "lint:solhint:test": "solhint --noPoster 'test/!(invariant)/**/*.sol' --config solhint/solhint.test.config.js",
+    "prepare": "husky",
+    "invariants": "forge test --match-contract Invariants -vv"
   },
   "repository": "https://github.com/OpenZeppelin/uniswap-hooks.git",
   "bugs": {
@@ -45,7 +46,7 @@
     "src/**/*.sol": [
       "solhint --noPoster --config solhint/solhint.src.config.js"
     ],
-    "test/**/*.sol": [
+    "test/!(invariant)/**/*.sol": [
       "solhint --noPoster --config solhint/solhint.test.config.js"
     ]
   },

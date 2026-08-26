@@ -16,9 +16,12 @@ no_match_path   = "src/mocks/**/*.sol"                  # Exclude mocks from com
 runs           = 256        # The number of times to run the fuzzing tests
 
 [invariant]
-runs           = 8          # The number of calls to make in the invariant tests
-depth          = 8          # The number of times to run the invariant tests
+runs           = 10        # The number of sequences to run
+depth          = 500       # The number of calls to make in each sequence
 fail_on_revert = true       # Fail the test if the contract reverts
+shrink_run_limit = 0 # Attempts to shrink failing sequence
+# corpus_dir = "cache/fuzz-corpus"
+# show_edge_coverage = true
 
 [profile.shallow.fuzz]
 runs           = 128        # The number of times to run the fuzzing tests
@@ -26,16 +29,8 @@ runs           = 128        # The number of times to run the fuzzing tests
 [profile.deep.fuzz]
 runs           = 512        # The number of times to run the fuzzing tests
 
-[profile.deep.invariant]
-runs           = 12         # The number of times to run the invariant tests
-depth          = 12         # The number of calls to make in the invariant tests
-
 [profile.super_deep.fuzz]
 runs           = 1024       # The number of times to run the fuzzing tests
-
-[profile.super_deep.invariant]
-runs           = 16         # The number of calls to make in the invariant tests
-depth          = 16         # The number of times to run the invariant tests
 
 [profile.oracle]
 gas_limit = 300000000       # Higher gas limit for oracle tests

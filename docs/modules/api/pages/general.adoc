@@ -87,12 +87,12 @@
 :xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-: xref:general.adoc#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-
 :xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-
 :xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-: xref:general.adoc#LimitOrderHook-_getCrossedTicks-PoolId-int24-
+:xref-LimitOrderHook-_getTickLower-int24-int24-: xref:general.adoc#LimitOrderHook-_getTickLower-int24-int24-
+:xref-LimitOrderHook-_getTick-PoolId-: xref:general.adoc#LimitOrderHook-_getTick-PoolId-
 :xref-LimitOrderHook-getTickLowerLast-PoolId-: xref:general.adoc#LimitOrderHook-getTickLowerLast-PoolId-
 :xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-
-:xref-LimitOrderHook-_getTickLower-int24-int24-: xref:general.adoc#LimitOrderHook-_getTickLower-int24-int24-
-:xref-LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-: xref:general.adoc#LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-
-:xref-LimitOrderHook-_getTick-PoolId-: xref:general.adoc#LimitOrderHook-_getTick-PoolId-
 :xref-LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-: xref:general.adoc#LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-
+:xref-LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-: xref:general.adoc#LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-
 :xref-LimitOrderHook-getHookPermissions--: xref:general.adoc#LimitOrderHook-getHookPermissions--
 :xref-BaseHook-_validateHookAddress-contract-BaseHook-: xref:base.adoc#BaseHook-_validateHookAddress-contract-BaseHook-
 :xref-BaseHook-beforeInitialize-address-struct-PoolKey-uint160-: xref:base.adoc#BaseHook-beforeInitialize-address-struct-PoolKey-uint160-
@@ -601,12 +601,12 @@ The anti-sandwich mechanism works such as:
 Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwapReturnDelta`.
 
 :OrderInfo: pass:normal[xref:#LimitOrderHook-OrderInfo[`++OrderInfo++`]]
+:UserInfo: pass:normal[xref:#LimitOrderHook-UserInfo[`++UserInfo++`]]
 :CallbackType: pass:normal[xref:#LimitOrderHook-CallbackType[`++CallbackType++`]]
 :CallbackData: pass:normal[xref:#LimitOrderHook-CallbackData[`++CallbackData++`]]
 :PlaceCallbackData: pass:normal[xref:#LimitOrderHook-PlaceCallbackData[`++PlaceCallbackData++`]]
 :CancelCallbackData: pass:normal[xref:#LimitOrderHook-CancelCallbackData[`++CancelCallbackData++`]]
 :WithdrawCallbackData: pass:normal[xref:#LimitOrderHook-WithdrawCallbackData[`++WithdrawCallbackData++`]]
-:CheckpointCurrencies: pass:normal[xref:#LimitOrderHook-CheckpointCurrencies[`++CheckpointCurrencies++`]]
 :ZERO_BYTES: pass:normal[xref:#LimitOrderHook-ZERO_BYTES-bytes[`++ZERO_BYTES++`]]
 :ORDER_ID_DEFAULT: pass:normal[xref:#LimitOrderHook-ORDER_ID_DEFAULT-OrderIdLibrary-OrderId[`++ORDER_ID_DEFAULT++`]]
 :ZeroLiquidity: pass:normal[xref:#LimitOrderHook-ZeroLiquidity--[`++ZeroLiquidity++`]]
@@ -629,12 +629,12 @@ Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwap
 :_handleWithdrawCallback: pass:normal[xref:#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-[`++_handleWithdrawCallback++`]]
 :_fillOrder: pass:normal[xref:#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-[`++_fillOrder++`]]
 :_getCrossedTicks: pass:normal[xref:#LimitOrderHook-_getCrossedTicks-PoolId-int24-[`++_getCrossedTicks++`]]
+:_getTickLower: pass:normal[xref:#LimitOrderHook-_getTickLower-int24-int24-[`++_getTickLower++`]]
+:_getTick: pass:normal[xref:#LimitOrderHook-_getTick-PoolId-[`++_getTick++`]]
 :getTickLowerLast: pass:normal[xref:#LimitOrderHook-getTickLowerLast-PoolId-[`++getTickLowerLast++`]]
 :getOrderId: pass:normal[xref:#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-[`++getOrderId++`]]
-:_getTickLower: pass:normal[xref:#LimitOrderHook-_getTickLower-int24-int24-[`++_getTickLower++`]]
-:getOrderLiquidity: pass:normal[xref:#LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-[`++getOrderLiquidity++`]]
-:_getTick: pass:normal[xref:#LimitOrderHook-_getTick-PoolId-[`++_getTick++`]]
 :getOrderInfo: pass:normal[xref:#LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-[`++getOrderInfo++`]]
+:getUserInfo: pass:normal[xref:#LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-[`++getUserInfo++`]]
 :getHookPermissions: pass:normal[xref:#LimitOrderHook-getHookPermissions--[`++getHookPermissions++`]]
 
 [.contract]
@@ -657,9 +657,9 @@ a single currency will be provided, instead of both currencies as in in-range li
 Orders can be cancelled at any time until they are filled and their liquidity is removed from the pool.
 Once completely filled, the resulting liquidity can be withdrawn from the pool.
 
-IMPORTANT: When cancelling or adding more liquidity into an existing order, it's possible that fees
-have been accrued. In those cases, the accrued fees are added to the order info, benefitting the remaining
-limit order placers.
+IMPORTANT: Fees accrued by an order are credited per unit of liquidity, so each owner is entitled to the
+fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
+in the order's favour, so a negligible residual can remain in the hook.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -681,12 +681,12 @@ _Available since v1.1.0_
 * {xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-}[`++_handleWithdrawCallback(withdrawData)++`]
 * {xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-}[`++_fillOrder(key, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-}[`++_getCrossedTicks(poolId, tickSpacing)++`]
+* {xref-LimitOrderHook-_getTickLower-int24-int24-}[`++_getTickLower(tick, tickSpacing)++`]
+* {xref-LimitOrderHook-_getTick-PoolId-}[`++_getTick(poolId)++`]
 * {xref-LimitOrderHook-getTickLowerLast-PoolId-}[`++getTickLowerLast(poolId)++`]
 * {xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-}[`++getOrderId(key, tickLower, zeroForOne)++`]
-* {xref-LimitOrderHook-_getTickLower-int24-int24-}[`++_getTickLower(tick, tickSpacing)++`]
-* {xref-LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-}[`++getOrderLiquidity(orderId, owner)++`]
-* {xref-LimitOrderHook-_getTick-PoolId-}[`++_getTick(poolId)++`]
 * {xref-LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-}[`++getOrderInfo(orderId)++`]
+* {xref-LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-}[`++getUserInfo(orderId, owner)++`]
 * {xref-LimitOrderHook-getHookPermissions--}[`++getHookPermissions()++`]
 
 [.contract-subindex-inherited]
@@ -823,31 +823,40 @@ filled - use `cancelOrder` to remove liquidity from unfilled orders. The interac
 ==== `[.contract-item-name]#++unlockCallback++#++(bytes rawData) → bytes returnData++` [.item-kind]#public#
 
 Handles callbacks from the `PoolManager` for order operations. Takes encoded `rawData` containing the callback type
-and operation-specific data. Returns encoded data containing fees accrued for cancel operations, or empty bytes
-otherwise. Only callable by the PoolManager.
+and operation-specific data. Only callable by the PoolManager.
 
 [.contract-item]
 [[LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-]]
-==== `[.contract-item-name]#++_handlePlaceCallback++#++(struct LimitOrderHook.PlaceCallbackData placeData) → uint256 amount0Fee, uint256 amount1Fee++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_handlePlaceCallback++#++(struct LimitOrderHook.PlaceCallbackData placeData)++` [.item-kind]#internal#
 
-Internal handler for place order callbacks. Takes `placeData` containing the order details and adds the
-specified liquidity to the pool out of range. Reverts if the order would be placed in range or on the wrong
-side of the range.
+Internal handler for place order callbacks. Takes `placeData` containing the order details, adds the
+specified liquidity to the pool out of range and credits it to the owner. Reverts if the order would be
+placed in range or on the wrong side of the range.
+
+The fees the position accrued before this placement are credited to the owners already in the order, so
+that the placer is not entitled to them.
 
 [.contract-item]
 [[LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-]]
-==== `[.contract-item-name]#++_handleCancelCallback++#++(struct LimitOrderHook.CancelCallbackData cancelData) → uint256 amount0Fee, uint256 amount1Fee++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_handleCancelCallback++#++(struct LimitOrderHook.CancelCallbackData cancelData)++` [.item-kind]#internal#
 
-Internal handler for cancel order callbacks. Takes `cancelData` containing the cancellation details and
-removes liquidity from the pool. Returns accrued fees `(amount0Fee, amount1Fee)` which are allocated to remaining
-limit order placers, or to the cancelling user if they're removing all liquidity.
+Internal handler for cancel order callbacks. Takes `cancelData` containing the cancellation details,
+removes the owner's liquidity from the pool and sends both its principal and the fees it is owed to the
+recipient.
+
+The fees the position accrued up to the removal are credited over the liquidity that earned them, which
+still includes the cancelling owner's, so that owner is paid its share of them and nothing is left behind.
 
 [.contract-item]
 [[LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-]]
-==== `[.contract-item-name]#++_handleWithdrawCallback++#++(struct LimitOrderHook.WithdrawCallbackData withdrawData)++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_handleWithdrawCallback++#++(struct LimitOrderHook.WithdrawCallbackData withdrawData) → uint256 amount0, uint256 amount1++` [.item-kind]#internal#
 
-Internal handler for withdraw callbacks. Takes `withdrawData` containing withdrawal amounts and recipient,
-burns the specified currency amounts from the hook, and transfers them to the recipient address.
+Internal handler for withdraw callbacks. Takes `withdrawData` containing the withdrawal details, removes
+the owner's liquidity from the order and sends its share of the principal and the fees it is owed to the
+recipient. Returns the amounts sent.
+
+The order is filled, so its liquidity was already removed from the pool and the amounts come from the claims
+the hook holds.
 
 [.contract-item]
 [[LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-]]
@@ -866,6 +875,20 @@ and `tickSpacing`, returns the current `tickLower` and the range of ticks crosse
 to be checked for limit orders.
 
 [.contract-item]
+[[LimitOrderHook-_getTickLower-int24-int24-]]
+==== `[.contract-item-name]#++_getTickLower++#++(int24 tick, int24 tickSpacing) → int24++` [.item-kind]#internal#
+
+Get the tick lower. Takes a `tick` and `tickSpacing` and returns the nearest valid tick boundary
+at or below the input tick, accounting for negative tick handling.
+
+[.contract-item]
+[[LimitOrderHook-_getTick-PoolId-]]
+==== `[.contract-item-name]#++_getTick++#++(PoolId poolId) → int24 tick++` [.item-kind]#internal#
+
+Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick calculated
+from the pool's current sqrt price.
+
+[.contract-item]
 [[LimitOrderHook-getTickLowerLast-PoolId-]]
 ==== `[.contract-item-name]#++getTickLowerLast++#++(PoolId poolId) → int24++` [.item-kind]#public#
 
@@ -881,31 +904,23 @@ Retrieves the order id for a given pool position. Takes a `PoolKey` `key`, targe
 position, or the default order id if no order exists.
 
 [.contract-item]
-[[LimitOrderHook-_getTickLower-int24-int24-]]
-==== `[.contract-item-name]#++_getTickLower++#++(int24 tick, int24 tickSpacing) → int24++` [.item-kind]#internal#
-
-Get the tick lower. Takes a `tick` and `tickSpacing` and returns the nearest valid tick boundary
-at or below the input tick, accounting for negative tick handling.
-
-[.contract-item]
-[[LimitOrderHook-getOrderLiquidity-OrderIdLibrary-OrderId-address-]]
-==== `[.contract-item-name]#++getOrderLiquidity++#++(OrderIdLibrary.OrderId orderId, address owner) → uint256++` [.item-kind]#external#
-
-Get the liquidity of an order for a given order id and owner. Takes an {OrderId} `orderId` and `owner` address
-and returns the amount of liquidity the owner has contributed to the order.
-
-[.contract-item]
-[[LimitOrderHook-_getTick-PoolId-]]
-==== `[.contract-item-name]#++_getTick++#++(PoolId poolId) → int24 tick++` [.item-kind]#internal#
-
-Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick calculated
-from the pool's current sqrt price.
-
-[.contract-item]
 [[LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-]]
-==== `[.contract-item-name]#++getOrderInfo++#++(OrderIdLibrary.OrderId orderId) → bool filled, Currency currency0, Currency currency1, uint256 currency0Total, uint256 currency1Total, uint128 liquidityTotal++` [.item-kind]#external#
+==== `[.contract-item-name]#++getOrderInfo++#++(OrderIdLibrary.OrderId orderId) → bool filled, Currency currency0, Currency currency1, uint256 principalCredited0, uint256 principalCredited1, uint256 accFee0PerLiqX128, uint256 accFee1PerLiqX128, uint128 liquidityTotal++` [.item-kind]#external#
 
 Get the order info for a given order id. Takes an {OrderId} `orderId` and returns the order info.
+
+`accFee0PerLiqX128` and `accFee1PerLiqX128` are the fees credited to the order per unit of liquidity, as
+`X128` fixed point values. Both only ever increase, and an owner's checkpoints are never above them.
+
+[.contract-item]
+[[LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-]]
+==== `[.contract-item-name]#++getUserInfo++#++(OrderIdLibrary.OrderId orderId, address owner) → struct LimitOrderHook.UserInfo++` [.item-kind]#external#
+
+Get the info an order holds for one of its owners. Takes an {OrderId} `orderId` and `owner` address and
+returns the liquidity that owner placed and the values the order's fee accumulators are read against for it.
+
+The difference between an accumulator and its checkpoint, over `liquidity`, is the amount of fees the owner
+is owed.
 
 [.contract-item]
 [[LimitOrderHook-getHookPermissions--]]

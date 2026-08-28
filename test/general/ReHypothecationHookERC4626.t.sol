@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 // External imports
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -26,6 +25,23 @@ import {HookTest} from "../utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
 import {BaseHook} from "../../src/base/BaseHook.sol";
 
+/// @dev An ERC-4626 yield source whose `maxWithdraw` can be capped below its balance, to model gated or
+/// illiquid vaults when testing the withdrawable-based JIT sizing. Uncapped, it behaves like its parent.
+contract CappedERC4626Mock is ERC4626YieldSourceMock {
+    uint256 private _cap = type(uint256).max;
+
+    constructor(IERC20 token) ERC4626YieldSourceMock(token) {}
+
+    function setCap(uint256 cap) external {
+        _cap = cap;
+    }
+
+    function maxWithdraw(address owner) public view override returns (uint256) {
+        uint256 unconstrained = super.maxWithdraw(owner);
+        return unconstrained < _cap ? unconstrained : _cap;
+    }
+}
+
 contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     using StateLibrary for IPoolManager;
     using SafeCast for *;
@@ -33,8 +49,8 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
     ReHypothecationERC4626Mock hook;
 
-    IERC4626 yieldSource0;
-    IERC4626 yieldSource1;
+    CappedERC4626Mock yieldSource0;
+    CappedERC4626Mock yieldSource1;
 
     PoolKey noHookKey;
 
@@ -54,8 +70,8 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
 
-        yieldSource0 = IERC4626(new ERC4626YieldSourceMock(IERC20(Currency.unwrap(currency0))));
-        yieldSource1 = IERC4626(new ERC4626YieldSourceMock(IERC20(Currency.unwrap(currency1))));
+        yieldSource0 = new CappedERC4626Mock(IERC20(Currency.unwrap(currency0)));
+        yieldSource1 = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
 
         hook = ReHypothecationERC4626Mock(
             payable(address(
@@ -690,5 +706,25 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         // Hooked
         BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares);
         assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, TOL, "hookedRemoveDelta !~= noHookRemoveDelta");
+    }
+
+    // -- JIT SIZING -- //
+
+    function test_getLiquidityToUse_sizedByWithdrawableBalance() public {
+        _seed();
+
+        uint256 liqFull = hook.getLiquidityToUse();
+        assertGt(liqFull, 0, "sanity: liquidity should be non-zero");
+
+        // Cap currency0 withdrawals well below the seeded balance.
+        uint256 cap = SEED / 1000;
+        yieldSource0.setCap(cap);
+
+        // The withdrawable amount now reflects the cap, and is below the reported balance...
+        assertEq(hook.getMaxWithdrawFromYieldSource(currency0), cap, "max withdraw != cap");
+        assertLt(cap, hook.getAmountInYieldSource(currency0), "cap should be below the reported balance");
+
+        // ...so the just-in-time liquidity is sized down accordingly, never above what can be withdrawn back.
+        assertLt(hook.getLiquidityToUse(), liqFull, "capped liquidity should be lower");
     }
 }

@@ -439,8 +439,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /**
      * @dev Calculates the `liquidity` to be provided just-in-time for incoming swaps.
      *
-     * By default, returns the maximum liquidity that can be provided given the current balances
-     * of the hook in the yield sources.
+     * By default, returns the maximum liquidity that can be provided given the balances the hook can
+     * currently withdraw from the yield sources (see {_getMaxWithdrawFromYieldSource}), so the position
+     * removed in `afterSwap` never exceeds what the yield sources can return in the same transaction.
      *
      * Since the internal pool price (ratio of currency0 to currency1) must be preserved for providing
      * liquidity to the single hook-owned position range, not necessarily all the assets in the yield
@@ -460,8 +461,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
             currentSqrtPriceX96,
             TickMath.getSqrtPriceAtTick(getTickLower()),
             TickMath.getSqrtPriceAtTick(getTickUpper()),
-            _getAmountInYieldSource(_poolKey.currency0),
-            _getAmountInYieldSource(_poolKey.currency1)
+            _getMaxWithdrawFromYieldSource(_poolKey.currency0),
+            _getMaxWithdrawFromYieldSource(_poolKey.currency1)
         );
     }
 
@@ -565,6 +566,20 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *  ERC-4626 Vaults, or any custom DeFi protocol interface, optionally handling native currency.
      */
     function _getAmountInYieldSource(Currency currency) internal view virtual returns (uint256 amount);
+
+    /**
+     * @dev Returns the maximum `amount` of `currency` that can currently be withdrawn from its yield source.
+     *
+     * Used to size the just-in-time liquidity provided during swaps, so the hook never provisions more than it
+     * can withdraw back in the same transaction. Share pricing instead uses {_getAmountInYieldSource}, the full
+     * reported balance.
+     *
+     * Defaults to {_getAmountInYieldSource}. Override for yield sources whose immediately-withdrawable amount can
+     * be below the reported balance, such as ERC-4626 `maxWithdraw`, or capped, gated or fee-charging sources.
+     */
+    function _getMaxWithdrawFromYieldSource(Currency currency) internal view virtual returns (uint256) {
+        return _getAmountInYieldSource(currency);
+    }
 
     /**
      * Set the hooks permissions, specifically `beforeInitialize`, `beforeSwap`, `afterSwap`.

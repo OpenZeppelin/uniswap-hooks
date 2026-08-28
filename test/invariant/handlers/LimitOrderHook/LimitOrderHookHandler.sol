@@ -7,6 +7,7 @@ import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Mini
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 import {LimitOrderHookMock} from "src/mocks/general/LimitOrderHookMock.sol";
@@ -78,6 +79,13 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Sticky record of every order that ever held multiple owners at once.
     mapping(uint232 orderId => bool) public ghost_hadMultipleOwners;
     uint256 public ghost_multipleOwnerCount;
+
+    /// @dev Count of placements made with the price exactly on the order's lower bound.
+    uint256 public ghost_boundaryPlacements;
+
+    /// @dev Of those, the ones the pool counts as in range, where its stored tick sits inside the new
+    /// position rather than one below it.
+    uint256 public ghost_inRangeBoundaryPlacements;
 
     /// @dev Entitlement per (order, placer) captured before the current action. Snapshot, not a
     /// ghost: only meaningful until the action's assertions run.
@@ -162,8 +170,18 @@ contract LimitOrderHookHandler is BaseHandler {
 
         uint128 liquidity = uint128(bound(liquiditySeed, LIQUIDITY_MIN_BOUND, LIQUIDITY_MAX_BOUND));
 
+        if (orderKey.zeroForOne && _atLowerBound(orderKey.tickLower)) {
+            ghost_boundaryPlacements++;
+            if (_storedTickIsInside(orderKey.tickLower)) ghost_inRangeBoundaryPlacements++;
+        }
+
+        uint256 balance0Before = _balanceOf(key.currency0, actor);
+        uint256 balance1Before = _balanceOf(key.currency1, actor);
+
         vm.prank(actor);
         hook.placeOrder(key, orderKey.tickLower, orderKey.zeroForOne, liquidity);
+
+        _INV_P_02_assertOneSidedContribution(actor, orderKey.zeroForOne, balance0Before, balance1Before);
 
         uint232 id = _orderId(orderKey.tickLower, orderKey.zeroForOne);
         ghost_orderIds.add(id, orderKey);
@@ -237,6 +255,26 @@ contract LimitOrderHookHandler is BaseHandler {
     }
 
     // ------------------ STATE TRANSITION INVARIANTS ------------------ //
+
+    /// @dev Asserts a placement contributes only the currency the order sells. Reads the placer's raw
+    /// balances rather than hook state, so the guard is checked against what the placer paid.
+    function _INV_P_02_assertOneSidedContribution(
+        address placer,
+        bool zeroForOne,
+        uint256 balance0Before,
+        uint256 balance1Before
+    ) private view {
+        uint256 balance0 = _balanceOf(key.currency0, placer);
+        uint256 balance1 = _balanceOf(key.currency1, placer);
+
+        if (zeroForOne) {
+            assertLt(balance0, balance0Before, "INV-P-02: a zeroForOne placement did not spend currency0");
+            assertEq(balance1, balance1Before, "INV-P-02: a zeroForOne placement spent currency1");
+        } else {
+            assertEq(balance0, balance0Before, "INV-P-02: a oneForZero placement spent currency0");
+            assertLt(balance1, balance1Before, "INV-P-02: a oneForZero placement did not spend currency1");
+        }
+    }
 
     /// @dev Captures every (order, placer) entitlement into the snap mappings.
     function _INV_S_02_snapshotEntitlements() private {
@@ -458,8 +496,40 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Whether `placeOrder` accepts this key at the current price: a `zeroForOne` order's range
     /// must sit strictly above the price, the reverse at or below it.
     function _placeable(int24 tickLower, bool zeroForOne) private view returns (bool) {
-        int24 current = _currentTick();
-        return zeroForOne ? current < tickLower : current >= tickLower + key.tickSpacing;
+        return zeroForOne ? _atOrBelowLowerBound(tickLower) : _atOrAboveUpperBound(tickLower);
+    }
+
+    /// @dev Whether the price is at or below the lower bound of the range starting at `tickLower`,
+    /// so a `zeroForOne` placement there costs only currency0.
+    ///
+    /// Compares prices rather than ticks: the tick still reads as `tickLower` for any price inside
+    /// it, but only the exact bound leaves the currency1 amount at zero. At that bound the pool counts
+    /// the position as in range and the hook accepts it anyway.
+    function _atOrBelowLowerBound(int24 tickLower) private view returns (bool) {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
+        return sqrtPriceX96 <= TickMath.getSqrtPriceAtTick(tickLower);
+    }
+
+    /// @dev Whether the price is at or above the upper bound of the range starting at `tickLower`,
+    /// so a `oneForZero` placement there costs only currency1. The upper bound itself is out of
+    /// range for the pool, so no boundary case arises on this side.
+    function _atOrAboveUpperBound(int24 tickLower) private view returns (bool) {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
+        return sqrtPriceX96 >= TickMath.getSqrtPriceAtTick(tickLower + key.tickSpacing);
+    }
+
+    /// @dev Whether the pool's stored tick sits inside the range starting at `tickLower`, so the pool
+    /// counts a position there as active liquidity. Reads `slot0.tick` rather than deriving it from the
+    /// price: a downward swap landing on `tickLower` stores `tickLower - 1` at that same price.
+    function _storedTickIsInside(int24 tickLower) private view returns (bool) {
+        (, int24 storedTick,,) = manager.getSlot0(poolId);
+        return storedTick >= tickLower && storedTick < tickLower + key.tickSpacing;
+    }
+
+    /// @dev Whether the price sits exactly on the lower bound of the range starting at `tickLower`.
+    function _atLowerBound(int24 tickLower) private view returns (bool) {
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(poolId);
+        return sqrtPriceX96 == TickMath.getSqrtPriceAtTick(tickLower);
     }
 
     /// @dev Liquidity `actor` owns in order `id`.

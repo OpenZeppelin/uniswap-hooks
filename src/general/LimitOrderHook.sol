@@ -8,7 +8,6 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -44,7 +43,7 @@ library OrderIdLibrary {
 /**
  * @dev Limit Order Mechanism hook.
  *
- * Allows users to place limit orders at specific ticks outside of the current price range,
+ * Allows users to place limit orders at specific ticks the price has not yet crossed,
  * which will be filled if the pool's price crosses the order's tick.
  *
  * Note that given the way UniswapV4 pools works, when liquidity is added out of the current range,
@@ -123,6 +122,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     struct CancelCallbackData {
         PoolKey key;
         OrderIdLibrary.OrderId orderId;
+        bool zeroForOne;
         int24 tickLower;
         uint128 liquidity;
         address owner;
@@ -253,8 +253,17 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * pool price crosses the specified `tick`. Takes a `PoolKey` `key`, target `tick`, direction `zeroForOne` indicating
      * whether to buy currency0 or currency1, and amount of `liquidity` to place. The interaction with the `poolManager` is done
      * via the `unlock` function, which will trigger the `{unlockCallback}` function.
+     *
+     * Requirements:
+     *
+     * - `key` must identify a pool configured with this hook, otherwise the order could never be filled.
+     * - The placement must require only the currency being sold, otherwise it reverts {InRange}.
      */
-    function placeOrder(PoolKey calldata key, int24 tick, bool zeroForOne, uint128 liquidity) public virtual {
+    function placeOrder(PoolKey calldata key, int24 tick, bool zeroForOne, uint128 liquidity)
+        public
+        virtual
+        onlyValidPools(key.hooks)
+    {
         if (liquidity == 0) revert ZeroLiquidity();
 
         OrderInfo storage orderInfo;
@@ -307,8 +316,16 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * removed liquidity. Note that partial cancellation is not supported - the entire liquidity added by the msg.sender will be removed.
      * Note also that cancelling an order will cancel the order placed by the msg.sender, not orders placed by other users in the same tick range.
      * The interaction with the `poolManager` is done via the `unlock` function, which will trigger the `{unlockCallback}` function.
+     *
+     * Requirements:
+     *
+     * - `key` must identify a pool configured with this hook.
      */
-    function cancelOrder(PoolKey calldata key, int24 tickLower, bool zeroForOne, address to) public virtual {
+    function cancelOrder(PoolKey calldata key, int24 tickLower, bool zeroForOne, address to)
+        public
+        virtual
+        onlyValidPools(key.hooks)
+    {
         OrderIdLibrary.OrderId orderId = getOrderId(key, tickLower, zeroForOne);
         OrderInfo storage orderInfo = _orderInfos[orderId];
 
@@ -332,7 +349,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
             abi.encode(
                 CallbackData(
                     CallbackType.Cancel,
-                    abi.encode(CancelCallbackData(key, orderId, tickLower, liquidity, msg.sender, to))
+                    abi.encode(CancelCallbackData(key, orderId, zeroForOne, tickLower, liquidity, msg.sender, to))
                 )
             )
         );
@@ -429,7 +446,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
                 tickLower: placeData.tickLower,
                 tickUpper: placeData.tickLower + placeData.key.tickSpacing,
                 liquidityDelta: int256(uint256(placeData.liquidity)),
-                salt: 0
+                salt: _getPositionSalt(placeData.zeroForOne)
             }),
             ZERO_BYTES
         );
@@ -491,7 +508,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
                 tickLower: cancelData.tickLower,
                 tickUpper: cancelData.tickLower + cancelData.key.tickSpacing,
                 liquidityDelta: -int256(uint256(cancelData.liquidity)),
-                salt: 0
+                salt: _getPositionSalt(cancelData.zeroForOne)
             }),
             ZERO_BYTES
         );
@@ -586,7 +603,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
                     tickLower: tickLower,
                     tickUpper: tickLower + key.tickSpacing,
                     liquidityDelta: -int256(uint256(orderInfo.liquidityTotal)),
-                    salt: 0
+                    salt: _getPositionSalt(zeroForOne)
                 }),
                 ZERO_BYTES
             );
@@ -727,9 +744,10 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     function _getCrossedTicks(PoolId poolId, int24 tickSpacing)
         internal
         view
+        virtual
         returns (int24 tickLower, int24 lower, int24 upper)
     {
-        tickLower = _getTickLower(_getTick(poolId), tickSpacing);
+        tickLower = _getTickLower(_getCurrentTick(poolId), tickSpacing);
         int24 tickLowerLast = getTickLowerLast(poolId);
 
         if (tickLower < tickLowerLast) {
@@ -753,7 +771,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Get the tick lower. Takes a `tick` and `tickSpacing` and returns the nearest valid tick boundary
      * at or below the input tick, accounting for negative tick handling.
      */
-    function _getTickLower(int24 tick, int24 tickSpacing) internal pure returns (int24) {
+    function _getTickLower(int24 tick, int24 tickSpacing) internal pure virtual returns (int24) {
         // slither-disable-next-line divide-before-multiply
         int24 compressed = tick / tickSpacing;
         if (tick < 0 && tick % tickSpacing != 0) compressed--; // round towards negative infinity
@@ -761,12 +779,22 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick calculated
-     * from the pool's current sqrt price.
+     * @dev Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick the pool
+     * stores, which is what marks whether a range is still active.
      */
-    function _getTick(PoolId poolId) internal view returns (int24 tick) {
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolId);
-        tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
+    function _getCurrentTick(PoolId poolId) internal view virtual returns (int24 tick) {
+        (, tick,,) = poolManager.getSlot0(poolId);
+    }
+
+    /**
+     * @dev Returns the salt of the pool position backing an order in direction `zeroForOne`. Both
+     * directions at one tick span the same range, so the salt is what keeps them in separate positions.
+     *
+     * IMPORTANT: This value is part of a pool position's identity. Changing it on a deployed instance
+     * strands the liquidity of every live order placed under the previous value.
+     */
+    function _getPositionSalt(bool zeroForOne) internal pure virtual returns (bytes32) {
+        return zeroForOne ? bytes32(uint256(1)) : bytes32(0);
     }
 
     /**

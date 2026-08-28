@@ -138,8 +138,23 @@ abstract contract BaseHandler is Test {
 
     /// @dev Current tick rounded down to a multiple of `tickSpacing`, towards negative infinity.
     function _currentTickLower() internal view returns (int24) {
-        int24 tick = _currentTick();
+        return _floorToSpacing(_currentTick());
+    }
 
+    /// @dev Tick the pool stores in `slot0`, which is what `modifyLiquidity` branches on. A swap going
+    /// down sets it to `tickNext - 1` when it lands on an initialized tick, so it is not always the tick
+    /// the price maps to. Reading it keeps an assertion independent of the hook's own derivation.
+    function _storedTick() internal view returns (int24 tick) {
+        (, tick,,) = manager.getSlot0(poolId);
+    }
+
+    /// @dev `_storedTick` rounded down to a multiple of `tickSpacing`, towards negative infinity.
+    function _storedTickLower() internal view returns (int24) {
+        return _floorToSpacing(_storedTick());
+    }
+
+    /// @dev Rounds `tick` down to a multiple of `tickSpacing`, towards negative infinity.
+    function _floorToSpacing(int24 tick) private view returns (int24) {
         int24 compressed = tick / key.tickSpacing;
         if (tick < 0 && tick % key.tickSpacing != 0) compressed--;
 
@@ -154,6 +169,16 @@ abstract contract BaseHandler is Test {
     /// @dev Current tick lower of the pool.
     function currentTickLower() public view returns (int24) {
         return _currentTickLower();
+    }
+
+    /// @dev Tick the pool stores in `slot0`.
+    function storedTick() public view returns (int24) {
+        return _storedTick();
+    }
+
+    /// @dev Tick the pool stores in `slot0`, rounded down to a multiple of `tickSpacing`.
+    function storedTickLower() public view returns (int24) {
+        return _storedTickLower();
     }
 
     /// @dev Swap up to `amount` in through the router, stopping at `tickLimit`.

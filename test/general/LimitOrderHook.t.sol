@@ -16,6 +16,7 @@ import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 // Internal imports
+import {BaseHook} from "src/base/BaseHook.sol";
 import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 import {LimitOrderHookMock} from "../../src/mocks/general/LimitOrderHookMock.sol";
 import {HookTest} from "../utils/HookTest.sol";
@@ -132,9 +133,19 @@ contract LimitOrderHookTest is HookTest {
         return OrderIdLibrary.OrderId.unwrap(hook.getOrderId(poolKey, tickLower, zeroForOne));
     }
 
-    function getLiquidityInPosition(PoolKey memory poolKey, int24 tickLower) internal view returns (uint128) {
+    /// @dev The expected position salt per direction, stated here rather than read from the hook.
+    function positionSalt(bool zeroForOne) internal pure returns (bytes32) {
+        return zeroForOne ? bytes32(uint256(1)) : bytes32(0);
+    }
+
+    function getLiquidityInPosition(PoolKey memory poolKey, int24 tickLower, bool zeroForOne)
+        internal
+        view
+        returns (uint128)
+    {
         return manager.getPositionLiquidity(
-            poolKey.toId(), Position.calculatePositionKey(address(hook), tickLower, tickLower + tickSpacing, 0)
+            poolKey.toId(),
+            Position.calculatePositionKey(address(hook), tickLower, tickLower + tickSpacing, positionSalt(zeroForOne))
         );
     }
 
@@ -176,6 +187,16 @@ contract LimitOrderHookTest is HookTest {
         hook.placeOrder(key, 0, true, 0);
     }
 
+    function test_placeOrder_foreignPool_reverts() public {
+        vm.expectRevert(BaseHook.InvalidPool.selector);
+        hook.placeOrder(noHookKey, tickSpacing, true, 1e18);
+    }
+
+    function test_cancelOrder_foreignPool_reverts() public {
+        vm.expectRevert(BaseHook.InvalidPool.selector);
+        hook.cancelOrder(noHookKey, tickSpacing, false, address(this));
+    }
+
     function test_placeOrder_simple() public {
         int24 tickLower = 0;
         bool zeroForOne = true;
@@ -186,7 +207,7 @@ contract LimitOrderHookTest is HookTest {
         hook.placeOrder(key, tickLower, zeroForOne, liquidity);
 
         assertEq(rawOrderIdOf(key, tickLower, zeroForOne), 1, "first order should take order id 1");
-        assertEq(getLiquidityInPosition(key, tickLower), liquidity, "liquidity should be added to the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, zeroForOne), liquidity, "liquidity should be added to the pool");
 
         OrderInfoView memory order = getOrderInfoView(1);
         assertFalse(order.filled, "order should not be filled");
@@ -220,7 +241,7 @@ contract LimitOrderHookTest is HookTest {
         hook.placeOrder(key, tickLower, true, liquidity);
 
         assertEq(rawOrderIdOf(key, tickLower, true), 1, "first order should take order id 1");
-        assertEq(getLiquidityInPosition(key, tickLower), liquidity, "liquidity should be added to the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, true), liquidity, "liquidity should be added to the pool");
         assertEq(getOrderInfoView(1).liquidityTotal, liquidity, "liquidity total should be accounted");
     }
 
@@ -231,8 +252,61 @@ contract LimitOrderHookTest is HookTest {
         hook.placeOrder(key, tickLower, true, liquidity);
 
         assertEq(rawOrderIdOf(key, tickLower, true), 1, "first order should take order id 1");
-        assertEq(getLiquidityInPosition(key, tickLower), liquidity, "liquidity should be added to the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, true), liquidity, "liquidity should be added to the pool");
         assertEq(getOrderInfoView(1).liquidityTotal, liquidity, "liquidity total should be accounted");
+    }
+
+    /**
+     * @dev At the exact boundary the pool counts the new liquidity as active, and the position is
+     * nonetheless entirely in the currency the order sells. Placing and cancelling moves no currency1
+     * in either direction, so a pro-rata split by liquidity is exact and the placement is single-sided
+     * in substance, not only in the accounting.
+     */
+    function test_placeOrder_leftBoundaryOfCurrentRange_positionIsWhollyTheSoldCurrency() public {
+        int24 tickLower = 0;
+        uint128 liquidity = 1e18;
+
+        (, int24 storedTick,,) = manager.getSlot0(key.toId());
+        assertEq(storedTick, tickLower, "the pool should count a position at this tick as active");
+
+        uint256 poolLiquidityBefore = manager.getLiquidity(key.toId());
+        uint256 balance1Before = currency1.balanceOf(address(this));
+        uint256 balance0Before = currency0.balanceOf(address(this));
+
+        hook.placeOrder(key, tickLower, true, liquidity);
+
+        assertEq(
+            manager.getLiquidity(key.toId()),
+            poolLiquidityBefore + liquidity,
+            "the placement should join the pool's active liquidity"
+        );
+        assertEq(currency1.balanceOf(address(this)), balance1Before, "the placement should not spend currency1");
+        assertLt(currency0.balanceOf(address(this)), balance0Before, "the placement should spend currency0");
+
+        hook.cancelOrder(key, tickLower, true, address(this));
+
+        assertEq(currency1.balanceOf(address(this)), balance1Before, "the cancel should not return currency1");
+        assertLe(
+            currency0.balanceOf(address(this)), balance0Before, "a place and cancel round trip should never pay out"
+        );
+        assertApproxEqAbs(
+            currency0.balanceOf(address(this)), balance0Before, 1, "the cancel should return the currency0 placed"
+        );
+    }
+
+    /// @dev Repeating the boundary round trip never pays the placer out, so the truncation dust cannot
+    /// be farmed by cycling placements at the current tick.
+    function test_placeOrder_leftBoundaryOfCurrentRange_roundTripNeverPaysOut() public {
+        uint256 balance0Before = currency0.balanceOf(address(this));
+        uint256 balance1Before = currency1.balanceOf(address(this));
+
+        for (uint256 i; i < 20; ++i) {
+            hook.placeOrder(key, 0, true, 1e18);
+            hook.cancelOrder(key, 0, true, address(this));
+
+            assertLe(currency0.balanceOf(address(this)), balance0Before, "a cycle paid out currency0");
+            assertLe(currency1.balanceOf(address(this)), balance1Before, "a cycle paid out currency1");
+        }
     }
 
     function test_placeOrder_crossedRange_reverts() public {
@@ -261,7 +335,7 @@ contract LimitOrderHookTest is HookTest {
         hook.placeOrder(key, tickLower, false, liquidity);
 
         assertEq(rawOrderIdOf(key, tickLower, false), 1, "first order should take order id 1");
-        assertEq(getLiquidityInPosition(key, tickLower), liquidity, "liquidity should be added to the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, false), liquidity, "liquidity should be added to the pool");
         assertEq(getOrderInfoView(1).liquidityTotal, liquidity, "liquidity total should be accounted");
     }
 
@@ -293,7 +367,7 @@ contract LimitOrderHookTest is HookTest {
         hook.placeOrder(key, tickLower, true, liquidity);
 
         assertEq(rawOrderIdOf(key, tickLower, true), 1, "both placements should share order id 1");
-        assertEq(getLiquidityInPosition(key, tickLower), liquidity * 2, "liquidity should be added to the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, true), liquidity * 2, "liquidity should be added to the pool");
         assertEq(getOrderInfoView(1).liquidityTotal, liquidity * 2, "liquidity total should be accounted");
         assertEq(hook.getUserInfo(OrderIdLibrary.OrderId.wrap(1), address(this)).liquidity, liquidity);
         assertEq(hook.getUserInfo(OrderIdLibrary.OrderId.wrap(1), user).liquidity, liquidity);
@@ -371,7 +445,7 @@ contract LimitOrderHookTest is HookTest {
         OrderInfoView memory order = getOrderInfoView(1);
         assertFalse(order.filled, "order should not be filled");
         assertEq(order.liquidityTotal, 0, "liquidity total should be 0");
-        assertEq(getLiquidityInPosition(key, tickLower), 0, "liquidity should be removed from the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, true), 0, "liquidity should be removed from the pool");
         assertEq(rawOrderIdOf(key, tickLower, true), 0, "emptied order should be deactivated");
 
         assertApproxEqAbs(
@@ -406,7 +480,8 @@ contract LimitOrderHookTest is HookTest {
         accrueFeesWithoutFilling();
 
         // the swaps left fees pending in the pool position, to be collected by the cancellation
-        (int128 pending0, int128 pending1) = calculateFees(manager, key.toId(), address(hook), 0, tickSpacing, 0);
+        (int128 pending0, int128 pending1) =
+            calculateFees(manager, key.toId(), address(hook), 0, tickSpacing, positionSalt(true));
         assertTrue(pending0 > 0 || pending1 > 0, "fees should be pending in the order position");
 
         // cancelling pays out the same as removing the equivalent hookless position
@@ -465,7 +540,7 @@ contract LimitOrderHookTest is HookTest {
         OrderInfoView memory order = getOrderInfoView(1);
         assertFalse(order.filled, "order should not be filled");
         assertEq(order.liquidityTotal, 0, "liquidity total should be 0");
-        assertEq(getLiquidityInPosition(key, 0), 0, "liquidity should be removed from the pool");
+        assertEq(getLiquidityInPosition(key, 0, true), 0, "liquidity should be removed from the pool");
         assertEq(rawOrderIdOf(key, 0, true), 0, "emptied order should be deactivated");
     }
 
@@ -509,7 +584,7 @@ contract LimitOrderHookTest is HookTest {
         assertEq(order.principalCredited0, 0, "a zeroForOne fill should pay out only currency1");
         assertGt(order.principalCredited1, 0, "fill should credit the currency1 proceeds");
         assertEq(order.liquidityTotal, liquidity, "owners keep their liquidity accounted until withdrawal");
-        assertEq(getLiquidityInPosition(key, tickLower), 0, "fill should remove the liquidity from the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, true), 0, "fill should remove the liquidity from the pool");
         assertEq(rawOrderIdOf(key, tickLower, true), 0, "filled order should be deactivated");
     }
 
@@ -556,10 +631,62 @@ contract LimitOrderHookTest is HookTest {
         assertFalse(order.filled, "order should not be filled");
         assertEq(order.principalCredited0, 0, "no principal should be credited");
         assertEq(order.principalCredited1, 0, "no principal should be credited");
-        assertEq(getLiquidityInPosition(key, tickLower), liquidity, "liquidity should remain in the pool");
+        assertEq(getLiquidityInPosition(key, tickLower, true), liquidity, "liquidity should remain in the pool");
 
         vm.expectRevert(LimitOrderHook.NotFilled.selector);
         hook.withdraw(OrderIdLibrary.OrderId.wrap(1), address(this));
+    }
+
+    /**
+     * @dev Places an order below spot, accrues fees on it with two-way flow, then lands the price exactly
+     * on the order's tick. `Pool.swap` stores that tick minus one for a downward landing on an initialized
+     * tick, which is what marks the order's range as no longer active.
+     */
+    function landOnOrdersTick(int24 orderTick, uint128 liquidity) internal {
+        modifyPoolLiquidity(key, -6000, 6000, 1e21, SALT_THIS);
+
+        vm.prank(user);
+        hook.placeOrder(key, orderTick, false, liquidity);
+
+        vm.startPrank(swapper);
+        for (uint256 i; i < 4; ++i) {
+            swapToLimit(key, true, -1e24, orderTick + 5);
+            swapToLimit(key, false, -1e24, -5);
+        }
+        swapToLimit(key, true, -1e24, orderTick);
+        vm.stopPrank();
+    }
+
+    /// @dev A downward landing exactly on an order's tick fills it, since the tick the pool stores marks
+    /// the order's liquidity as wholly converted. Reading the price-derived tick left the order live.
+    function test_fill_landingOnTheOrdersTick() public {
+        int24 orderTick = -tickSpacing;
+        landOnOrdersTick(orderTick, 1e18);
+
+        (uint160 sqrtPriceX96, int24 storedTick,,) = manager.getSlot0(key.toId());
+        assertEq(storedTick, orderTick - 1, "the pool should store the decremented tick");
+        assertEq(TickMath.getTickAtSqrtPrice(sqrtPriceX96), orderTick, "the price should still read the order's tick");
+
+        assertEq(getLiquidityInPosition(key, orderTick, false), 0, "the fill should empty the order's position");
+        assertEq(rawOrderIdOf(key, orderTick, false), 0, "a filled order should retire its key");
+    }
+
+    /// @dev The two directions at one tick span the same range, so the position salt is what stops a later
+    /// order from inheriting the position, and the fee balance, of the order filled out of the way.
+    function test_fill_oppositeDirectionAtSameTickDoesNotShareAPosition() public {
+        int24 orderTick = -tickSpacing;
+        uint128 liquidity = 1e18;
+        landOnOrdersTick(orderTick, liquidity);
+
+        vm.prank(attacker);
+        hook.placeOrder(key, orderTick, true, liquidity);
+
+        assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "the new order's position is not its own");
+        assertEq(getLiquidityInPosition(key, orderTick, false), 0, "the filled order's position should stay empty");
+
+        OrderInfoView memory order = getOrderInfoView(rawOrderIdOf(key, orderTick, true));
+        assertEq(order.accFee0PerLiqX128, 0, "the new order credited currency0 fees it did not earn");
+        assertEq(order.accFee1PerLiqX128, 0, "the new order credited currency1 fees it did not earn");
     }
 
     // ------------------------------------- Withdraw ------------------------------------- //

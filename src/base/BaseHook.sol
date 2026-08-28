@@ -44,6 +44,11 @@ abstract contract BaseHook is IHooks {
     error NotPoolManager();
 
     /**
+     * @dev The pool is not configured to use this hook.
+     */
+    error InvalidPool();
+
+    /**
      * @dev Check that the hook address matches the expected permissions and flags.
      */
     constructor(IPoolManager _poolManager) {
@@ -56,6 +61,17 @@ abstract contract BaseHook is IHooks {
      */
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
+        _;
+    }
+
+    /**
+     * @dev Only allow calls for a pool whose `hooks` is this contract.
+     *
+     * Functions that take a `PoolKey` from the caller should use this modifier, since the `poolManager` accepts any
+     * initialized pool and a pool configured with a different hook never calls into this contract.
+     */
+    modifier onlyValidPools(IHooks hooks) {
+        if (hooks != this) revert InvalidPool();
         _;
     }
 

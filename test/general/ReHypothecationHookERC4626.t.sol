@@ -145,6 +145,62 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         hook.addReHypothecatedLiquidity(0);
     }
 
+    // --- Slippage protection (issue #122) ---
+
+    function test_add_slippage_revertsOnExcessiveInput() public {
+        uint256 shares = 1e15;
+        (uint256 amount0, uint256 amount1) = hook.previewMint(shares);
+        assertGt(amount0, 0);
+        assertGt(amount1, 0);
+
+        // amount0Max below the required amount0 reverts
+        vm.expectRevert(ReHypothecationHook.ExcessiveInput.selector);
+        hook.addReHypothecatedLiquidity(shares, amount0 - 1, amount1);
+
+        // amount1Max below the required amount1 reverts
+        vm.expectRevert(ReHypothecationHook.ExcessiveInput.selector);
+        hook.addReHypothecatedLiquidity(shares, amount0, amount1 - 1);
+    }
+
+    function test_add_slippage_succeedsWithinBounds() public {
+        uint256 shares = 1e15;
+        (uint256 amount0, uint256 amount1) = hook.previewMint(shares);
+
+        // exact bounds pull exactly the previewed amounts and mint the shares
+        BalanceDelta delta = hook.addReHypothecatedLiquidity(shares, amount0, amount1);
+        assertEq((-delta.amount0()).toUint256(), amount0);
+        assertEq((-delta.amount1()).toUint256(), amount1);
+        assertEq(hook.balanceOf(address(this)), shares);
+
+        // the no-bounds overload remains usable (backwards compatible)
+        hook.addReHypothecatedLiquidity(shares);
+        assertEq(hook.balanceOf(address(this)), shares * 2);
+    }
+
+    function test_remove_slippage_revertsOnInsufficientOutput() public {
+        uint256 shares = 1e15;
+        hook.addReHypothecatedLiquidity(shares);
+        (uint256 amount0, uint256 amount1) = hook.previewRedeem(shares);
+
+        // requiring more than will be returned reverts
+        vm.expectRevert(ReHypothecationHook.InsufficientOutput.selector);
+        hook.removeReHypothecatedLiquidity(shares, amount0 + 1, amount1);
+
+        vm.expectRevert(ReHypothecationHook.InsufficientOutput.selector);
+        hook.removeReHypothecatedLiquidity(shares, amount0, amount1 + 1);
+    }
+
+    function test_remove_slippage_succeedsWithinBounds() public {
+        uint256 shares = 1e15;
+        hook.addReHypothecatedLiquidity(shares);
+        (uint256 amount0, uint256 amount1) = hook.previewRedeem(shares);
+
+        BalanceDelta delta = hook.removeReHypothecatedLiquidity(shares, amount0, amount1);
+        assertEq(delta.amount0().toUint256(), amount0);
+        assertEq(delta.amount1().toUint256(), amount1);
+        assertEq(hook.balanceOf(address(this)), 0);
+    }
+
     function testFuzz_add_singleLP(uint128 shares) public {
         shares = uint128(bound(shares, 1e12, 1e20));
 

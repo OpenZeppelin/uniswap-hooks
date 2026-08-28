@@ -8,6 +8,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 
 import {OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 import {LimitOrderHookMock} from "src/mocks/general/LimitOrderHookMock.sol";
@@ -113,9 +114,11 @@ contract LimitOrderHookInvariantsTest is HookTest {
         }
     }
 
-    /// @dev INV-L-02: an order is filled as soon as the price crosses its tick.
+    /// @dev INV-L-02: an order is filled as soon as the price crosses its tick. Measured against the
+    /// tick the pool stores, not the one the hook derives from the price, so the two cannot agree by
+    /// sharing a derivation.
     function invariant_L02_noActiveOrderSurvivesThePriceCrossingIt() public view {
-        int24 tickLowerNow = handler.currentTickLower();
+        int24 tickLowerNow = handler.storedTickLower();
         int24[] memory ticks = handler.ticks();
 
         for (uint256 i; i < ticks.length; ++i) {
@@ -135,13 +138,46 @@ contract LimitOrderHookInvariantsTest is HookTest {
         }
     }
 
-    /// @dev INV-L-03: the recorded tick lower tracks the pool price. Drift leaves orders in the gap unfilled.
-    function invariant_L03_recordedTickLowerTracksThePoolPrice() public view {
+    /// @dev INV-L-03: the recorded tick lower tracks the pool's stored tick. Drift leaves orders in the
+    /// gap unfilled.
+    function invariant_L03_recordedTickLowerTracksThePoolTick() public view {
         assertEq(
             hook.getTickLowerLast(key.toId()),
-            handler.currentTickLower(),
-            "INV-L-03: the recorded tick lower does not match the pool price"
+            handler.storedTickLower(),
+            "INV-L-03: the recorded tick lower does not match the pool's stored tick"
         );
+    }
+
+    /// @dev INV-L-04: a live order's pool position holds exactly that order's liquidity.
+    function invariant_L04_liveOrderOwnsItsPositionAlone() public view {
+        int24[] memory tickList = handler.ticks();
+
+        for (uint256 i; i < tickList.length; ++i) {
+            _assertPositionHoldsOnlyTheOrder(tickList[i], true);
+            _assertPositionHoldsOnlyTheOrder(tickList[i], false);
+        }
+    }
+
+    /// @dev The expected position salt per direction, stated here rather than read from the hook.
+    function positionSalt(bool zeroForOne) internal pure returns (bytes32) {
+        return zeroForOne ? bytes32(uint256(1)) : bytes32(0);
+    }
+
+    /// @dev No-op when no order is live at the key.
+    function _assertPositionHoldsOnlyTheOrder(int24 tickLower, bool zeroForOne) private view {
+        uint232 id = handler.orderId(tickLower, zeroForOne);
+        if (id == 0) return;
+
+        (,,,,,,, uint128 liquidityTotal) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
+
+        uint128 positionLiquidity = manager.getPositionLiquidity(
+            key.toId(),
+            Position.calculatePositionKey(
+                address(hook), tickLower, tickLower + key.tickSpacing, positionSalt(zeroForOne)
+            )
+        );
+
+        assertEq(positionLiquidity, liquidityTotal, "INV-L-04: a live order does not hold its pool position alone");
     }
 
     /// @dev INV-F-01: a fully withdrawn order holds no liquidity.
@@ -330,11 +366,14 @@ contract LimitOrderHookInvariantsTest is HookTest {
         console.log("multi owner ratio", multiOwnerRatio, "%");
         console.log("multi withdrawer ratio", multiWithdrawerRatio, "%");
         console.log("multi canceller ratio", multiCancellerRatio, "%");
+        console.log("boundary placements", handler.ghost_boundaryPlacements());
+        console.log("in-range boundary placements", handler.ghost_inRangeBoundaryPlacements());
 
         assertGt(orderCount, 0, "no order was created");
         assertGt(fillCount, 0, "no order was filled");
         assertGt(fullyWithdrawnCount, 0, "no order was fully withdrawn");
         assertGt(fullyCancelledCount, 0, "no order was fully cancelled");
+        assertGt(handler.ghost_boundaryPlacements(), 0, "no order was placed at the price boundary");
     }
 
     /// @dev Orders whose exit was split across more than one actor.

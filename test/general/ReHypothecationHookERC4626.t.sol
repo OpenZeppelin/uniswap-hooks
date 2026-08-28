@@ -42,6 +42,46 @@ contract CappedERC4626Mock is ERC4626YieldSourceMock {
     }
 }
 
+/// @dev An ERC-4626 yield source that reverts on zero-amount deposits/withdrawals, like several real lending
+/// protocols, to test that the hook skips zero-amount yield-source calls.
+contract RevertOnZeroERC4626Mock is ERC4626YieldSourceMock {
+    error ZeroAmount();
+
+    constructor(IERC20 token) ERC4626YieldSourceMock(token) {}
+
+    function deposit(uint256 assets, address receiver) public override returns (uint256) {
+        if (assets == 0) revert ZeroAmount();
+        return super.deposit(assets, receiver);
+    }
+
+    function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256) {
+        if (assets == 0) revert ZeroAmount();
+        return super.withdraw(assets, receiver, owner);
+    }
+}
+
+/// @dev A rehypothecation hook whose position range tracks the current pool tick, so the range shifts as a swap
+/// moves the price. Used to test that the position's tick bounds are snapshotted across a swap.
+contract DynamicTickReHypothecationMock is ReHypothecationERC4626Mock {
+    using StateLibrary for IPoolManager;
+
+    constructor(IPoolManager pm, address ys0, address ys1) ReHypothecationERC4626Mock(pm, ys0, ys1) {}
+
+    function getTickLower() public view override returns (int24) {
+        return _center() - 10 * getPoolKey().tickSpacing;
+    }
+
+    function getTickUpper() public view override returns (int24) {
+        return _center() + 10 * getPoolKey().tickSpacing;
+    }
+
+    function _center() private view returns (int24) {
+        (, int24 tick,,) = poolManager.getSlot0(getPoolKey().toId());
+        int24 spacing = getPoolKey().tickSpacing;
+        return (tick / spacing) * spacing;
+    }
+}
+
 contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     using StateLibrary for IPoolManager;
     using SafeCast for *;
@@ -133,6 +173,15 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
     function _seed() internal returns (uint256 shares) {
         (shares,) = hook.seedLiquidity(SEED, SEED);
+    }
+
+    /// @dev A distinct hook address carrying the required permission flag bits, offset by `nudge`.
+    function _flagAddr(uint160 nudge) internal pure returns (address) {
+        uint160 flags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
+        return address(flags + nudge);
     }
 
     // -- INITIALIZING -- //
@@ -726,5 +775,65 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
         // ...so the just-in-time liquidity is sized down accordingly, never above what can be withdrawn back.
         assertLt(hook.getLiquidityToUse(), liqFull, "capped liquidity should be lower");
+    }
+
+    // -- ZERO-AMOUNT YIELD-SOURCE CALLS -- //
+
+    function test_remove_zeroLeg_skipsZeroYieldSourceWithdraw() public {
+        // currency0's yield source reverts on zero-amount withdrawals.
+        RevertOnZeroERC4626Mock ys0r = new RevertOnZeroERC4626Mock(IERC20(Currency.unwrap(currency0)));
+        CappedERC4626Mock ys1r = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
+        address hookAddr = _flagAddr(0x30000000000000000000000000000000);
+        deployCodeTo(
+            "src/mocks/general/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
+            abi.encode(address(manager), address(ys0r), address(ys1r)),
+            hookAddr
+        );
+        ReHypothecationERC4626Mock h = ReHypothecationERC4626Mock(payable(hookAddr));
+        initPool(currency0, currency1, IHooks(hookAddr), fee, SQRT_PRICE_1_1);
+
+        IERC20(Currency.unwrap(currency0)).approve(hookAddr, type(uint256).max);
+        IERC20(Currency.unwrap(currency1)).approve(hookAddr, type(uint256).max);
+        h.seedLiquidity(SEED, SEED);
+
+        // Drain currency0's yield source so a proportional redeem prices its leg to zero (rounds down).
+        h.burnYieldSourcesBalance(currency0, h.getAmountInYieldSource(currency0));
+
+        uint256 smallShares = 1e6;
+        (uint256 amount0, uint256 amount1) = h.previewRedeem(smallShares);
+        assertEq(amount0, 0, "currency0 leg should redeem to zero");
+        assertGt(amount1, 0, "currency1 leg should be non-zero");
+
+        // Must not revert: the zero currency0 withdrawal is skipped instead of hitting the reverting yield source.
+        h.removeReHypothecatedLiquidity(smallShares);
+    }
+
+    // -- JIT TICK SNAPSHOT -- //
+
+    function test_swap_dynamicTicks_snapshotsRangeAcrossSwap() public {
+        CappedERC4626Mock ys0d = new CappedERC4626Mock(IERC20(Currency.unwrap(currency0)));
+        CappedERC4626Mock ys1d = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
+        address hookAddr = _flagAddr(0x40000000000000000000000000000000);
+        deployCodeTo(
+            "test/general/ReHypothecationHookERC4626.t.sol:DynamicTickReHypothecationMock",
+            abi.encode(address(manager), address(ys0d), address(ys1d)),
+            hookAddr
+        );
+        DynamicTickReHypothecationMock h = DynamicTickReHypothecationMock(payable(hookAddr));
+        (PoolKey memory dynKey,) = initPool(currency0, currency1, IHooks(hookAddr), fee, SQRT_PRICE_1_1);
+
+        IERC20(Currency.unwrap(currency0)).approve(hookAddr, type(uint256).max);
+        IERC20(Currency.unwrap(currency1)).approve(hookAddr, type(uint256).max);
+        h.seedLiquidity(SEED, SEED);
+
+        (, int24 tickBefore,,) = StateLibrary.getSlot0(manager, dynKey.toId());
+
+        // A large exact-input swap moves the tick, so the dynamic range would shift between beforeSwap and
+        // afterSwap. With the range snapshotted, afterSwap removes exactly what beforeSwap added and the swap
+        // succeeds; without it the position would be orphaned and the swap would revert.
+        swap(dynKey, true, -5e17, ZERO_BYTES);
+
+        (, int24 tickAfter,,) = StateLibrary.getSlot0(manager, dynKey.toId());
+        assertTrue(tickBefore != tickAfter, "swap should move the tick, exercising the range shift");
     }
 }

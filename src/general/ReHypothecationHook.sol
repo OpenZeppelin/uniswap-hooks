@@ -10,6 +10,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
+import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
@@ -78,9 +80,24 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     using SafeCast for *;
     using Math for uint256;
     using SafeERC20 for IERC20;
+    using TransientSlot for *;
+    using SlotDerivation for *;
 
     /// @dev The pool key for the hook. Note that the hook supports only one pool key.
     PoolKey private _poolKey;
+
+    /*
+     * @dev The ERC-7201 namespaced transient storage slot for this hook.
+     * keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ReHypothecationHook")) - 1)) & ~bytes32(uint256(0xff))
+    */
+    bytes32 private constant REHYPOTHECATION_HOOK_SLOT =
+        0x23f8264cc98f1c05acfa1795f9fb9efa795bb6c05987a0477bcc1622ab5aca00;
+
+    /// @dev The offset of the just-in-time position lower tick within {REHYPOTHECATION_HOOK_SLOT}.
+    uint256 private constant TICK_LOWER_OFFSET = 0;
+
+    /// @dev The offset of the just-in-time position upper tick within {REHYPOTHECATION_HOOK_SLOT}.
+    uint256 private constant TICK_UPPER_OFFSET = 1;
 
     /// @dev Error thrown when trying to initialize a pool that has already been initialized.
     error AlreadyInitialized();
@@ -223,8 +240,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         _transferFromSenderToHook(_poolKey.currency0, amount0, msg.sender);
         _transferFromSenderToHook(_poolKey.currency1, amount1, msg.sender);
 
-        _depositToYieldSource(_poolKey.currency0, amount0);
-        _depositToYieldSource(_poolKey.currency1, amount1);
+        // Skip zero-amount deposits, which some yield sources reject (e.g. when one side is proportionally empty)
+        if (amount0 > 0) _depositToYieldSource(_poolKey.currency0, amount0);
+        if (amount1 > 0) _depositToYieldSource(_poolKey.currency1, amount1);
 
         _mint(msg.sender, shares);
 
@@ -254,8 +272,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
 
         _burn(msg.sender, shares);
 
-        _withdrawFromYieldSource(_poolKey.currency0, amount0);
-        _withdrawFromYieldSource(_poolKey.currency1, amount1);
+        // Skip zero-amount withdrawals, which some yield sources reject (e.g. when one side is proportionally empty)
+        if (amount0 > 0) _withdrawFromYieldSource(_poolKey.currency0, amount0);
+        if (amount1 > 0) _withdrawFromYieldSource(_poolKey.currency1, amount1);
 
         _transferFromHookToSender(_poolKey.currency0, amount0, msg.sender);
         _transferFromHookToSender(_poolKey.currency1, amount1, msg.sender);
@@ -286,6 +305,10 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+        // Snapshot the position's tick bounds so `afterSwap` removes exactly what is added here, even if the
+        // tick getters are overridden to depend on mutable pool state that the swap then moves.
+        _snapshotActiveTicks();
+
         // Get the liquidity to be used from the amounts currently deposited in the yield sources
         uint256 liquidityToUse = _getLiquidityToUse();
         if (liquidityToUse > 0) _modifyLiquidity(liquidityToUse.toInt256());
@@ -467,6 +490,25 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     }
 
     /**
+     * @dev Snapshots the just-in-time position's tick bounds into transient storage, so the same bounds are used
+     * to add, read and remove the position across a swap. Called at the start of `beforeSwap`.
+     */
+    function _snapshotActiveTicks() private {
+        REHYPOTHECATION_HOOK_SLOT.offset(TICK_LOWER_OFFSET).asInt256().tstore(getTickLower());
+        REHYPOTHECATION_HOOK_SLOT.offset(TICK_UPPER_OFFSET).asInt256().tstore(getTickUpper());
+    }
+
+    /// @dev The lower tick of the just-in-time position snapshotted for the current swap.
+    function _activeTickLower() private view returns (int24) {
+        return int24(REHYPOTHECATION_HOOK_SLOT.offset(TICK_LOWER_OFFSET).asInt256().tload());
+    }
+
+    /// @dev The upper tick of the just-in-time position snapshotted for the current swap.
+    function _activeTickUpper() private view returns (int24) {
+        return int24(REHYPOTHECATION_HOOK_SLOT.offset(TICK_UPPER_OFFSET).asInt256().tload());
+    }
+
+    /**
      * @dev Retrieves the current `liquidity` of the hook owned liquidity position in the `_poolKey` pool.
      *
      * NOTE: Given that just-in-time liquidity provisioning is performed, this function will only return non-zero values
@@ -475,7 +517,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * {_getAmountInYieldSource}.
      */
     function _getHookPositionLiquidity() internal view virtual returns (uint128 liquidity) {
-        bytes32 positionKey = Position.calculatePositionKey(address(this), getTickLower(), getTickUpper(), bytes32(0));
+        bytes32 positionKey =
+            Position.calculatePositionKey(address(this), _activeTickLower(), _activeTickUpper(), bytes32(0));
         return poolManager.getPositionLiquidity(_poolKey.toId(), positionKey);
     }
 
@@ -498,7 +541,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     }
 
     /**
-     * @dev Modifies the hook's liquidity position in the pool.
+     * @dev Modifies the hook's liquidity position in the pool, at the tick bounds snapshotted for the current
+     * swap (see {_snapshotActiveTicks}).
      *
      * Positive liquidityDelta adds liquidity, while negative removes it.
      */
@@ -506,7 +550,10 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         (delta,) = poolManager.modifyLiquidity(
             _poolKey,
             ModifyLiquidityParams({
-                tickLower: getTickLower(), tickUpper: getTickUpper(), liquidityDelta: liquidityDelta, salt: bytes32(0)
+                tickLower: _activeTickLower(),
+                tickUpper: _activeTickUpper(),
+                liquidityDelta: liquidityDelta,
+                salt: bytes32(0)
             }),
             ""
         );

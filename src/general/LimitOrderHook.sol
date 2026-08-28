@@ -744,6 +744,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     function _getCrossedTicks(PoolId poolId, int24 tickSpacing)
         internal
         view
+        virtual
         returns (int24 tickLower, int24 lower, int24 upper)
     {
         tickLower = _getTickLower(_getCurrentTick(poolId), tickSpacing);
@@ -770,7 +771,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Get the tick lower. Takes a `tick` and `tickSpacing` and returns the nearest valid tick boundary
      * at or below the input tick, accounting for negative tick handling.
      */
-    function _getTickLower(int24 tick, int24 tickSpacing) internal pure returns (int24) {
+    function _getTickLower(int24 tick, int24 tickSpacing) internal pure virtual returns (int24) {
         // slither-disable-next-line divide-before-multiply
         int24 compressed = tick / tickSpacing;
         if (tick < 0 && tick % tickSpacing != 0) compressed--; // round towards negative infinity
@@ -781,7 +782,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick the pool
      * stores, which is what marks whether a range is still active.
      */
-    function _getCurrentTick(PoolId poolId) internal view returns (int24 tick) {
+    function _getCurrentTick(PoolId poolId) internal view virtual returns (int24 tick) {
         (, tick,,) = poolManager.getSlot0(poolId);
     }
 
@@ -792,7 +793,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * IMPORTANT: This value is part of a pool position's identity. Changing it on a deployed instance
      * strands the liquidity of every live order placed under the previous value.
      */
-    function _getPositionSalt(bool zeroForOne) internal pure returns (bytes32) {
+    function _getPositionSalt(bool zeroForOne) internal pure virtual returns (bytes32) {
         return zeroForOne ? bytes32(uint256(1)) : bytes32(0);
     }
 

@@ -244,8 +244,15 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
 
         // Add liquidity if amount0 is positive
         if (data.amount0 > 0) {
-            // First settle (send) tokens from user to pool
-            key.currency0.settle(poolManager, data.sender, uint256(int256(data.amount0)), false);
+            // First settle (send) tokens from user to pool. The native currency is paid from this
+            // contract, which holds the sender's value for the length of the call
+            key.currency0
+                .settle(
+                    poolManager,
+                    key.currency0.isAddressZero() ? address(this) : data.sender,
+                    uint256(int256(data.amount0)),
+                    false
+                );
             // Take (mint) ERC-6909 tokens to be received by this hook
             key.currency0.take(poolManager, address(this), uint256(int256(data.amount0)), true);
             // Record the amount so that it can be then encoded into the delta

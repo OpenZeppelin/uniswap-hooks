@@ -769,6 +769,39 @@ contract LimitOrderHookTest is HookTest {
         assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
     }
 
+    /// @dev The scan searches strictly above the tick it holds, so the range's own upper bound is the
+    /// tick it can most easily miss. An order there is converted and must fill; one above it must not.
+    function test_fill_orderOnTheScannedRangesUpperBoundFills() public {
+        int24 onBound = 50 * tickSpacing;
+        int24 above = 51 * tickSpacing;
+
+        hook.placeOrder(key, onBound, true, 1e15);
+        hook.placeOrder(key, above, true, 1e15);
+
+        modifyPoolLiquidity(key, -600000, 600000, 1e21, SALT_THIS);
+
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, above);
+
+        assertEq(hook.getTickLowerLast(key.toId()) - tickSpacing, onBound, "the range's upper bound moved");
+        assertEq(rawOrderIdOf(key, onBound, true), 0, "the order on the upper bound was skipped");
+        assertEq(rawOrderIdOf(key, above, true), 2, "an order above the range was filled");
+    }
+
+    /// @dev The scan visits ticks holding an order, not every tick crossed, so a wide move stays cheap
+    /// even with no orders to fill. Reading one slot per tick made this exceed the block gas limit.
+    function test_fill_wideBandCostsFarLessThanABlock() public {
+        modifyPoolLiquidity(key, -600000, 600000, 1e21, SALT_THIS);
+
+        uint256 before = gasleft();
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e27, -300000);
+        uint256 used = before - gasleft();
+
+        assertLt(getCurrentTick(key), -200000, "the swap should cover a wide band");
+        assertLt(used, 3_000_000, "a 5000 spacing move should not cost a lookup per tick");
+    }
+
     // ------------------------------------- Withdraw ------------------------------------- //
 
     function test_withdraw_notFilled_reverts() public {

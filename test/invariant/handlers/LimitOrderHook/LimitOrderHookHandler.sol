@@ -8,6 +8,7 @@ import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 import {LimitOrderHookMock} from "src/mocks/general/LimitOrderHookMock.sol";
@@ -86,6 +87,11 @@ contract LimitOrderHookHandler is BaseHandler {
     /// @dev Of those, the ones the pool counts as in range, where its stored tick sits inside the new
     /// position rather than one below it.
     uint256 public ghost_inRangeBoundaryPlacements;
+
+    /// @dev The widest span, in bitmap words, that a single swap's crossed range covered, and how many
+    /// swaps covered more than one.
+    uint256 public ghost_maxWordSpanCrossed;
+    uint256 public ghost_multiWordCrossings;
 
     /// @dev Entitlement per (order, placer) captured before the current action. Snapshot, not a
     /// ghost: only meaningful until the action's assertions run.
@@ -230,6 +236,25 @@ contract LimitOrderHookHandler is BaseHandler {
         vm.assume(target != current);
 
         _swap(target < current, bound(amountSeed, AMOUNT_MIN_BOUND, AMOUNT_MAX_BOUND), target);
+    }
+
+    /// @dev Records the bitmap words a swap's crossed range spanned.
+    function _swap(bool zeroForOne, uint256 amount, int24 tickLimit) internal override {
+        int24 before = hook.getTickLowerLast(key.toId());
+
+        super._swap(zeroForOne, amount, tickLimit);
+
+        int24 last = hook.getTickLowerLast(key.toId());
+        if (before == last) return;
+
+        (int16 wordBefore,) = TickBitmap.position(TickBitmap.compress(before, key.tickSpacing));
+        (int16 wordLast,) = TickBitmap.position(TickBitmap.compress(last, key.tickSpacing));
+
+        int16 distance = wordBefore > wordLast ? wordBefore - wordLast : wordLast - wordBefore;
+        uint256 span = uint256(uint16(distance)) + 1;
+
+        if (span > ghost_maxWordSpanCrossed) ghost_maxWordSpanCrossed = span;
+        if (span > 1) ++ghost_multiWordCrossings;
     }
 
     /// @dev Moves the price from inside the hook's own unlock callback, which the pool does not report,

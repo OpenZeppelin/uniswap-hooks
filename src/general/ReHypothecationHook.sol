@@ -305,8 +305,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // Snapshot the position's tick bounds so `afterSwap` removes exactly what is added here, even if the
-        // tick getters are overridden to depend on mutable pool state that the swap then moves.
+        // Snapshot the position's tick bounds so `afterSwap` removes exactly what is added here.
         _snapshotActiveTicks();
 
         // Get the liquidity to be used from the amounts currently deposited in the yield sources

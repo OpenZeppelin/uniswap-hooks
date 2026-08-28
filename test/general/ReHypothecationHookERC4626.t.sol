@@ -49,7 +49,12 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         yieldSource1 = IERC4626(new ERC4626YieldSourceMock(IERC20(Currency.unwrap(currency1))));
 
         hook = ReHypothecationERC4626Mock(
-            payable(address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG)))
+            payable(address(
+                    uint160(
+                        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+                            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+                    )
+                ))
         );
         deployCodeTo(
             "src/mocks/general/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
@@ -124,10 +129,53 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         initPool(Currency.wrap(address(0)), currency1, IHooks(address(hook)), fee, SQRT_PRICE_1_1);
     }
 
+    // -- EXTERNAL LIQUIDITY BLOCKED -- //
+
+    function test_hookPermissions_blockLiquidity() public view {
+        Hooks.Permissions memory permissions = hook.getHookPermissions();
+        assertTrue(permissions.beforeAddLiquidity, "beforeAddLiquidity should be enabled");
+        assertTrue(permissions.beforeRemoveLiquidity, "beforeRemoveLiquidity should be enabled");
+    }
+
+    function test_external_addLiquidity_reverts() public {
+        // Cache tick reads so `expectRevert` binds to the router call, not the getter sub-calls.
+        int24 tickLower = hook.getTickLower();
+        int24 tickUpper = hook.getTickUpper();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.beforeAddLiquidity.selector,
+                abi.encodeWithSelector(ReHypothecationHook.LiquidityNotAllowed.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        modifyPoolLiquidity(key, tickLower, tickUpper, int256(1e18), 0);
+    }
+
+    function test_external_removeLiquidity_reverts() public {
+        // Cache tick reads so `expectRevert` binds to the router call, not the getter sub-calls.
+        int24 tickLower = hook.getTickLower();
+        int24 tickUpper = hook.getTickUpper();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.beforeRemoveLiquidity.selector,
+                abi.encodeWithSelector(ReHypothecationHook.LiquidityNotAllowed.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        modifyPoolLiquidity(key, tickLower, tickUpper, -int256(1e18), 0);
+    }
+
     // -- ADDING -- //
 
     function test_add_uninitialized_reverts() public {
-        uint160 hookFlags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+        uint160 hookFlags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
         ReHypothecationERC4626Mock newHook = ReHypothecationERC4626Mock(
             payable(address(hookFlags + 0x10000000000000000000000000000000)) // generate a different address
         );
@@ -284,7 +332,10 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     // -- REMOVING -- //
 
     function test_remove_uninitialized_reverts() public {
-        uint160 hookFlags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+        uint160 hookFlags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
         ReHypothecationERC4626Mock newHook = ReHypothecationERC4626Mock(
             payable(address(hookFlags + 0x10000000000000000000000000000000)) // generate a different address
         );

@@ -44,7 +44,12 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
         yieldSource1 = new ERC4626YieldSourceMock(IERC20(Currency.unwrap(currency1)));
 
         hook = ReHypothecationNativeMock(
-            payable(address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG)))
+            payable(address(
+                    uint160(
+                        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+                            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+                    )
+                ))
         );
         deployCodeTo(
             "src/mocks/general/ReHypothecationNativeMock.sol:ReHypothecationNativeMock",
@@ -101,7 +106,10 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
 
     function test_initialize_native_currency_supported() public {
         // Native currency (address(0)) should be supported in the native mock
-        uint160 hookFlags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+        uint160 hookFlags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
         ReHypothecationNativeMock newHook = ReHypothecationNativeMock(
             payable(address(hookFlags + 0x10000000000000000000000000000000)) // generate a different address
         );

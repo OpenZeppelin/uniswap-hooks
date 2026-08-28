@@ -56,7 +56,8 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
  * As a consequence, the PoolManager singleton may lack sufficient reserves for illiquid tokens in the instants between the swap
  * executed and the posterior payment from the user, preventing swaps from being executed until the PoolManager accumulates enough tokens.
- * Altrough it is very unlikely to happen, it can be mitigated by maintaining some permanent pool liquidity alongside rehypothecated liquidity.
+ * Although it is very unlikely to happen, note that direct liquidity provision to the pool is disabled, so the hook is the sole
+ * liquidity provider for its pool.
  *
  * WARNING: Liquidity additions and removals may be affected by slippage. Users can protect against unexpected slippage
  * in general by verifying the amount received is as expected, using a wrapper that performs these checks.
@@ -91,6 +92,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
 
     /// @dev Error thrown when the refund fails.
     error RefundFailed();
+
+    /// @dev Error thrown when a third party attempts to provide or remove liquidity directly on the pool.
+    error LiquidityNotAllowed();
 
     /**
      * @dev Emitted when a `sender` adds rehypothecated `shares` to the `poolKey` pool,
@@ -271,6 +275,35 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
             _withdrawFromYieldSource(currency, (-currencyDelta).toUint256());
             currency.settle(poolManager, address(this), (-currencyDelta).toUint256(), false);
         }
+    }
+
+    /**
+     * @dev Blocks direct liquidity provision to the pool by third parties, so the hook remains the pool's sole
+     * liquidity provider. This prevents external positions from interfering with the hook's just-in-time liquidity,
+     * such as saturating the position's tick boundaries and reverting subsequent swaps.
+     *
+     * Note that the hook's own just-in-time liquidity provisioning is unaffected, since the `PoolManager` skips hook
+     * callbacks when the hook itself is modifying liquidity.
+     */
+    function _beforeAddLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4)
+    {
+        revert LiquidityNotAllowed();
+    }
+
+    /**
+     * @dev Blocks direct liquidity removal from the pool by third parties. See {_beforeAddLiquidity}.
+     */
+    function _beforeRemoveLiquidity(address, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
+        internal
+        virtual
+        override
+        returns (bytes4)
+    {
+        revert LiquidityNotAllowed();
     }
 
     /**
@@ -471,9 +504,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,
-            beforeAddLiquidity: false,
+            beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
+            beforeRemoveLiquidity: true,
             afterRemoveLiquidity: false,
             beforeSwap: true,
             afterSwap: true,

@@ -50,7 +50,9 @@ jobs:
         uses: ./.github/actions/setup
       
       - name: Generate coverage
-        run: forge coverage --report lcov
+        # Use the oracle gas limit (see `[profile.oracle]` in foundry.toml): the panoptic oracle tests need
+        # more than the default `gas_limit`, and coverage's unoptimized build makes them exceed it and revert.
+        run: forge coverage --report lcov --gas-limit 300000000
       
       - uses: codecov/codecov-action@v5
         env:

@@ -49,6 +49,10 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * NOTE: Since the hook owns the single liquidity position, it is possible to perform "leveraged liquidity" strategies,
  * which would give better pricing to swappers at the cost of the profitability of LP's and increased risks. See {_getLiquidityToUse}
  *
+ * NOTE: A pool must be seeded once via {seedLiquidity} before liquidity can be added through {addReHypothecatedLiquidity}.
+ * The seed sets the initial ratio and mints the first shares as `sqrt(amount0 * amount1)`, in a UniswapV2 like fashion.
+ * From there, a share represents a proportional claim over the hook's balances in the yield sources.
+ *
  * WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
  * such as variations in the yield rates, rebalances, impermanent loss, and other risks associated.
  *
@@ -96,6 +100,15 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// @dev Error thrown when a third party attempts to provide or remove liquidity directly on the pool.
     error LiquidityNotAllowed();
 
+    /// @dev Error thrown when adding liquidity before the pool has been seeded.
+    error NotSeeded();
+
+    /// @dev Error thrown when seeding a pool that has already been seeded.
+    error AlreadySeeded();
+
+    /// @dev Error thrown when a seed would mint fewer than the minimum safe initial `shares`, given `minShares`.
+    error InsufficientSeed(uint256 shares, uint256 minShares);
+
     /**
      * @dev Emitted when a `sender` adds rehypothecated `shares` to the `poolKey` pool,
      *  transferring `amount0` of `currency0` and `amount1` of `currency1` to the hook.
@@ -131,6 +144,55 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     }
 
     /**
+     * @dev Seeds the pool with its first liquidity, depositing `amount0` of `currency0` and `amount1` of
+     * `currency1` into the yield sources and minting `sqrt(amount0 * amount1)` shares to the caller, in a
+     * UniswapV2 like fashion. The deposited amounts set the pool's initial ratio.
+     *
+     * Callable once, permissionlessly, while no shares have been minted yet. Subsequent liquidity is added
+     * through {addReHypothecatedLiquidity}, which prices shares proportionally to the seeded balances.
+     *
+     * The minted shares must be at least `100 * 10 ** _decimalsOffset()`, so the supply dominates the
+     * virtual-shares offset used in {_shareToAmount} and the share price cannot be meaningfully inflated.
+     *
+     * Returns the `shares` minted and a balance `delta` representing the assets deposited into the hook.
+     *
+     * NOTE: The amounts should be provided close to the pool's current price, otherwise part of the seeded
+     * liquidity may sit idle until swaps rebalance it. See {_getLiquidityToUse}.
+     *
+     * Requirements:
+     * - Pool must be initialized
+     * - Pool must not have been seeded yet
+     * - Resulting shares must be at least `100 * 10 ** _decimalsOffset()`
+     * - Sender must have approved the hook to spend the required tokens
+     */
+    function seedLiquidity(uint256 amount0, uint256 amount1)
+        public
+        payable
+        virtual
+        nonReentrant
+        returns (uint256 shares, BalanceDelta delta)
+    {
+        if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
+        if (totalSupply() != 0) revert AlreadySeeded();
+
+        shares = Math.sqrt(amount0 * amount1);
+        uint256 minShares = 100 * 10 ** uint256(_decimalsOffset());
+        if (shares < minShares) revert InsufficientSeed(shares, minShares);
+
+        _transferFromSenderToHook(_poolKey.currency0, amount0, msg.sender);
+        _transferFromSenderToHook(_poolKey.currency1, amount1, msg.sender);
+
+        _depositToYieldSource(_poolKey.currency0, amount0);
+        _depositToYieldSource(_poolKey.currency1, amount1);
+
+        _mint(msg.sender, shares);
+
+        emit ReHypothecatedLiquidityAdded(msg.sender, _poolKey, shares, amount0, amount1);
+
+        return (shares, toBalanceDelta(-int256(amount0).toInt128(), -int256(amount1).toInt128()));
+    }
+
+    /**
      * @dev Adds rehypothecated liquidity to their corresponding yield sources and mints `shares` to the `receiver`.
      *
      * Liquidity is added in the ratio determined by the hook's existing balances in yield sources.
@@ -141,6 +203,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Requirements:
      * - Pool must be initialized
+     * - Pool must have been seeded (see {seedLiquidity})
      * - Sender must have sufficient token balances
      * - Sender must have approved the hook to spend the required tokens
      */
@@ -152,6 +215,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         returns (BalanceDelta delta)
     {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
+        if (totalSupply() == 0) revert NotSeeded();
         if (shares == 0) revert ZeroShares();
 
         (uint256 amount0, uint256 amount1) = previewMint(shares);
@@ -325,10 +389,11 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     }
 
     /**
-     * @dev Calculates the amounts of currency0 and currency1 required for minting or redeeming a given amount of shares.
+     * @dev Calculates the amounts of currency0 and currency1 equivalent to a given amount of `shares`, as a
+     * proportional claim over the hook's balances in the yield sources, using the given rounding direction.
      *
-     * If the hook has not emitted shares yet, the initial mint/redeem ratio is determined by the internal pool price.
-     * Otherwise, it is determined by the ratio of the hook balances in the yield sources.
+     * Reverts with {NotSeeded} when no shares have been minted yet, since the pool has no defined ratio before
+     * {seedLiquidity}.
      */
     function _sharesToAmounts(uint256 shares, Math.Rounding rounding)
         internal
@@ -336,24 +401,17 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         virtual
         returns (uint256 amount0, uint256 amount1)
     {
-        // If the hook has not emitted shares yet, then consider `liquidity == shares`
-        if (totalSupply() == 0) {
-            (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
-            return LiquidityAmounts.getAmountsForLiquidity(
-                currentSqrtPriceX96,
-                TickMath.getSqrtPriceAtTick(getTickLower()),
-                TickMath.getSqrtPriceAtTick(getTickUpper()),
-                shares.toUint128()
-            );
-        } else {
-            amount0 = _shareToAmount(shares, _poolKey.currency0, rounding);
-            amount1 = _shareToAmount(shares, _poolKey.currency1, rounding);
-        }
+        amount0 = _shareToAmount(shares, _poolKey.currency0, rounding);
+        amount1 = _shareToAmount(shares, _poolKey.currency1, rounding);
     }
 
     /**
-     * @dev Converts a given `shares` amount to the corresponding `currency` amount using
-     * the given rounding direction.
+     * @dev Converts a given `shares` amount to the corresponding `currency` amount, as its proportional claim
+     * over the hook's balance of `currency` in the yield source, using the given rounding direction.
+     *
+     * Uses an EIP-4626 like virtual offset (see {_decimalsOffset}) to defend the share price against inflation,
+     * so a share is worth `(balance + 1) / (totalSupply + 10 ** _decimalsOffset())` of the `currency` balance.
+     * Reverts with {NotSeeded} before the pool is seeded.
      */
     function _shareToAmount(uint256 shares, Currency currency, Math.Rounding rounding)
         internal
@@ -361,9 +419,21 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         virtual
         returns (uint256 amount)
     {
-        uint256 totalAmount = _getAmountInYieldSource(currency);
-        if (totalAmount == 0) return 0;
-        return shares.mulDiv(totalAmount, totalSupply(), rounding);
+        uint256 supply = totalSupply();
+        if (supply == 0) revert NotSeeded();
+        return shares.mulDiv(_getAmountInYieldSource(currency) + 1, supply + 10 ** uint256(_decimalsOffset()), rounding);
+    }
+
+    /**
+     * @dev Returns the decimal offset used for the EIP-4626 like virtual shares that defend the share price
+     * against inflation. The initial supply minted by {seedLiquidity} is required to be at least
+     * `100 * 10 ** _decimalsOffset()`, keeping the maximum share price drift around 1%.
+     *
+     * Defaults to `6`, which suits most token pairs. Can be overridden to strengthen the defense with a higher
+     * offset, at the cost of a larger minimum seed, for example for high-decimal pairs.
+     */
+    function _decimalsOffset() internal view virtual returns (uint8) {
+        return 6;
     }
 
     /**

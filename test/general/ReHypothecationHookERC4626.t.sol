@@ -14,6 +14,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 // Internal imports
 import {
     ReHypothecationERC4626Mock,
@@ -40,6 +42,13 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     address lp2 = makeAddr("lp2");
 
     uint24 fee = 1000; // 0.1%
+
+    /// @dev Amount used to seed each currency; at price 1:1 this mints `sqrt(SEED * SEED) == SEED` shares.
+    uint256 constant SEED = 1e18;
+    uint256 constant SEED_SHARES = SEED;
+
+    /// @dev Absolute tolerance covering the EIP-4626 style virtual offset and rounding (offset is 1e6).
+    uint256 constant TOL = 1e9;
 
     function setUp() public {
         deployFreshManagerAndRouters();
@@ -98,6 +107,16 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
             }
             vm.stopPrank();
         }
+    }
+
+    /// @dev Seeds the pool (from `who`) with `SEED` of each currency, minting `SEED_SHARES` shares.
+    function _seedBy(address who) internal returns (uint256 shares) {
+        vm.prank(who);
+        (shares,) = hook.seedLiquidity(SEED, SEED);
+    }
+
+    function _seed() internal returns (uint256 shares) {
+        (shares,) = hook.seedLiquidity(SEED, SEED);
     }
 
     // -- INITIALIZING -- //
@@ -169,6 +188,61 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         modifyPoolLiquidity(key, tickLower, tickUpper, -int256(1e18), 0);
     }
 
+    // -- SEEDING -- //
+
+    function test_seed_uninitialized_reverts() public {
+        uint160 hookFlags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
+        ReHypothecationERC4626Mock newHook = ReHypothecationERC4626Mock(
+            payable(address(hookFlags + 0x10000000000000000000000000000000)) // generate a different address
+        );
+        deployCodeTo(
+            "src/mocks/general/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
+            abi.encode(address(manager), address(yieldSource0), address(yieldSource1)),
+            address(newHook)
+        );
+        vm.expectRevert(ReHypothecationHook.NotInitialized.selector);
+        newHook.seedLiquidity(SEED, SEED);
+    }
+
+    function test_seed_alreadySeeded_reverts() public {
+        _seed();
+        vm.expectRevert(ReHypothecationHook.AlreadySeeded.selector);
+        hook.seedLiquidity(SEED, SEED);
+    }
+
+    function test_seed_belowFloor_reverts() public {
+        // sqrt(1000 * 1000) == 1000, below the 100 * 10**6 floor.
+        vm.expectRevert(abi.encodeWithSelector(ReHypothecationHook.InsufficientSeed.selector, 1000, 100_000_000));
+        hook.seedLiquidity(1000, 1000);
+    }
+
+    function test_seed_mintsSqrtShares() public {
+        uint256 amount0 = 4e18;
+        uint256 amount1 = 1e18;
+
+        uint256 lpAmount0Before = IERC20(Currency.unwrap(currency0)).balanceOf(address(this));
+        uint256 lpAmount1Before = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
+
+        (uint256 shares, BalanceDelta delta) = hook.seedLiquidity(amount0, amount1);
+
+        // shares are the geometric mean of the seeded amounts
+        assertEq(shares, Math.sqrt(amount0 * amount1), "shares != sqrt(amount0 * amount1)");
+        assertEq(shares, 2e18, "shares != 2e18");
+        assertEq(hook.balanceOf(address(this)), shares, "balance != shares");
+        assertEq(hook.totalSupply(), shares, "totalSupply != shares");
+
+        // the seeded amounts were pulled and deposited into the yield sources
+        assertEq((-delta.amount0()).toUint256(), amount0, "delta.amount0() != amount0");
+        assertEq((-delta.amount1()).toUint256(), amount1, "delta.amount1() != amount1");
+        assertEq(lpAmount0Before - IERC20(Currency.unwrap(currency0)).balanceOf(address(this)), amount0);
+        assertEq(lpAmount1Before - IERC20(Currency.unwrap(currency1)).balanceOf(address(this)), amount1);
+        assertEq(hook.getAmountInYieldSource(currency0), amount0, "yieldSource0 != amount0");
+        assertEq(hook.getAmountInYieldSource(currency1), amount1, "yieldSource1 != amount1");
+    }
+
     // -- ADDING -- //
 
     function test_add_uninitialized_reverts() public {
@@ -188,13 +262,22 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         newHook.addReHypothecatedLiquidity(1e15);
     }
 
+    function test_add_notSeeded_reverts() public {
+        vm.expectRevert(ReHypothecationHook.NotSeeded.selector);
+        hook.addReHypothecatedLiquidity(1e15);
+    }
+
     function test_add_zero_reverts() public {
+        _seed();
         vm.expectRevert(ReHypothecationHook.ZeroShares.selector);
         hook.addReHypothecatedLiquidity(0);
     }
 
     function testFuzz_add_singleLP(uint128 shares) public {
         shares = uint128(bound(shares, 1e12, 1e20));
+
+        // Seed the pool from a different LP so the tested `add` runs against a live pool.
+        _seedBy(lp1);
 
         uint256 lpAmount0Before = IERC20(Currency.unwrap(currency0)).balanceOf(address(this));
         uint256 lpAmount1Before = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
@@ -229,13 +312,15 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
             "amount1InYieldSource1After != amount1InYieldSource1Before + amount1"
         );
 
-        uint256 obtainedShares = hook.balanceOf(address(this));
-        assertEq(obtainedShares, hook.totalSupply(), "obtained shares != total supply");
+        assertEq(hook.balanceOf(address(this)), shares, "obtained shares != shares");
     }
 
     function test_add_multipleLP() public {
         uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
+
+        // lp1 seeds the pool (minting SEED_SHARES), then adds like lp2.
+        _seedBy(lp1);
 
         vm.prank(lp1);
         BalanceDelta addDeltalp1 = hook.addReHypothecatedLiquidity(shareslp1);
@@ -243,20 +328,23 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         vm.prank(lp2);
         BalanceDelta addDeltalp2 = hook.addReHypothecatedLiquidity(shareslp2);
 
-        // both must have paid the same amount of assets
-        assertEq(addDeltalp1, addDeltalp2);
+        // both add the same shares against the same state, so pay the same amount of assets
+        assertApproxEqAbs(addDeltalp1, addDeltalp2, TOL);
 
-        // both must have received the same amount of assets
-        assertEq(hook.balanceOf(lp1), hook.balanceOf(lp2));
+        // lp1 additionally holds the seed shares
+        assertEq(hook.balanceOf(lp1), SEED_SHARES + shareslp1);
+        assertEq(hook.balanceOf(lp2), shareslp2);
 
-        // total supply should be the sum of the shares
-        assertEq(hook.totalSupply(), shareslp1 + shareslp2);
+        // total supply should be the sum of the seed and both adds
+        assertEq(hook.totalSupply(), SEED_SHARES + shareslp1 + shareslp2);
     }
 
     function test_add_swap_add_multipleLP() public {
         // both lps want equal amount of shares
         uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
+
+        _seed();
 
         vm.prank(lp1);
         BalanceDelta addDeltalp1 = hook.addReHypothecatedLiquidity(shareslp1);
@@ -275,58 +363,75 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertGt(-addDeltalp2.amount0(), -addDeltalp1.amount0());
         assertGt(-addDeltalp2.amount1(), -addDeltalp1.amount1());
 
-        // total supply should be the sum of the shares
-        assertEq(hook.totalSupply(), shareslp1 + shareslp2);
+        // total supply should be the sum of the seed and both adds
+        assertEq(hook.totalSupply(), SEED_SHARES + shareslp1 + shareslp2);
     }
 
     function test_add_yieldsGrowth_add_multipleLP() public {
         uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
 
-        vm.prank(lp1);
-        BalanceDelta addDeltalp1 = hook.addReHypothecatedLiquidity(shareslp1);
+        // lp1 seeds the pool, so at this point pile == supply == SEED_SHARES.
+        _seedBy(lp1);
+
+        BalanceDelta addDeltalp1;
+        {
+            uint256 amount0Before = hook.getAmountInYieldSource(currency0);
+            uint256 amount1Before = hook.getAmountInYieldSource(currency1);
+            vm.prank(lp2);
+            addDeltalp1 = hook.addReHypothecatedLiquidity(shareslp1);
+            // capture how much lp1-equivalent (lp2) paid against the seeded pile
+            amount0Before;
+            amount1Before;
+        }
 
         uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
         uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
 
-        // yield1 grows by 10%
+        // yield0 grows by 10%
         currency0.transfer(address(yieldSource0), amount0InYieldSource * 10 / 100);
-        // yield2 grows by 20%
+        // yield1 grows by 20%
         currency1.transfer(address(yieldSource1), amount1InYieldSource * 20 / 100);
 
+        vm.prank(lp2);
         BalanceDelta addDeltalp2 = hook.addReHypothecatedLiquidity(shareslp2);
 
-        // in order to obtain the same shares as lp1, lp2 must deposit 10% more currency0 and 20% more currency1
-        assertApproxEqAbs(-addDeltalp2.amount0(), -addDeltalp1.amount0() * 110 / 100, 1);
-        assertApproxEqAbs(-addDeltalp2.amount1(), -addDeltalp1.amount1() * 120 / 100, 1);
+        // in order to obtain the same shares as the first add, the second add pays 10% more currency0
+        // and 20% more currency1
+        assertApproxEqAbs(-addDeltalp2.amount0(), -addDeltalp1.amount0() * 110 / 100, TOL);
+        assertApproxEqAbs(-addDeltalp2.amount1(), -addDeltalp1.amount1() * 120 / 100, TOL);
 
-        // total supply should be the sum of the shares
-        assertEq(hook.totalSupply(), shareslp1 + shareslp2);
+        // total supply should be the sum of the seed and both adds
+        assertEq(hook.totalSupply(), SEED_SHARES + shareslp1 + shareslp2);
     }
 
     function test_add_yieldsDecay_add_multipleLP() public {
         uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
 
-        vm.prank(lp1);
+        _seedBy(lp1);
+
+        vm.prank(lp2);
         BalanceDelta addDeltalp1 = hook.addReHypothecatedLiquidity(shareslp1);
 
         uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
         uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
 
-        // yield1 decays by 10%
+        // yield0 decays by 10%
         hook.burnYieldSourcesBalance(currency0, amount0InYieldSource * 10 / 100);
-        // yield2 decays by 20%
+        // yield1 decays by 20%
         hook.burnYieldSourcesBalance(currency1, amount1InYieldSource * 20 / 100);
 
+        vm.prank(lp2);
         BalanceDelta addDeltalp2 = hook.addReHypothecatedLiquidity(shareslp2);
 
-        // in order to obtain the same shares as lp1, lp2 must deposit 10% less currency0 and 20% less currency1
-        assertApproxEqAbs(-addDeltalp2.amount0(), -addDeltalp1.amount0() * 90 / 100, 1);
-        assertApproxEqAbs(-addDeltalp2.amount1(), -addDeltalp1.amount1() * 80 / 100, 1);
+        // in order to obtain the same shares as the first add, the second add pays 10% less currency0
+        // and 20% less currency1
+        assertApproxEqAbs(-addDeltalp2.amount0(), -addDeltalp1.amount0() * 90 / 100, TOL);
+        assertApproxEqAbs(-addDeltalp2.amount1(), -addDeltalp1.amount1() * 80 / 100, TOL);
 
-        // total supply should be the sum of the shares
-        assertEq(hook.totalSupply(), shareslp1 + shareslp2);
+        // total supply should be the sum of the seed and both adds
+        assertEq(hook.totalSupply(), SEED_SHARES + shareslp1 + shareslp2);
     }
 
     // -- REMOVING -- //
@@ -356,7 +461,8 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     function testFuzz_remove_singleLP(uint128 shares) public {
         shares = uint128(bound(shares, 1e12, 1e20));
 
-        BalanceDelta addDelta = hook.addReHypothecatedLiquidity(shares);
+        // Seed such that the caller ends up holding exactly `shares` shares.
+        (, BalanceDelta addDelta) = hook.seedLiquidity(shares, shares);
 
         uint256 lpAmount0Before = IERC20(Currency.unwrap(currency0)).balanceOf(address(this));
         uint256 lpAmount1Before = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
@@ -368,11 +474,11 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
         BalanceDelta removeDelta = hook.removeReHypothecatedLiquidity(shares);
 
-        assertEq(-addDelta.amount0(), removeDelta.amount0());
-        assertEq(-addDelta.amount1(), removeDelta.amount1());
-
+        // withdrawn amount matches the previewed redeem, and is within a virtual-offset dust of the seeded amount
         assertEq(removeDelta.amount0().toUint256(), amount0, "Delta.amount0() != amount0");
         assertEq(removeDelta.amount1().toUint256(), amount1, "Delta.amount1() != amount1");
+        assertApproxEqAbs(-addDelta.amount0(), removeDelta.amount0(), TOL);
+        assertApproxEqAbs(-addDelta.amount1(), removeDelta.amount1(), TOL);
 
         uint256 lpAmount0After = IERC20(Currency.unwrap(currency0)).balanceOf(address(this));
         uint256 lpAmount1After = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
@@ -386,12 +492,12 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertEq(
             amount0InYieldSource0After,
             amount0InYieldSource0Before - amount0,
-            "amount0InYieldSource0After != amount0InYieldSource0Before + amount0"
+            "amount0InYieldSource0After != amount0InYieldSource0Before - amount0"
         );
         assertEq(
             amount1InYieldSource1After,
             amount1InYieldSource1Before - amount1,
-            "amount1InYieldSource1After != amount1InYieldSource1Before + amount1"
+            "amount1InYieldSource1After != amount1InYieldSource1Before - amount1"
         );
 
         assertEq(hook.balanceOf(address(this)), 0, "Held shares != 0");
@@ -399,21 +505,20 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     }
 
     function test_remove_multipleLP() public {
-        uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
 
-        vm.prank(lp1);
-        hook.addReHypothecatedLiquidity(shareslp1);
+        // lp1 seeds (holding SEED_SHARES), lp2 adds the same amount of shares.
+        _seedBy(lp1);
         vm.prank(lp2);
         hook.addReHypothecatedLiquidity(shareslp2);
 
         vm.prank(lp1);
-        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(shareslp1);
+        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(SEED_SHARES);
         vm.prank(lp2);
         BalanceDelta removeDeltalp2 = hook.removeReHypothecatedLiquidity(shareslp2);
 
-        // both must have removed the same amount of assets
-        assertEq(removeDeltalp1, removeDeltalp2);
+        // both held the same amount of shares, so remove approximately the same amount of assets
+        assertApproxEqAbs(removeDeltalp1, removeDeltalp2, TOL);
 
         // both must have burned their shares
         assertEq(hook.balanceOf(lp1), 0);
@@ -424,23 +529,21 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     }
 
     function test_swap_remove_remove_multipleLP() public {
-        uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
 
-        vm.prank(lp1);
-        hook.addReHypothecatedLiquidity(shareslp1);
+        _seedBy(lp1);
         vm.prank(lp2);
         hook.addReHypothecatedLiquidity(shareslp2);
 
         swap(key, true, 1e15, ZERO_BYTES);
 
         vm.prank(lp1);
-        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(shareslp1);
+        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(SEED_SHARES);
         vm.prank(lp2);
         BalanceDelta removeDeltalp2 = hook.removeReHypothecatedLiquidity(shareslp2);
 
-        // both must have removed the same amount of assets
-        assertApproxEqAbs(removeDeltalp1, removeDeltalp2, 1);
+        // both held the same amount of shares, so remove approximately the same amount of assets
+        assertApproxEqAbs(removeDeltalp1, removeDeltalp2, TOL);
 
         // both must have burned their shares
         assertEq(hook.balanceOf(lp1), 0);
@@ -451,16 +554,14 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     }
 
     function test_remove_swap_remove_multipleLP() public {
-        uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
 
-        vm.prank(lp1);
-        hook.addReHypothecatedLiquidity(shareslp1);
+        _seedBy(lp1);
         vm.prank(lp2);
         hook.addReHypothecatedLiquidity(shareslp2);
 
         vm.prank(lp1);
-        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(shareslp1);
+        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(SEED_SHARES);
 
         swap(key, true, 1e15, ZERO_BYTES);
         swap(key, false, 1e15 + 1e10, ZERO_BYTES);
@@ -468,7 +569,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         vm.prank(lp2);
         BalanceDelta removeDeltalp2 = hook.removeReHypothecatedLiquidity(shareslp2);
 
-        // lp2 must have removed more assets, since the fees from the swap belongs to him
+        // lp2 must have removed more assets, since the fees from the swap belong to it
         assertGt(removeDeltalp2.amount0(), removeDeltalp1.amount0());
         assertGt(removeDeltalp2.amount1(), removeDeltalp1.amount1());
 
@@ -481,33 +582,31 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     }
 
     function test_remove_yieldsGrowth_remove_multipleLP() public {
-        uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
 
-        vm.prank(lp1);
-        hook.addReHypothecatedLiquidity(shareslp1);
+        _seedBy(lp1);
         vm.prank(lp2);
         hook.addReHypothecatedLiquidity(shareslp2);
 
         // lp1 removes
         vm.prank(lp1);
-        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(shareslp1);
+        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(SEED_SHARES);
 
         uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
         uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
 
-        // yield1 grows by 10%
+        // yield0 grows by 10%
         currency0.transfer(address(yieldSource0), amount0InYieldSource * 10 / 100);
-        // yield2 grows by 20%
+        // yield1 grows by 20%
         currency1.transfer(address(yieldSource1), amount1InYieldSource * 20 / 100);
 
         // lp2 removes
         vm.prank(lp2);
         BalanceDelta removeDeltalp2 = hook.removeReHypothecatedLiquidity(shareslp2);
 
-        // lp2 must have removed more assets, since the fees from the yield growth belongs to him
-        assertApproxEqAbs(removeDeltalp2.amount0(), removeDeltalp1.amount0() * 110 / 100, 1);
-        assertApproxEqAbs(removeDeltalp2.amount1(), removeDeltalp1.amount1() * 120 / 100, 1);
+        // lp2 must have removed more assets, since the yield growth belongs to it
+        assertApproxEqAbs(removeDeltalp2.amount0(), removeDeltalp1.amount0() * 110 / 100, TOL);
+        assertApproxEqAbs(removeDeltalp2.amount1(), removeDeltalp1.amount1() * 120 / 100, TOL);
 
         // both must have burned their shares
         assertEq(hook.balanceOf(lp1), 0);
@@ -518,33 +617,31 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     }
 
     function test_remove_yieldsDecay_remove_multipleLP() public {
-        uint128 shareslp1 = 1e18;
         uint128 shareslp2 = 1e18;
 
-        vm.prank(lp1);
-        hook.addReHypothecatedLiquidity(shareslp1);
+        _seedBy(lp1);
         vm.prank(lp2);
         hook.addReHypothecatedLiquidity(shareslp2);
 
         // lp1 removes
         vm.prank(lp1);
-        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(shareslp1);
+        BalanceDelta removeDeltalp1 = hook.removeReHypothecatedLiquidity(SEED_SHARES);
 
         uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
         uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
 
-        // yield1 decays by 10%
+        // yield0 decays by 10%
         hook.burnYieldSourcesBalance(currency0, amount0InYieldSource * 10 / 100);
-        // yield2 decays by 20%
+        // yield1 decays by 20%
         hook.burnYieldSourcesBalance(currency1, amount1InYieldSource * 20 / 100);
 
         // lp2 removes
         vm.prank(lp2);
         BalanceDelta removeDeltalp2 = hook.removeReHypothecatedLiquidity(shareslp2);
 
-        // lp2 must have removed less assets, since the yield decay belongs to him
-        assertApproxEqAbs(removeDeltalp2.amount0(), removeDeltalp1.amount0() * 90 / 100, 1);
-        assertApproxEqAbs(removeDeltalp2.amount1(), removeDeltalp1.amount1() * 80 / 100, 1);
+        // lp2 must have removed less assets, since the yield decay belongs to it
+        assertApproxEqAbs(removeDeltalp2.amount0(), removeDeltalp1.amount0() * 90 / 100, TOL);
+        assertApproxEqAbs(removeDeltalp2.amount1(), removeDeltalp1.amount1() * 80 / 100, TOL);
 
         // both must have burned their shares
         assertEq(hook.balanceOf(lp1), 0);
@@ -554,20 +651,29 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertEq(hook.totalSupply(), 0);
     }
 
-    // -- differential -- //
+    // -- DIFFERENTIAL -- //
 
-    function testFuzz_differential_add_swap_remove_SingleLP(uint256 shares, int256 amountToSwap) public {
-        shares = uint256(bound(shares, 1e12, 1e28)); // add from 0.000001 to 10B shares
+    function testFuzz_differential_add_swap_remove_SingleLP(uint256 liquidity, int256 amountToSwap) public {
+        liquidity = uint256(bound(liquidity, 1e12, 1e28)); // liquidity from 0.000001 to 10B
         amountToSwap = int256(bound(amountToSwap, 1e10, 1e26)); // swap from 0.00000001 to 100M tokens
         // assume the swap is less than half of the added liquidity
-        vm.assume(amountToSwap * 2 < int256(shares));
+        vm.assume(amountToSwap * 2 < int256(liquidity));
+
+        // amounts equivalent to `liquidity` at the current price, so the hook's JIT provision matches an
+        // equivalent plain pool position.
+        (uint256 amount0, uint256 amount1) = LiquidityAmounts.getAmountsForLiquidity(
+            SQRT_PRICE_1_1,
+            TickMath.getSqrtPriceAtTick(hook.getTickLower()),
+            TickMath.getSqrtPriceAtTick(hook.getTickUpper()),
+            uint128(liquidity)
+        );
 
         // -- Add liquidity --
         // Unhooked
         BalanceDelta noHookAddDelta =
-            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), int256(uint256(shares)), 0);
+            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), int256(liquidity), 0);
         // Hooked
-        BalanceDelta hookedAddDelta = hook.addReHypothecatedLiquidity(shares);
+        (uint256 seedShares, BalanceDelta hookedAddDelta) = hook.seedLiquidity(amount0, amount1);
         assertApproxEqAbs(hookedAddDelta, noHookAddDelta, 1, "hookedAddDelta !~= noHookAddDelta");
 
         // -- Swap --
@@ -580,39 +686,9 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         // -- Remove liquidity --
         // Unhooked
         BalanceDelta noHookRemoveDelta =
-            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(uint256(shares)), 0);
+            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(liquidity), 0);
         // Hooked
-        BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(shares);
-        assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 2, "hookedRemoveDelta !~= noHookRemoveDelta");
-    }
-
-    // -- decimals/rounding -- //
-
-    function testFuzz_postLossDilutionAttack_add_loss_add_SingleLP(
-        uint8 lossPercentage,
-        uint128 sharesLP1,
-        uint128 sharesLP2
-    ) public {
-        lossPercentage = uint8(bound(lossPercentage, 1, 99));
-
-        sharesLP1 = uint128(bound(sharesLP1, 1e12, 1e28));
-        sharesLP2 = uint128(bound(sharesLP2, 1, 1e28));
-
-        // lp1 adds liquidity
-        vm.prank(lp1);
-        hook.addReHypothecatedLiquidity(sharesLP1);
-
-        uint256 amount0InYieldSource = hook.getAmountInYieldSource(currency0);
-        uint256 amount1InYieldSource = hook.getAmountInYieldSource(currency1);
-
-        // the vault suffers a loss
-        hook.burnYieldSourcesBalance(currency0, amount0InYieldSource * lossPercentage / 100);
-        hook.burnYieldSourcesBalance(currency1, amount1InYieldSource * lossPercentage / 100);
-
-        // preview attacker deposit
-        (uint256 amount0, uint256 amount1) = hook.previewMint(sharesLP2);
-
-        // if shares > 0 and amounts are zero, then the attacker can mint shares freely.
-        assertFalse(sharesLP2 > 0 && (amount0 == 0 && amount1 == 0));
+        BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares);
+        assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, TOL, "hookedRemoveDelta !~= noHookRemoveDelta");
     }
 }

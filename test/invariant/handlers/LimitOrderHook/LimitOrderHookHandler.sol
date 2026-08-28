@@ -232,6 +232,19 @@ contract LimitOrderHookHandler is BaseHandler {
         _swap(target < current, bound(amountSeed, AMOUNT_MIN_BOUND, AMOUNT_MAX_BOUND), target);
     }
 
+    /// @dev Moves the price from inside the hook's own unlock callback, which the pool does not report,
+    /// and fills what it crossed, as a subclass doing this must.
+    function internalSwapTo(uint256 tickSeed, uint256 amountSeed)
+        external
+        recordCall("internalSwapTo")
+        stateTransition
+    {
+        int24 target = _tickFromSeed(tickSeed);
+        vm.assume(target != _currentTick());
+
+        hook.internalSwap(key, target, bound(amountSeed, AMOUNT_MIN_BOUND, AMOUNT_MAX_BOUND), true);
+    }
+
     /// @dev Price excursion into a tick range and back out, without crossing it: fees accrue and no
     /// order fills. One action because the fuzzer rarely composes it from two.
     function swapRoundTrip(uint256 tickSeed, uint256 amountSeed) external recordCall("swapRoundTrip") stateTransition {

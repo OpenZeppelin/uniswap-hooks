@@ -52,9 +52,14 @@ library OrderIdLibrary {
  * Orders can be cancelled at any time until they are filled and their liquidity is removed from the pool.
  * Once completely filled, the resulting liquidity can be withdrawn from the pool.
  *
- * IMPORTANT: Fees accrued by an order are credited per unit of liquidity, so each owner is entitled to the
+ * NOTE: Fees accrued by an order are credited per unit of liquidity, so each owner is entitled to the
  * fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
  * in the order's favour, so a negligible residual can remain in the hook.
+ *
+ * IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
+ * does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
+ * {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next
+ * crossing is measured from it.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -222,26 +227,14 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         return this.afterInitialize.selector;
     }
 
-    /// @dev Hooks into the `afterSwap` hook to get the ticks crossed by the swap and fill the orders that are crossed, filling them.
+    /// @dev Hooks into the `afterSwap` hook to fill the orders the swap crossed.
     function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta, bytes calldata)
         internal
         virtual
         override
         returns (bytes4, int128)
     {
-        (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(key.toId(), key.tickSpacing);
-
-        if (lower > upper) return (this.afterSwap.selector, 0);
-
-        // set the last tick lower for the pool
-        _tickLowerLasts[key.toId()] = tickLower;
-
-        // note that a zeroForOne swap means that the pool is actually gaining token0, so limit
-        // order fills are the opposite of swap fills, hence the inversion below
-        bool zeroForOne = !params.zeroForOne;
-        for (; lower <= upper; lower += key.tickSpacing) {
-            _fillOrder(key, lower, zeroForOne);
-        }
+        _fillCrossedOrders(key, params.zeroForOne);
 
         return (this.afterSwap.selector, 0);
     }
@@ -577,11 +570,33 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
+     * @dev Fills the orders the price crossed since the tick last recorded for `key`, and records the tick
+     * it reached. `swapZeroForOne` is the swap's direction, not the filled orders'.
+     *
+     * IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
+     * pool does not report such a swap.
+     */
+    function _fillCrossedOrders(PoolKey memory key, bool swapZeroForOne) internal virtual {
+        PoolId poolId = key.toId();
+        (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(poolId, key.tickSpacing);
+
+        if (lower > upper) return;
+
+        // set the last tick lower for the pool
+        _tickLowerLasts[poolId] = tickLower;
+
+        bool zeroForOne = !swapZeroForOne;
+        for (; lower <= upper; lower += key.tickSpacing) {
+            _fillOrder(key, lower, zeroForOne);
+        }
+    }
+
+    /**
      * @dev Internal handler for filling limit orders when price crosses a tick. Takes a `PoolKey` `key`, target `tickLower`,
      * and direction `zeroForOne`. Removes liquidity from filled orders, mints the received currencies to the hook, and
      * updates order state to track filled amounts.
      */
-    function _fillOrder(PoolKey calldata key, int24 tickLower, bool zeroForOne) internal virtual {
+    function _fillOrder(PoolKey memory key, int24 tickLower, bool zeroForOne) internal virtual {
         // slither-disable-start calls-loop
         OrderIdLibrary.OrderId orderId = getOrderId(key, tickLower, zeroForOne);
 

@@ -79,6 +79,8 @@ contract LimitOrderHookInvariantsTest is HookTest {
             _fund(actors[i]);
         }
         _fund(address(handler));
+        // the hook pays for the swaps it makes itself
+        _fund(address(hook));
 
         targetContract(address(handler));
     }

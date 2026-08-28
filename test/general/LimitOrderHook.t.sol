@@ -129,6 +129,20 @@ contract LimitOrderHookTest is HookTest {
         );
     }
 
+    /// @dev The pool's current tick, rounded down to a tick lower.
+    function currentTickLower() internal view returns (int24) {
+        (, int24 tick,,) = manager.getSlot0(key.toId());
+        int24 compressed = tick / tickSpacing;
+        if (tick < 0 && tick % tickSpacing != 0) compressed--;
+        return compressed * tickSpacing;
+    }
+
+    /// @dev The hook pays for the swaps it makes itself.
+    function fundHook() internal {
+        IERC20Minimal(Currency.unwrap(currency0)).transfer(address(hook), 1e24);
+        IERC20Minimal(Currency.unwrap(currency1)).transfer(address(hook), 1e24);
+    }
+
     function rawOrderIdOf(PoolKey memory poolKey, int24 tickLower, bool zeroForOne) internal view returns (uint232) {
         return OrderIdLibrary.OrderId.unwrap(hook.getOrderId(poolKey, tickLower, zeroForOne));
     }
@@ -687,6 +701,72 @@ contract LimitOrderHookTest is HookTest {
         OrderInfoView memory order = getOrderInfoView(rawOrderIdOf(key, orderTick, true));
         assertEq(order.accFee0PerLiqX128, 0, "the new order credited currency0 fees it did not earn");
         assertEq(order.accFee1PerLiqX128, 0, "the new order credited currency1 fees it did not earn");
+    }
+
+    /// @dev The mirror of the downward landing: a swap stopping exactly on a `zeroForOne` order's upper
+    /// bound has converted its position wholly into the bought currency, so it fills.
+    function test_fill_landingOnTheOrdersUpperBound() public {
+        int24 orderTick = 0;
+        uint128 liquidity = 1e15;
+
+        hook.placeOrder(key, orderTick, true, liquidity);
+
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, orderTick + tickSpacing);
+
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(key.toId());
+        assertEq(
+            sqrtPriceX96,
+            TickMath.getSqrtPriceAtTick(orderTick + tickSpacing),
+            "the swap should stop exactly on the upper bound"
+        );
+
+        OrderInfoView memory order = getOrderInfoView(1);
+        assertTrue(order.filled, "an order converted at its upper bound should fill");
+        assertGt(order.principalCredited1, 0, "the fill should credit the bought currency");
+        assertEq(getLiquidityInPosition(key, orderTick, true), 0, "the fill should empty the position");
+    }
+
+    /// @dev The pool does not report a swap the hook makes from inside its own unlock callback, so the
+    /// hook records nothing for it and the recorded tick falls behind the price.
+    function test_fill_internalSwapDoesNotRecordTheTick() public {
+        fundHook();
+        int24 recordedBefore = hook.getTickLowerLast(key.toId());
+
+        hook.internalSwap(key, 3 * tickSpacing, 1e18, false);
+
+        assertGt(currentTickLower(), recordedBefore, "the swap should move the price");
+        assertEq(hook.getTickLowerLast(key.toId()), recordedBefore, "the hook should record nothing for it");
+    }
+
+    /// @dev A subclass that calls `_fillCrossedOrders` after its own swap records the tick and fills what
+    /// the swap crossed, which is what the pool would have done for an external swap.
+    function test_fill_internalSwapFillsCrossedOrders() public {
+        fundHook();
+        int24 orderTick = tickSpacing;
+        hook.placeOrder(key, orderTick, true, 1e15);
+
+        hook.internalSwap(key, 4 * tickSpacing, 1e18, true);
+
+        OrderInfoView memory order = getOrderInfoView(1);
+        assertTrue(order.filled, "the crossed order should fill");
+        assertGt(order.principalCredited1, 0, "the fill should credit the bought currency");
+        assertEq(order.principalCredited0, 0, "the fill should not credit the deposited currency");
+        assertEq(hook.getTickLowerLast(key.toId()), currentTickLower(), "the tick reached should be recorded");
+    }
+
+    /// @dev The same swap without that call leaves the order in the pool with the price past it.
+    function test_fill_internalSwapWithoutFillLeavesCrossedOrder() public {
+        fundHook();
+        int24 orderTick = tickSpacing;
+        uint128 liquidity = 1e15;
+        hook.placeOrder(key, orderTick, true, liquidity);
+
+        hook.internalSwap(key, 4 * tickSpacing, 1e18, false);
+
+        assertGt(currentTickLower(), orderTick, "the price should be past the order");
+        assertFalse(getOrderInfoView(1).filled, "the crossed order should stay unfilled");
+        assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
     }
 
     // ------------------------------------- Withdraw ------------------------------------- //

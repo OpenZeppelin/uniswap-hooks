@@ -99,6 +99,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// @dev The offset of the just-in-time position upper tick within {REHYPOTHECATION_HOOK_SLOT}.
     uint256 private constant TICK_UPPER_OFFSET = 1;
 
+    /// @dev The offset of the swap-cycle lock flag within {REHYPOTHECATION_HOOK_SLOT}.
+    uint256 private constant SWAP_CYCLE_OFFSET = 2;
+
     /// @dev Error thrown when trying to initialize a pool that has already been initialized.
     error AlreadyInitialized();
 
@@ -125,6 +128,10 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
 
     /// @dev Error thrown when a seed would mint fewer than the minimum safe initial `shares`, given `minShares`.
     error InsufficientSeed(uint256 shares, uint256 minShares);
+
+    /// @dev Error thrown when a liquidity operation and a swap cycle would overlap, to prevent reentrancy
+    /// across the just-in-time settlement.
+    error Locked();
 
     /**
      * @dev Emitted when a `sender` adds rehypothecated `shares` to the `poolKey` pool,
@@ -153,12 +160,25 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * @dev Initialize the hook's `poolKey` pool. The key stored by the hook is unique and
      * should not be modified so that it can safely be used across the hook's lifecycle.
      * Note that the hook supports only one pool key.
+     *
+     * WARNING: The first initialization permanently binds the hook to the pool it observes. Since pool
+     * initialization is permissionless, a third party could front-run and bind the hook to an unintended pool.
+     * Deployers should initialize the pool atomically with the hook's deployment to avoid this, and may
+     * override {_validatePoolKey} to enforce the expected pool key.
      */
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal virtual override returns (bytes4) {
         if (address(_poolKey.hooks) != address(0)) revert AlreadyInitialized();
+        _validatePoolKey(key);
         _poolKey = key;
         return this.beforeInitialize.selector;
     }
+
+    /**
+     * @dev Validates the `key` the hook is about to bind to on first initialization. Defaults to accepting any
+     * key; override to restrict the hook to an expected pool (e.g. specific currencies, fee or tick spacing)
+     * and defend against front-run binding. See {_beforeInitialize}.
+     */
+    function _validatePoolKey(PoolKey calldata key) internal view virtual {}
 
     /**
      * @dev Seeds the pool with its first liquidity, depositing `amount0` of `currency0` and `amount1` of
@@ -190,6 +210,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         returns (uint256 shares, BalanceDelta delta)
     {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
+        if (_inSwapCycle()) revert Locked();
         if (totalSupply() != 0) revert AlreadySeeded();
 
         shares = Math.sqrt(amount0 * amount1);
@@ -232,6 +253,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         returns (BalanceDelta delta)
     {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
+        if (_inSwapCycle()) revert Locked();
         if (totalSupply() == 0) revert NotSeeded();
         if (shares == 0) revert ZeroShares();
 
@@ -266,6 +288,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      */
     function removeReHypothecatedLiquidity(uint256 shares) public virtual nonReentrant returns (BalanceDelta delta) {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
+        if (_inSwapCycle()) revert Locked();
         if (shares == 0) revert ZeroShares();
 
         (uint256 amount0, uint256 amount1) = previewRedeem(shares);
@@ -305,6 +328,11 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+        // Lock the swap cycle: block liquidity operations from reentering mid-settlement, and block a swap
+        // from running inside a liquidity operation or another swap cycle. Cleared at the end of `_afterSwap`.
+        if (_reentrancyGuardEntered() || _inSwapCycle()) revert Locked();
+        _setSwapCycle(true);
+
         // Snapshot the position's tick bounds so `afterSwap` removes exactly what is added here.
         _snapshotActiveTicks();
 
@@ -342,6 +370,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
             _resolveHookDelta(key.currency0);
             _resolveHookDelta(key.currency1);
         }
+
+        // Unlock the swap cycle once settlement (and its external yield-source calls) is complete.
+        _setSwapCycle(false);
 
         return (this.afterSwap.selector, 0);
     }
@@ -505,6 +536,16 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// @dev The upper tick of the just-in-time position snapshotted for the current swap.
     function _activeTickUpper() private view returns (int24) {
         return int24(REHYPOTHECATION_HOOK_SLOT.offset(TICK_UPPER_OFFSET).asInt256().tload());
+    }
+
+    /// @dev Sets whether a swap cycle (`beforeSwap` through `afterSwap`) is currently in progress.
+    function _setSwapCycle(bool active) private {
+        REHYPOTHECATION_HOOK_SLOT.offset(SWAP_CYCLE_OFFSET).asBoolean().tstore(active);
+    }
+
+    /// @dev Whether a swap cycle is currently in progress.
+    function _inSwapCycle() private view returns (bool) {
+        return REHYPOTHECATION_HOOK_SLOT.offset(SWAP_CYCLE_OFFSET).asBoolean().tload();
     }
 
     /**

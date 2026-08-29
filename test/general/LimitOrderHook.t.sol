@@ -171,6 +171,16 @@ contract LimitOrderHookTest is HookTest {
     }
 
     /// @dev Runs the swap in and out of the order's range on both pools, accruing fees without filling.
+    /// @dev Makes a zero-value transfer of either currency to `to` revert, as a token that rejects them does.
+    function rejectZeroValueTransfersTo(address to) internal {
+        vm.mockCallRevert(
+            Currency.unwrap(currency0), abi.encodeCall(IERC20Minimal.transfer, (to, uint256(0))), "ZERO_VALUE_TRANSFER"
+        );
+        vm.mockCallRevert(
+            Currency.unwrap(currency1), abi.encodeCall(IERC20Minimal.transfer, (to, uint256(0))), "ZERO_VALUE_TRANSFER"
+        );
+    }
+
     function accrueFeesWithoutFilling() internal {
         vm.startPrank(swapper);
         swapToLimit(key, false, -1e18, tickSpacing / 2);
@@ -566,6 +576,19 @@ contract LimitOrderHookTest is HookTest {
         assertTrue(thisOwed0 > 0 || thisOwed1 > 0, "prior owner should keep its fees");
     }
 
+    function test_cancelOrder_noFeesOwed_doesNotTransfer() public {
+        hook.placeOrder(key, 0, true, 1e15);
+
+        (uint256 owed0, uint256 owed1) = feesOwedTo(1, address(this));
+        assertEq(owed0 + owed1, 0, "an order that accrued no fees should owe none");
+
+        rejectZeroValueTransfersTo(address(this));
+
+        hook.cancelOrder(key, 0, true, address(this));
+
+        assertEq(getOrderInfoView(1).liquidityTotal, 0, "the cancel should remove the liquidity");
+    }
+
     // ------------------------------------- Fill ------------------------------------- //
 
     function test_fill_singleOwner() public {
@@ -848,6 +871,23 @@ contract LimitOrderHookTest is HookTest {
 
         assertApproxEqAbs(ownerAmount0 - attackerAmount0, preJoin0, DUST, "attacker should not skim currency0 fees");
         assertApproxEqAbs(ownerAmount1 - attackerAmount1, preJoin1, DUST, "attacker should not skim currency1 fees");
+    }
+
+    function test_withdraw_nothingOwedOnSoldCurrency_doesNotTransfer() public {
+        hook.placeOrder(key, 0, true, 1e15);
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e18, 2 * tickSpacing);
+
+        (uint256 principal0,) = principalOwedTo(1, address(this));
+        (uint256 owed0,) = feesOwedTo(1, address(this));
+        assertEq(principal0 + owed0, 0, "a filled order should owe nothing on the currency it sold");
+
+        rejectZeroValueTransfersTo(address(this));
+
+        (uint256 amount0, uint256 amount1) = hook.withdraw(OrderIdLibrary.OrderId.wrap(1), address(this));
+
+        assertEq(amount0, 0, "the sold currency should pay out nothing");
+        assertGt(amount1, 0, "the bought currency should pay out the proceeds");
     }
 
     // ------------------------------------- Getters ------------------------------------- //

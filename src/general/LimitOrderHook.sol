@@ -673,10 +673,11 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it.
+     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it. Returns early when
+     * `amount` is zero, since the transfer it would otherwise make reverts for tokens that reject zero-value
+     * transfers, and for recipients that cannot receive the native currency.
      */
     function _sendFromClaims(Currency currency, address to, uint256 amount) private {
-        // skip zero-amount redemptions because some tokens revert on zero-value transfers
         if (amount == 0) return;
 
         // burn the claims the hook holds for the currency

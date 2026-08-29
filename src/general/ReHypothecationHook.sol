@@ -49,8 +49,9 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * NOTE: Since the hook owns the single liquidity position, it is possible to perform "leveraged liquidity" strategies,
  * which would give better pricing to swappers at the cost of the profitability of LP's and increased risks. See {_getLiquidityToUse}
  *
- * NOTE: A pool must be seeded once via {seedLiquidity} before liquidity can be added through {addReHypothecatedLiquidity}.
- * The seed sets the initial ratio and mints the first shares as `sqrt(amount0 * amount1)`, in a UniswapV2 like fashion.
+ * NOTE: A pool must be seeded via {seedLiquidity} before liquidity can be added through {addReHypothecatedLiquidity}.
+ * Seeding is allowed whenever the pool has no outstanding shares, i.e. at genesis or to revive the pool after a full
+ * withdrawal. The seed sets the ratio and mints shares as `sqrt(amount0 * amount1)`, in a UniswapV2 like fashion.
  * From there, a share represents a proportional claim over the hook's balances in the yield sources.
  *
  * WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
@@ -103,7 +104,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// @dev Error thrown when adding liquidity before the pool has been seeded.
     error NotSeeded();
 
-    /// @dev Error thrown when seeding a pool that has already been seeded.
+    /// @dev Error thrown when seeding a pool that still has outstanding shares.
     error AlreadySeeded();
 
     /// @dev Error thrown when a seed would mint fewer than the minimum safe initial `shares`, given `minShares`.
@@ -148,8 +149,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * `currency1` into the yield sources and minting `sqrt(amount0 * amount1)` shares to the caller, in a
      * UniswapV2 like fashion. The deposited amounts set the pool's initial ratio.
      *
-     * Callable once, permissionlessly, while no shares have been minted yet. Subsequent liquidity is added
-     * through {addReHypothecatedLiquidity}, which prices shares proportionally to the seeded balances.
+     * Callable permissionlessly whenever the pool has no outstanding shares: at genesis, or to revive the pool
+     * after a full withdrawal (since {addReHypothecatedLiquidity} reverts once the supply is zero). Subsequent
+     * liquidity is added through {addReHypothecatedLiquidity}, which prices shares proportionally to the seeded balances.
      *
      * The minted shares must be at least `100 * 10 ** _decimalsOffset()`, so the supply dominates the
      * virtual-shares offset used in {_shareToAmount} and the share price cannot be meaningfully inflated.
@@ -161,7 +163,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Requirements:
      * - Pool must be initialized
-     * - Pool must not have been seeded yet
+     * - Pool must have no outstanding shares (`totalSupply() == 0`)
      * - Resulting shares must be at least `100 * 10 ** _decimalsOffset()`
      * - Sender must have approved the hook to spend the required tokens
      */

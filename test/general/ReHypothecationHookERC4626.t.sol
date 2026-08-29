@@ -110,14 +110,19 @@ contract ReentrantYieldSourceMock is ERC4626YieldSourceMock {
     }
 }
 
-/// @dev A hook that only accepts a pool with a specific fee, exercising the {_validatePoolKey} override.
+/// @dev A hook that only accepts a pool with a specific fee, exercising the `_beforeInitialize` override.
 contract ValidatingReHypothecationMock is ReHypothecationERC4626Mock {
     error WrongPool();
 
     constructor(IPoolManager pm, address ys0, address ys1) ReHypothecationERC4626Mock(pm, ys0, ys1) {}
 
-    function _validatePoolKey(PoolKey calldata key) internal pure override {
+    function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
+        internal
+        override
+        returns (bytes4)
+    {
         if (key.fee != 3000) revert WrongPool();
+        return super._beforeInitialize(sender, key, sqrtPriceX96);
     }
 }
 
@@ -910,7 +915,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
     // -- POOL KEY VALIDATION -- //
 
-    function test_validatePoolKey_override_gatesBinding() public {
+    function test_beforeInitialize_override_gatesBinding() public {
         CappedERC4626Mock ys0v = new CappedERC4626Mock(IERC20(Currency.unwrap(currency0)));
         CappedERC4626Mock ys1v = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
         address hookAddr = _flagAddr(0x60000000000000000000000000000000);

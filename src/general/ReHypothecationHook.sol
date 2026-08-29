@@ -162,24 +162,27 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * should not be modified so that it can safely be used across the hook's lifecycle.
      * Note that the hook supports only one pool key.
      *
-     * WARNING: The first initialization permanently binds the hook to the pool it observes. Since pool
-     * initialization is permissionless, a third party could front-run and bind the hook to an unintended pool.
-     * Deployers should initialize the pool atomically with the hook's deployment to avoid this, and may
-     * override {_validatePoolKey} to enforce the expected pool key.
+     * WARNING: The first initialization permanently binds the hook to the pool it observes, and pool
+     * initialization is permissionless. A third party can front-run it and bind the hook to an unintended pool.
+     * Consider initializing the pool atomically with the hook's deployment. To reject an unexpected key on-chain,
+     * override this function:
+     *
+     * ```solidity
+     * function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
+     *     internal
+     *     override
+     *     returns (bytes4)
+     * {
+     *     if (key.fee != EXPECTED_FEE) revert WrongPool();
+     *     return super._beforeInitialize(sender, key, sqrtPriceX96);
+     * }
+     * ```
      */
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal virtual override returns (bytes4) {
         if (address(_poolKey.hooks) != address(0)) revert AlreadyInitialized();
-        _validatePoolKey(key);
         _poolKey = key;
         return this.beforeInitialize.selector;
     }
-
-    /**
-     * @dev Validates the `key` the hook is about to bind to on first initialization. Defaults to accepting any
-     * key; override to restrict the hook to an expected pool (e.g. specific currencies, fee or tick spacing)
-     * and defend against front-run binding. See {_beforeInitialize}.
-     */
-    function _validatePoolKey(PoolKey calldata key) internal view virtual {}
 
     /**
      * @dev Seeds the pool with its first liquidity, depositing `amount0` of `currency0` and `amount1` of
@@ -197,6 +200,13 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * NOTE: The amounts should be provided close to the pool's current price, otherwise part of the seeded
      * liquidity may sit idle until swaps rebalance it. See {_getLiquidityToUse}.
+     *
+     * WARNING: The deposited amounts set the ratio at which every later liquidity addition is priced, and
+     * seeding is permissionless. A third party can front-run the intended seed with a heavily skewed ratio.
+     * Since {_getLiquidityToUse} is bounded by the scarcer side, the hook is then left with negligible usable
+     * liquidity and cannot serve swaps. Deposited assets stay redeemable, and seeding reopens once the supply
+     * returns to zero. Consider seeding atomically with pool initialization, or overriding this function to
+     * restrict the caller.
      *
      * Requirements:
      * - Pool must be initialized

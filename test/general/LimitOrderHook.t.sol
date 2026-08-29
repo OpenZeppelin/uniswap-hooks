@@ -19,6 +19,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {BaseHook} from "src/base/BaseHook.sol";
 import {LimitOrderHook, OrderIdLibrary} from "src/general/LimitOrderHook.sol";
 import {LimitOrderHookMock} from "../../src/mocks/general/LimitOrderHookMock.sol";
+import {ERC20RejectZeroTransferMock} from "../../src/mocks/general/ERC20RejectZeroTransferMock.sol";
 import {HookTest} from "../utils/HookTest.sol";
 
 contract LimitOrderHookTest is HookTest {
@@ -192,6 +193,24 @@ contract LimitOrderHookTest is HookTest {
         swapToLimit(key, true, -1e18, -tickSpacing / 2);
         swapToLimit(noHookKey, true, -1e18, -tickSpacing / 2);
         vm.stopPrank();
+    }
+
+    function initRejectZeroTransferPool()
+        internal
+        returns (PoolKey memory poolKey, ERC20RejectZeroTransferMock token, bool tokenIsCurrency0)
+    {
+        token = new ERC20RejectZeroTransferMock();
+        Currency rejectingCurrency = Currency.wrap(address(token));
+
+        if (uint160(address(token)) < uint160(Currency.unwrap(currency0))) {
+            (poolKey,) = initPool(rejectingCurrency, currency0, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
+            tokenIsCurrency0 = true;
+        } else {
+            (poolKey,) = initPool(currency0, rejectingCurrency, IHooks(address(hook)), 3000, SQRT_PRICE_1_1);
+        }
+
+        token.mint(address(this), 1e30);
+        token.approve(address(hook), type(uint256).max);
     }
 
     // ------------------------------------- Place ------------------------------------- //
@@ -470,6 +489,31 @@ contract LimitOrderHookTest is HookTest {
     function test_cancelOrder_zeroLiquidity_reverts() public {
         vm.expectRevert(LimitOrderHook.ZeroLiquidity.selector);
         hook.cancelOrder(key, 0, true, address(this));
+    }
+
+    function test_cancelOrder_tokenRevertingOnZeroTransfer() public {
+        (PoolKey memory poolKey, ERC20RejectZeroTransferMock token, bool tokenIsCurrency0) =
+            initRejectZeroTransferPool();
+        int24 tickLower = tokenIsCurrency0 ? int24(0) : -poolKey.tickSpacing;
+        uint128 liquidity = 1e15;
+        uint256 balanceBefore = token.balanceOf(address(this));
+
+        hook.placeOrder(poolKey, tickLower, tokenIsCurrency0, liquidity);
+        assertLt(token.balanceOf(address(this)), balanceBefore, "placing should spend the rejecting token");
+
+        (uint256 owed0, uint256 owed1) = feesOwedTo(1, address(this));
+        assertEq(owed0, 0, "canceller should be owed no currency0 fees");
+        assertEq(owed1, 0, "canceller should be owed no currency1 fees");
+        (int128 pending0, int128 pending1) =
+            calculateFees(manager, poolKey.toId(), address(hook), tickLower, tickLower + poolKey.tickSpacing, 0);
+        assertEq(pending0, 0, "position should have no pending currency0 fees");
+        assertEq(pending1, 0, "position should have no pending currency1 fees");
+
+        hook.cancelOrder(poolKey, tickLower, tokenIsCurrency0, address(this));
+
+        assertApproxEqAbs(
+            token.balanceOf(address(this)), balanceBefore, DUST, "cancel should return the rejecting token principal"
+        );
     }
 
     function test_cancelOrder_afterFullCancel_newOrderId() public {
@@ -785,6 +829,21 @@ contract LimitOrderHookTest is HookTest {
         vm.prank(user);
         vm.expectRevert(LimitOrderHook.ZeroLiquidity.selector);
         hook.withdraw(OrderIdLibrary.OrderId.wrap(1), user);
+    }
+
+    function test_withdraw_tokenRevertingOnZeroTransfer() public {
+        (PoolKey memory poolKey,, bool tokenIsCurrency0) = initRejectZeroTransferPool();
+        int24 tickLower = tokenIsCurrency0 ? int24(0) : -poolKey.tickSpacing;
+        bool zeroForOne = tokenIsCurrency0;
+
+        hook.placeOrder(poolKey, tickLower, zeroForOne, 1e15);
+        vm.prank(swapper);
+        swapToLimit(poolKey, !zeroForOne, -1e18, zeroForOne ? 2 * poolKey.tickSpacing : -2 * poolKey.tickSpacing);
+
+        (uint256 amount0, uint256 amount1) = hook.withdraw(OrderIdLibrary.OrderId.wrap(1), address(this));
+
+        assertEq(tokenIsCurrency0 ? amount0 : amount1, 0, "withdraw should owe no rejecting token");
+        assertGt(tokenIsCurrency0 ? amount1 : amount0, 0, "withdraw should pay the filled principal");
     }
 
     function test_withdraw_singleOwner() public {

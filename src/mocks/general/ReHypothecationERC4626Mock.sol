@@ -110,7 +110,7 @@ contract ReHypothecationERC4626Mock is ReHypothecationHook {
 
     /// @dev Exposed internal function for testing
     function getLiquidityToUse() public view returns (uint256) {
-        return _getLiquidityToUse();
+        return _getLiquidityToUse(getTickLower(), getTickUpper());
     }
 
     /// @dev Exposed internal function for testing

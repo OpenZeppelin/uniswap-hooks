@@ -333,7 +333,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         _snapshotActiveTicks();
 
         // Get the liquidity to be used from the amounts currently deposited in the yield sources
-        uint256 liquidityToUse = _getLiquidityToUse();
+        uint256 liquidityToUse = _getLiquidityToUse(_activeTickLower(), _activeTickUpper());
         if (liquidityToUse > 0) _modifyLiquidity(liquidityToUse.toInt256());
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
@@ -503,13 +503,16 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * NOTE: Since liquidity is provided and withdrawn transiently during flash accounting, it can be virtually
      * inflated for performing "leveraged liquidity" strategies, which would give better pricing to swappers at
      * the cost of the profitability of LP's and increased risks.
+     *
+     * @param tickLower The lower tick of the position the liquidity is sized for.
+     * @param tickUpper The upper tick of the position the liquidity is sized for.
      */
-    function _getLiquidityToUse() internal view virtual returns (uint256) {
+    function _getLiquidityToUse(int24 tickLower, int24 tickUpper) internal view virtual returns (uint256) {
         (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
         return LiquidityAmounts.getLiquidityForAmounts(
             currentSqrtPriceX96,
-            TickMath.getSqrtPriceAtTick(getTickLower()),
-            TickMath.getSqrtPriceAtTick(getTickUpper()),
+            TickMath.getSqrtPriceAtTick(tickLower),
+            TickMath.getSqrtPriceAtTick(tickUpper),
             _getMaxWithdrawFromYieldSource(_poolKey.currency0),
             _getMaxWithdrawFromYieldSource(_poolKey.currency1)
         );

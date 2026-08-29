@@ -908,8 +908,8 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertTrue(ys1m.reentered(), "reentrancy should have been attempted");
         assertEq(
             ys1m.reentryRevertReason(),
-            abi.encodeWithSelector(ReHypothecationHook.Locked.selector),
-            "reentrant liquidity op should be blocked by the swap-cycle lock"
+            abi.encodeWithSelector(ReHypothecationHook.JITLocked.selector),
+            "reentrant liquidity op should be blocked by the JIT lock"
         );
     }
 

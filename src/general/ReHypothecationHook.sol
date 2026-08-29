@@ -100,8 +100,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// @dev The offset of the just-in-time position upper tick within {REHYPOTHECATION_HOOK_SLOT}.
     uint256 private constant TICK_UPPER_OFFSET = 1;
 
-    /// @dev The offset of the swap-cycle lock flag within {REHYPOTHECATION_HOOK_SLOT}.
-    uint256 private constant SWAP_CYCLE_OFFSET = 2;
+    /// @dev The offset of the JIT lock flag within {REHYPOTHECATION_HOOK_SLOT}.
+    uint256 private constant JIT_LOCK_OFFSET = 2;
 
     /// @dev Error thrown when trying to initialize a pool that has already been initialized.
     error AlreadyInitialized();
@@ -130,9 +130,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// @dev Error thrown when a seed would mint fewer than the minimum safe initial `shares`, given `minShares`.
     error InsufficientSeed(uint256 shares, uint256 minShares);
 
-    /// @dev Error thrown when a liquidity operation and a swap cycle would overlap, to prevent reentrancy
-    /// across the just-in-time settlement.
-    error Locked();
+    /// @dev Error thrown when a liquidity operation and the just-in-time settlement would overlap,
+    /// to prevent reentrancy across the JIT lock.
+    error JITLocked();
 
     /**
      * @dev Emitted when a `sender` adds rehypothecated `shares` to the `poolKey` pool,
@@ -162,21 +162,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * should not be modified so that it can safely be used across the hook's lifecycle.
      * Note that the hook supports only one pool key.
      *
-     * WARNING: The first initialization permanently binds the hook to the pool it observes, and pool
-     * initialization is permissionless. A third party can front-run it and bind the hook to an unintended pool.
-     * Consider initializing the pool atomically with the hook's deployment. To reject an unexpected key on-chain,
-     * override this function:
-     *
-     * ```solidity
-     * function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
-     *     internal
-     *     override
-     *     returns (bytes4)
-     * {
-     *     if (key.fee != EXPECTED_FEE) revert WrongPool();
-     *     return super._beforeInitialize(sender, key, sqrtPriceX96);
-     * }
-     * ```
+     * WARNING: Pool initialization is permissionless and permanently binds the hook to the first key it sees,
+     * so a third party can front-run it with an unintended pool. Initialize the pool atomically with the hook's
+     * deployment, or override this function to reject an unexpected key.
      */
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal virtual override returns (bytes4) {
         if (address(_poolKey.hooks) != address(0)) revert AlreadyInitialized();
@@ -187,26 +175,22 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /**
      * @dev Seeds the pool with its first liquidity, depositing `amount0` of `currency0` and `amount1` of
      * `currency1` into the yield sources and minting `sqrt(amount0 * amount1)` shares to the caller, in a
-     * UniswapV2 like fashion. The deposited amounts set the pool's initial ratio.
+     * UniswapV2 like fashion. The deposited amounts set the ratio at which {addReHypothecatedLiquidity}
+     * prices every later addition.
      *
      * Callable permissionlessly whenever the pool has no outstanding shares: at genesis, or to revive the pool
-     * after a full withdrawal (since {addReHypothecatedLiquidity} reverts once the supply is zero). Subsequent
-     * liquidity is added through {addReHypothecatedLiquidity}, which prices shares proportionally to the seeded balances.
-     *
-     * The minted shares must be at least `100 * 10 ** _decimalsOffset()`, so the supply dominates the
-     * virtual-shares offset used in {_shareToAmount} and the share price cannot be meaningfully inflated.
+     * after a full withdrawal. The minted shares must be at least `100 * 10 ** _decimalsOffset()`, so the supply
+     * dominates the virtual-shares offset used in {_shareToAmount} and the share price cannot be inflated.
      *
      * Returns the `shares` minted and a balance `delta` representing the assets deposited into the hook.
      *
      * NOTE: The amounts should be provided close to the pool's current price, otherwise part of the seeded
      * liquidity may sit idle until swaps rebalance it. See {_getLiquidityToUse}.
      *
-     * WARNING: The deposited amounts set the ratio at which every later liquidity addition is priced, and
-     * seeding is permissionless. A third party can front-run the intended seed with a heavily skewed ratio.
-     * Since {_getLiquidityToUse} is bounded by the scarcer side, the hook is then left with negligible usable
-     * liquidity and cannot serve swaps. Deposited assets stay redeemable, and seeding reopens once the supply
-     * returns to zero. Consider seeding atomically with pool initialization, or overriding this function to
-     * restrict the caller.
+     * WARNING: A third party can front-run the intended seed with a heavily skewed ratio. Since
+     * {_getLiquidityToUse} is bounded by the scarcer side, the hook is then left with negligible usable liquidity
+     * and cannot serve swaps. Deposited assets stay redeemable, and seeding reopens once the supply returns to
+     * zero. Consider seeding atomically with pool initialization, or overriding this function to restrict the caller.
      *
      * Requirements:
      * - Pool must be initialized
@@ -222,7 +206,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         returns (uint256 shares, BalanceDelta delta)
     {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
-        if (_inSwapCycle()) revert Locked();
+        if (_isJITLocked()) revert JITLocked();
         if (totalSupply() != 0) revert AlreadySeeded();
 
         shares = Math.sqrt(amount0 * amount1);
@@ -265,7 +249,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         returns (BalanceDelta delta)
     {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
-        if (_inSwapCycle()) revert Locked();
+        if (_isJITLocked()) revert JITLocked();
         if (totalSupply() == 0) revert NotSeeded();
         if (shares == 0) revert ZeroShares();
 
@@ -300,7 +284,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      */
     function removeReHypothecatedLiquidity(uint256 shares) public virtual nonReentrant returns (BalanceDelta delta) {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
-        if (_inSwapCycle()) revert Locked();
+        if (_isJITLocked()) revert JITLocked();
         if (shares == 0) revert ZeroShares();
 
         (uint256 amount0, uint256 amount1) = previewRedeem(shares);
@@ -340,10 +324,10 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // Lock the swap cycle: block liquidity operations from reentering mid-settlement, and block a swap
-        // from running inside a liquidity operation or another swap cycle. Cleared at the end of `_afterSwap`.
-        if (_reentrancyGuardEntered() || _inSwapCycle()) revert Locked();
-        _setSwapCycle(true);
+        // Take the JIT lock: block liquidity operations from reentering mid-settlement, and block a swap
+        // from running inside a liquidity operation or another swap. Released at the end of `_afterSwap`.
+        if (_reentrancyGuardEntered() || _isJITLocked()) revert JITLocked();
+        _setJITLocked(true);
 
         // Snapshot the position's tick bounds so `afterSwap` removes exactly what is added here.
         _snapshotActiveTicks();
@@ -383,8 +367,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
             _resolveHookDelta(key.currency1);
         }
 
-        // Unlock the swap cycle once settlement (and its external yield-source calls) is complete.
-        _setSwapCycle(false);
+        // Release the JIT lock once settlement (and its external yield-source calls) is complete.
+        _setJITLocked(false);
 
         return (this.afterSwap.selector, 0);
     }
@@ -550,14 +534,14 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         return int24(REHYPOTHECATION_HOOK_SLOT.offset(TICK_UPPER_OFFSET).asInt256().tload());
     }
 
-    /// @dev Sets whether a swap cycle (`beforeSwap` through `afterSwap`) is currently in progress.
-    function _setSwapCycle(bool active) private {
-        REHYPOTHECATION_HOOK_SLOT.offset(SWAP_CYCLE_OFFSET).asBoolean().tstore(active);
+    /// @dev Sets whether the JIT lock (`beforeSwap` through `afterSwap`) is held.
+    function _setJITLocked(bool active) private {
+        REHYPOTHECATION_HOOK_SLOT.offset(JIT_LOCK_OFFSET).asBoolean().tstore(active);
     }
 
-    /// @dev Whether a swap cycle is currently in progress.
-    function _inSwapCycle() private view returns (bool) {
-        return REHYPOTHECATION_HOOK_SLOT.offset(SWAP_CYCLE_OFFSET).asBoolean().tload();
+    /// @dev Whether the JIT lock is currently held.
+    function _isJITLocked() private view returns (bool) {
+        return REHYPOTHECATION_HOOK_SLOT.offset(JIT_LOCK_OFFSET).asBoolean().tload();
     }
 
     /**

@@ -56,6 +56,8 @@ library OrderIdLibrary {
  * fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
  * in the order's favour, so a negligible residual can remain in the hook.
  *
+ * NOTE: Native currency orders are not supported.
+ *
  * IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
  * does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
  * {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next
@@ -175,6 +177,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /// @dev Limit order is not filled.
     error NotFilled();
 
+    /// @dev Limit order was placed in a pool holding the native currency.
+    error NativeCurrencyUnsupported();
+
     /**
      * @dev Emitted when an `owner` places a limit order with the given `orderId`, in the pool identified by `key`,
      * at the given `tickLower`, `zeroForOne` indicating the direction of the order, and `liquidity` the amount of liquidity
@@ -258,6 +263,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         onlyValidPools(key.hooks)
     {
         if (liquidity == 0) revert ZeroLiquidity();
+
+        if (key.currency0.isAddressZero()) revert NativeCurrencyUnsupported();
 
         OrderInfo storage orderInfo;
 

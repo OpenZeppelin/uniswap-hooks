@@ -21,11 +21,16 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 library CurrencySettler {
     using SafeERC20 for IERC20;
 
+    /// @dev The native currency was settled on behalf of a `payer` other than the contract paying it.
+    error InvalidNativePayer(address payer);
+
     /**
      * @notice Settle (pay) a currency to the `PoolManager`
      * @param currency Currency to settle
      * @param poolManager `PoolManager` to settle to
-     * @param payer Address of the payer, which can be the hook itself or an external address.
+     * @param payer Address of the payer, which can be the hook itself or an external address. The native
+     * currency is paid from the balance of the calling contract, so `payer` must be that contract when
+     * `currency` is native and `burn` is false, otherwise the call reverts with {InvalidNativePayer}.
      * @param amount Amount to send
      * @param burn If true, burn the ERC-6909 token, otherwise transfer ERC-20 to the `PoolManager`
      */
@@ -38,6 +43,10 @@ library CurrencySettler {
         if (burn) {
             poolManager.burn(payer, currency.toId(), amount);
         } else if (currency.isAddressZero()) {
+            // the value is paid from the balance of the calling contract, so settling for another payer
+            // would spend currency that payer never provided
+            if (payer != address(this)) revert InvalidNativePayer(payer);
+
             poolManager.sync(currency);
             poolManager.settle{value: amount}();
         } else {

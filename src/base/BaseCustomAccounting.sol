@@ -265,8 +265,15 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
         // Handle each currency amount based on its sign after applying the liquidity modification
         if (principalDelta.amount0() < 0) {
-            // If amount0 is negative, send tokens from the sender to the pool
-            key.currency0.settle(poolManager, data.sender, uint256(int256(-principalDelta.amount0())), false);
+            // If amount0 is negative, send tokens from the sender to the pool. The native currency is paid
+            // from this contract, which holds the sender's value for the length of the call
+            key.currency0
+                .settle(
+                    poolManager,
+                    key.currency0.isAddressZero() ? address(this) : data.sender,
+                    uint256(int256(-principalDelta.amount0())),
+                    false
+                );
         } else {
             // If amount0 is positive, send tokens from the pool to the sender
             key.currency0.take(poolManager, data.sender, uint256(int256(principalDelta.amount0())), false);

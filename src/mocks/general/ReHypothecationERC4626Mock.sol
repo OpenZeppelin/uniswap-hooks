@@ -50,6 +50,7 @@ contract ReHypothecationERC4626Mock is ReHypothecationHook {
     /// @dev Override to disable native currency, which is not supported by ERC-4626 yield sources.
     function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
         internal
+        virtual
         override
         returns (bytes4)
     {

@@ -82,6 +82,50 @@ contract DynamicTickReHypothecationMock is ReHypothecationERC4626Mock {
     }
 }
 
+/// @dev A yield source that attempts to reenter the hook's `removeReHypothecatedLiquidity` on withdraw, to
+/// test that liquidity operations are locked during a swap's settlement.
+contract ReentrantYieldSourceMock is ERC4626YieldSourceMock {
+    ReHypothecationHook public hook;
+    bool public reentered;
+    bytes public reentryRevertReason;
+    bool private _armed;
+
+    constructor(IERC20 token) ERC4626YieldSourceMock(token) {}
+
+    function arm(ReHypothecationHook hook_) external {
+        hook = hook_;
+        _armed = true;
+    }
+
+    function withdraw(uint256 assets, address receiver, address owner) public override returns (uint256) {
+        if (_armed) {
+            _armed = false;
+            reentered = true;
+            try hook.removeReHypothecatedLiquidity(1) {}
+            catch (bytes memory reason) {
+                reentryRevertReason = reason;
+            }
+        }
+        return super.withdraw(assets, receiver, owner);
+    }
+}
+
+/// @dev A hook that only accepts a pool with a specific fee, exercising the `_beforeInitialize` override.
+contract ValidatingReHypothecationMock is ReHypothecationERC4626Mock {
+    error WrongPool();
+
+    constructor(IPoolManager pm, address ys0, address ys1) ReHypothecationERC4626Mock(pm, ys0, ys1) {}
+
+    function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
+        internal
+        override
+        returns (bytes4)
+    {
+        if (key.fee != 3000) revert WrongPool();
+        return super._beforeInitialize(sender, key, sqrtPriceX96);
+    }
+}
+
 contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
     using StateLibrary for IPoolManager;
     using SafeCast for *;
@@ -835,5 +879,66 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
         (, int24 tickAfter,,) = StateLibrary.getSlot0(manager, dynKey.toId());
         assertTrue(tickBefore != tickAfter, "swap should move the tick, exercising the range shift");
+    }
+
+    // -- SETTLEMENT REENTRANCY -- //
+
+    function test_afterSwap_liquidityReentrancy_blocked() public {
+        // currency1's yield source reenters removeReHypothecatedLiquidity during afterSwap's withdrawal.
+        CappedERC4626Mock ys0m = new CappedERC4626Mock(IERC20(Currency.unwrap(currency0)));
+        ReentrantYieldSourceMock ys1m = new ReentrantYieldSourceMock(IERC20(Currency.unwrap(currency1)));
+        address hookAddr = _flagAddr(0x50000000000000000000000000000000);
+        deployCodeTo(
+            "src/mocks/general/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
+            abi.encode(address(manager), address(ys0m), address(ys1m)),
+            hookAddr
+        );
+        ReHypothecationERC4626Mock h = ReHypothecationERC4626Mock(payable(hookAddr));
+        (PoolKey memory k,) = initPool(currency0, currency1, IHooks(hookAddr), fee, SQRT_PRICE_1_1);
+
+        IERC20(Currency.unwrap(currency0)).approve(hookAddr, type(uint256).max);
+        IERC20(Currency.unwrap(currency1)).approve(hookAddr, type(uint256).max);
+        h.seedLiquidity(SEED, SEED);
+
+        ys1m.arm(h);
+
+        // zeroForOne swap → hook owes currency1 → withdraw(currency1) in afterSwap → reentrancy attempt.
+        swap(k, true, -1e15, ZERO_BYTES);
+
+        assertTrue(ys1m.reentered(), "reentrancy should have been attempted");
+        assertEq(
+            ys1m.reentryRevertReason(),
+            abi.encodeWithSelector(ReHypothecationHook.JITLocked.selector),
+            "reentrant liquidity op should be blocked by the JIT lock"
+        );
+    }
+
+    // -- POOL KEY VALIDATION -- //
+
+    function test_beforeInitialize_override_gatesBinding() public {
+        CappedERC4626Mock ys0v = new CappedERC4626Mock(IERC20(Currency.unwrap(currency0)));
+        CappedERC4626Mock ys1v = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
+        address hookAddr = _flagAddr(0x60000000000000000000000000000000);
+        deployCodeTo(
+            "test/general/ReHypothecationHookERC4626.t.sol:ValidatingReHypothecationMock",
+            abi.encode(address(manager), address(ys0v), address(ys1v)),
+            hookAddr
+        );
+
+        // A pool with the wrong fee (1000) is rejected by the override, so the hook stays unbound.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                hookAddr,
+                IHooks.beforeInitialize.selector,
+                abi.encodeWithSelector(ValidatingReHypothecationMock.WrongPool.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        initPool(currency0, currency1, IHooks(hookAddr), 1000, SQRT_PRICE_1_1);
+
+        // The expected fee (3000) is accepted and binds the hook.
+        initPool(currency0, currency1, IHooks(hookAddr), 3000, SQRT_PRICE_1_1);
+        assertEq(ValidatingReHypothecationMock(payable(hookAddr)).getPoolKey().fee, 3000);
     }
 }

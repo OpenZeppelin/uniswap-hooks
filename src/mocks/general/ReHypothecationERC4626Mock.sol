@@ -50,6 +50,7 @@ contract ReHypothecationERC4626Mock is ReHypothecationHook {
     /// @dev Override to disable native currency, which is not supported by ERC-4626 yield sources.
     function _beforeInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96)
         internal
+        virtual
         override
         returns (bytes4)
     {
@@ -87,6 +88,11 @@ contract ReHypothecationERC4626Mock is ReHypothecationHook {
         return yieldSource.convertToAssets(yieldSourceShares);
     }
 
+    /// @inheritdoc ReHypothecationHook
+    function _getMaxWithdrawFromYieldSource(Currency currency) internal view virtual override returns (uint256) {
+        return IERC4626(getCurrencyYieldSource(currency)).maxWithdraw(address(this));
+    }
+
     /// @dev Override to disable native currency, which is not supported by ERC-4626 yield sources.
     receive() external payable override {
         revert UnsupportedCurrency();
@@ -95,6 +101,16 @@ contract ReHypothecationERC4626Mock is ReHypothecationHook {
     /// @dev Exposed internal function for testing
     function getAmountInYieldSource(Currency currency) public view returns (uint256) {
         return _getAmountInYieldSource(currency);
+    }
+
+    /// @dev Exposed internal function for testing
+    function getMaxWithdrawFromYieldSource(Currency currency) public view returns (uint256) {
+        return _getMaxWithdrawFromYieldSource(currency);
+    }
+
+    /// @dev Exposed internal function for testing
+    function getLiquidityToUse() public view returns (uint256) {
+        return _getLiquidityToUse(getTickLower(), getTickUpper());
     }
 
     /// @dev Exposed internal function for testing

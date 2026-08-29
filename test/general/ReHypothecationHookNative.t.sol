@@ -13,6 +13,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 // Internal imports
 import {ReHypothecationNativeMock, NativeYieldSourceMock} from "../../src/mocks/general/ReHypothecationNativeMock.sol";
 import {ERC4626YieldSourceMock} from "../../src/mocks/general/ReHypothecationERC4626Mock.sol";
@@ -44,7 +46,12 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
         yieldSource1 = new ERC4626YieldSourceMock(IERC20(Currency.unwrap(currency1)));
 
         hook = ReHypothecationNativeMock(
-            payable(address(uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG)))
+            payable(address(
+                    uint160(
+                        Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
+                            | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+                    )
+                ))
         );
         deployCodeTo(
             "src/mocks/general/ReHypothecationNativeMock.sol:ReHypothecationNativeMock",
@@ -101,7 +108,10 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
 
     function test_initialize_native_currency_supported() public {
         // Native currency (address(0)) should be supported in the native mock
-        uint160 hookFlags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
+        uint160 hookFlags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
         ReHypothecationNativeMock newHook = ReHypothecationNativeMock(
             payable(address(hookFlags + 0x10000000000000000000000000000000)) // generate a different address
         );
@@ -118,18 +128,31 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
     // -- DIFFERENTIAL TESTING -- //
 
     function test_differential_add_swap_remove() public {
-        uint256 shares = 1e18;
+        uint256 liquidity = 1e18;
         int256 amountToSwap = -1e14; // exact input
 
-        // Add liquidity
-        BalanceDelta noHookAddDelta = modifyLiquidityRouter.modifyLiquidity{value: 1e18}(
+        // amounts equivalent to `liquidity` at the current price, so the hook's JIT provision matches an
+        // equivalent plain pool position.
+        (uint256 amount0, uint256 amount1) = LiquidityAmounts.getAmountsForLiquidity(
+            SQRT_PRICE_1_1,
+            TickMath.getSqrtPriceAtTick(hook.getTickLower()),
+            TickMath.getSqrtPriceAtTick(hook.getTickUpper()),
+            uint128(liquidity)
+        );
+
+        // Add liquidity. `amount0` rounds down, while the pool charges the rounded-up amount, so fund the
+        // router with the full `liquidity`-equivalent native value (any excess does not affect the delta).
+        BalanceDelta noHookAddDelta = modifyLiquidityRouter.modifyLiquidity{value: liquidity}(
             noHookKey,
             ModifyLiquidityParams({
-                tickLower: hook.getTickLower(), tickUpper: hook.getTickUpper(), liquidityDelta: int256(shares), salt: 0
+                tickLower: hook.getTickLower(),
+                tickUpper: hook.getTickUpper(),
+                liquidityDelta: int256(liquidity),
+                salt: 0
             }),
             ""
         );
-        BalanceDelta hookedAddDelta = hook.addReHypothecatedLiquidity{value: 1e18}(shares);
+        (uint256 seedShares, BalanceDelta hookedAddDelta) = hook.seedLiquidity{value: amount0}(amount0, amount1);
         assertApproxEqAbs(hookedAddDelta, noHookAddDelta, 10, "hookedAddDelta !~= noHookAddDelta");
 
         // Swap
@@ -138,10 +161,10 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
         BalanceDelta hookedSwapDelta = swapNativeInput(key, true, amountToSwap, ZERO_BYTES, (-amountToSwap).toUint256());
         assertApproxEqAbs(hookedSwapDelta, noHookSwapDelta, 10, "hookedSwapDelta !~= noHookSwapDelta");
 
-        // // Remove liquidity
+        // Remove liquidity
         BalanceDelta noHookRemoveDelta =
-            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(shares), 0);
-        BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(shares);
-        assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 2, "hookedRemoveDelta !~= noHookRemoveDelta");
+            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(liquidity), 0);
+        BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares);
+        assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 1e9, "hookedRemoveDelta !~= noHookRemoveDelta");
     }
 }

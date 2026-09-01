@@ -42,6 +42,15 @@ contract LimitOrderHookTest is HookTest {
     /// @dev Tolerance for the truncation dust of pro-rata splits.
     uint256 constant DUST = 2;
 
+    /**
+     * @dev Donation used to load an order with fees. It stays under `type(int128).max` so that realizing it
+     * does not overflow the pool's own fee accounting.
+     */
+    uint256 constant DONATION = 2 ** 126;
+
+    /// @dev Tolerance for the pool fees the donation cycle accrues alongside the donation itself.
+    uint256 constant SWAP_FEE_DUST = 1e6;
+
     function setUp() public {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
@@ -193,6 +202,22 @@ contract LimitOrderHookTest is HookTest {
         swapToLimit(key, true, -1e18, -tickSpacing / 2);
         swapToLimit(noHookKey, true, -1e18, -tickSpacing / 2);
         vm.stopPrank();
+    }
+
+    /**
+     * @dev Swaps into the order's range, donates `amount0` to it, and swaps back out so the tick stays
+     * placeable. The order's liquidity must be the pool's only liquidity for it to earn the whole donation.
+     */
+    function donateToOrder(int24 orderTick, uint256 amount0) internal {
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e6, orderTick + tickSpacing / 2);
+        assertGe(getCurrentTick(key), orderTick, "the donation needs the price inside the order's range");
+
+        donateRouter.donate(key, amount0, 0, ZERO_BYTES);
+
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e6, orderTick - tickSpacing / 2);
+        assertLt(getCurrentTick(key), orderTick, "the order should be out of range again");
     }
 
     function initRejectZeroTransferPool()
@@ -624,6 +649,39 @@ contract LimitOrderHookTest is HookTest {
         assertTrue(thisOwed0 > 0 || thisOwed1 > 0, "prior owner should keep its fees");
     }
 
+    /**
+     * @dev Fees reach the hook in batches that each fit in `int128`, but an owner's entitlement aggregates
+     * them, so it can exceed the amount a single `PoolManager` settlement accepts.
+     */
+    function test_cancelOrder_feesAboveTheSignedSettlementLimit() public {
+        int24 orderTick = tickSpacing;
+
+        // the sole owner of the pool's only liquidity earns every donation
+        hook.placeOrder(key, orderTick, true, 1);
+
+        // each donation is realized on its own over the single unit of liquidity
+        for (uint256 i = 0; i < 2; i++) {
+            donateToOrder(orderTick, DONATION);
+            vm.startPrank(user);
+            hook.placeOrder(key, orderTick, true, 1);
+            hook.cancelOrder(key, orderTick, true, user);
+            vm.stopPrank();
+        }
+
+        (uint256 owed0,) = feesOwedTo(1, address(this));
+        assertGt(owed0, uint256(uint128(type(int128).max)), "the fees owed should exceed one settlement");
+
+        uint256 balanceBefore = currency0.balanceOf(address(this));
+        hook.cancelOrder(key, orderTick, true, address(this));
+
+        assertApproxEqAbs(
+            currency0.balanceOf(address(this)) - balanceBefore,
+            owed0,
+            SWAP_FEE_DUST,
+            "the owner should receive the fees owed"
+        );
+    }
+
     // ------------------------------------- Fill ------------------------------------- //
 
     function test_fill_singleOwner() public {
@@ -987,6 +1045,36 @@ contract LimitOrderHookTest is HookTest {
 
         assertApproxEqAbs(ownerAmount0 - attackerAmount0, preJoin0, DUST, "attacker should not skim currency0 fees");
         assertApproxEqAbs(ownerAmount1 - attackerAmount1, preJoin1, DUST, "attacker should not skim currency1 fees");
+    }
+
+    /// @dev A filled order pays principal and fees together, which is subject to the same settlement limit.
+    function test_withdraw_feesAboveTheSignedSettlementLimit() public {
+        int24 orderTick = tickSpacing;
+
+        hook.placeOrder(key, orderTick, true, 1);
+
+        for (uint256 i = 0; i < 2; i++) {
+            donateToOrder(orderTick, DONATION);
+            vm.startPrank(user);
+            hook.placeOrder(key, orderTick, true, 1);
+            hook.cancelOrder(key, orderTick, true, user);
+            vm.stopPrank();
+        }
+
+        (uint256 owed0,) = feesOwedTo(1, address(this));
+        assertGt(owed0, uint256(uint128(type(int128).max)), "the fees owed should exceed one settlement");
+
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e18, orderTick + 2 * tickSpacing);
+        assertTrue(getOrderInfoView(1).filled, "the order should be filled");
+
+        uint256 balanceBefore = currency0.balanceOf(address(this));
+        (uint256 amount0,) = hook.withdraw(OrderIdLibrary.OrderId.wrap(1), address(this));
+
+        assertGt(amount0, uint256(uint128(type(int128).max)), "the payout should exceed one settlement");
+        assertEq(
+            currency0.balanceOf(address(this)) - balanceBefore, amount0, "the owner should receive the full payout"
+        );
     }
 
     // ------------------------------------- Getters ------------------------------------- //

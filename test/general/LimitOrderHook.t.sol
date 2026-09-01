@@ -195,6 +195,14 @@ contract LimitOrderHookTest is HookTest {
         vm.stopPrank();
     }
 
+    /// @dev A key this hook can initialize itself, distinct from `key` through its tick spacing.
+    function selfInitKey() internal view returns (PoolKey memory) {
+        return
+            PoolKey({
+                currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 10, hooks: IHooks(address(hook))
+            });
+    }
+
     function initRejectZeroTransferPool()
         internal
         returns (PoolKey memory poolKey, ERC20RejectZeroTransferMock token, bool tokenIsCurrency0)
@@ -811,6 +819,45 @@ contract LimitOrderHookTest is HookTest {
         assertGt(currentTickLower(), orderTick, "the price should be past the order");
         assertFalse(getOrderInfoView(1).filled, "the crossed order should stay unfilled");
         assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
+    }
+
+    function test_fill_selfInitializeDoesNotRecordTheTick() public {
+        PoolKey memory selfKey = selfInitKey();
+
+        hook.selfInitialize(selfKey, TickMath.getSqrtPriceAtTick(6015), false);
+
+        assertEq(getCurrentTick(selfKey), 6015, "the pool should be initialized away from tick zero");
+        assertEq(hook.getTickLowerLast(selfKey.toId()), 0, "the hook should record nothing for it");
+    }
+
+    function test_fill_selfInitializeWithoutRecordFillsUncrossedOrders() public {
+        PoolKey memory selfKey = selfInitKey();
+        hook.selfInitialize(selfKey, TickMath.getSqrtPriceAtTick(6015), false);
+
+        // an order far below the price, which no swap in this test reaches
+        hook.placeOrder(selfKey, 3000, false, 1e12);
+        uint232 orderId = rawOrderIdOf(selfKey, 3000, false);
+
+        vm.prank(swapper);
+        swapToLimit(selfKey, true, -1e6, 6014);
+
+        assertGt(getCurrentTick(selfKey), 3000, "the price should stay above the order");
+        assertTrue(getOrderInfoView(orderId).filled, "the tick-zero baseline fills it anyway");
+    }
+
+    function test_fill_selfInitializeWithRecordLeavesUncrossedOrders() public {
+        PoolKey memory selfKey = selfInitKey();
+        hook.selfInitialize(selfKey, TickMath.getSqrtPriceAtTick(6015), true);
+
+        assertEq(hook.getTickLowerLast(selfKey.toId()), 6010, "the baseline should be the initialization tick");
+
+        hook.placeOrder(selfKey, 3000, false, 1e12);
+        uint232 orderId = rawOrderIdOf(selfKey, 3000, false);
+
+        vm.prank(swapper);
+        swapToLimit(selfKey, true, -1e6, 6014);
+
+        assertFalse(getOrderInfoView(orderId).filled, "an order the price never crossed should stay unfilled");
     }
 
     // ------------------------------------- Withdraw ------------------------------------- //

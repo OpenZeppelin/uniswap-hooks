@@ -813,6 +813,31 @@ contract LimitOrderHookTest is HookTest {
         assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
     }
 
+    /// @dev A swap the hook does not record leaves the window spanning orders the price converted moving
+    /// the other way. Filling the swap's direction credits them the currency their owners deposited.
+    function test_fill_unrecordedSwapDoesNotFillAgainstTheWindow() public {
+        fundHook();
+
+        // the hook moves the price down from inside its own unlock callback, which the pool does not
+        // report, so the recorded tick stays above the price
+        hook.internalSwap(key, -10 * tickSpacing, 1e18, false);
+        assertEq(hook.getTickLowerLast(key.toId()), 0, "the hook should record nothing for it");
+
+        int24 orderTick = -5 * tickSpacing;
+        uint128 liquidity = 1e15;
+        hook.placeOrder(key, orderTick, true, liquidity);
+
+        // an upward swap that stops below the order: the window reaches the order, the price does not
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, -8 * tickSpacing);
+        assertLt(currentTickLower(), orderTick, "the price should stop below the order");
+
+        OrderInfoView memory order = getOrderInfoView(1);
+        assertFalse(order.filled, "an order the price never reached should not fill");
+        assertEq(order.principalCredited0, 0, "the fill should not credit the deposited currency");
+        assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
+    }
+
     // ------------------------------------- Withdraw ------------------------------------- //
 
     function test_withdraw_notFilled_reverts() public {

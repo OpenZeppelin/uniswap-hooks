@@ -8,6 +8,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -158,6 +159,15 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /// @dev Tracks each order id for a given `orderKey`, defined by `keccak256` of the `poolKey`, `tickLower`, and `zeroForOne`.
     mapping(bytes32 orderKey => OrderIdLibrary.OrderId orderId) private _orderIds;
+
+    /**
+     * @dev Tracks which ticks hold a live order, one bitmap per pool and direction.
+     *
+     * A tick whose bit is clear is never visited, so its order would never fill while its liquidity
+     * converted. Keying by direction lets each order own its bit outright, with no need to check the
+     * opposite direction before clearing.
+     */
+    mapping(PoolId poolId => mapping(bool zeroForOne => mapping(int16 wordPos => uint256 word))) private _orderTicks;
 
     /// @dev Tracks the order info for each order id.
     mapping(OrderIdLibrary.OrderId orderId => OrderInfo orderInfo) private _orderInfos;
@@ -593,8 +603,21 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         _tickLowerLasts[poolId] = tickLower;
 
         bool zeroForOne = !swapZeroForOne;
-        for (; lower <= upper; lower += key.tickSpacing) {
-            _fillOrder(key, lower, zeroForOne);
+        mapping(int16 => uint256) storage orderTicks = _orderTicks[poolId][zeroForOne];
+
+        // the scan looks strictly above the tick it is given, so the lower bound is filled first
+        _fillOrder(key, lower, zeroForOne);
+
+        int24 tick = lower;
+        while (tick < upper) {
+            // `next` is strictly above `tick`, whether or not it holds an order, so this terminates
+            (int24 next, bool initialized) =
+                TickBitmap.nextInitializedTickWithinOneWord(orderTicks, tick, key.tickSpacing, false);
+
+            if (next > upper) break;
+            if (initialized) _fillOrder(key, next, zeroForOne);
+
+            tick = next;
         }
     }
 
@@ -788,9 +811,21 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /**
      * @dev Internal helper that updates the order ID mapping. Takes a `PoolKey` `key`, target `tickLower`, direction
      * `zeroForOne`, and `orderId` to store. Associates the given order id with the pool position's hash.
+     *
+     * The only writer of both the order id and its bit. The bit is flipped from the transition observed
+     * here, not from the caller's intent, so writing the same liveness twice leaves the bitmap alone.
      */
     function _setOrderId(PoolKey memory key, int24 tickLower, bool zeroForOne, OrderIdLibrary.OrderId orderId) private {
-        _orderIds[keccak256(abi.encode(key, tickLower, zeroForOne))] = orderId;
+        bytes32 orderKey = keccak256(abi.encode(key, tickLower, zeroForOne));
+
+        bool wasLive = !_orderIds[orderKey].equals(ORDER_ID_DEFAULT);
+        bool isLive = !orderId.equals(ORDER_ID_DEFAULT);
+
+        _orderIds[orderKey] = orderId;
+
+        if (wasLive != isLive) {
+            TickBitmap.flipTick(_orderTicks[key.toId()][zeroForOne], tickLower, key.tickSpacing);
+        }
     }
 
     /**
@@ -829,6 +864,16 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      */
     function getTickLowerLast(PoolId poolId) public view returns (int24) {
         return _tickLowerLasts[poolId];
+    }
+
+    /// @dev Returns whether `tickLower` is recorded as holding a live order in direction `zeroForOne`.
+    function _hasOrderAtTick(PoolId poolId, int24 tickSpacing, int24 tickLower, bool zeroForOne)
+        internal
+        view
+        returns (bool)
+    {
+        (int16 wordPos, uint8 bitPos) = TickBitmap.position(TickBitmap.compress(tickLower, tickSpacing));
+        return _orderTicks[poolId][zeroForOne][wordPos] & (uint256(1) << bitPos) != 0;
     }
 
     /**

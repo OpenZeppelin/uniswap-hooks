@@ -56,6 +56,9 @@ library OrderIdLibrary {
  * fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
  * in the order's favour, so a negligible residual can remain in the hook.
  *
+ * NOTE: Principal withdrawals are floor-rounded against the liquidity remaining at the time of withdrawal, so
+ * an early withdrawer can lose a negligible residual to whichever owner withdraws last.
+ *
  * NOTE: Native currency orders are not supported.
  *
  * IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
@@ -728,9 +731,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /**
      * @dev Returns `liquidity`'s share of the principal credited to `orderInfo`, which is what a withdrawal
-     * of that liquidity pays out. The principal is credited once by the fill and never grows, so splitting it
-     * pro-rata while the total liquidity decreases alongside it is exact and independent of the order in
-     * which the owners withdraw.
+     * of that liquidity pays out. Each payout truncates and its remainder rolls forward to the owners still
+     * in the order, so the principal is paid out exactly and the last owner out carries every remainder.
      */
     function _principalOwed(OrderInfo storage orderInfo, uint128 liquidity)
         private

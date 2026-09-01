@@ -61,7 +61,9 @@ library OrderIdLibrary {
  * IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
  * does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
  * {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next
- * crossing is measured from it.
+ * crossing is measured from it. For the same reason {_afterInitialize} does not run for a pool this hook
+ * initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
+ * tick-zero baseline and the first swap fills every order between tick zero and the price.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -230,6 +232,18 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         _tickLowerLasts[key.toId()] = _getTickLower(tick, key.tickSpacing);
 
         return this.afterInitialize.selector;
+    }
+
+    /**
+     * @dev Records the tick `key` currently sits at as the baseline the next crossing is measured from,
+     * without filling anything.
+     *
+     * IMPORTANT: A subclass that initializes a pool itself must call this, since the pool does not report
+     * such an initialization back to the hook.
+     */
+    function _recordTickLowerLast(PoolKey memory key) internal virtual {
+        PoolId poolId = key.toId();
+        _tickLowerLasts[poolId] = _getTickLower(_getCurrentTick(poolId), key.tickSpacing);
     }
 
     /// @dev Hooks into the `afterSwap` hook to fill the orders the swap crossed.

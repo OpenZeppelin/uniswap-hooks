@@ -21,6 +21,16 @@ contract LimitOrderHookMock is LimitOrderHook {
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     /**
+     * @dev Initializes `key` from inside this hook, which the pool does not report back to it. Records the
+     * baseline when `recordTick`, and models the subclass that forgets to otherwise.
+     */
+    function selfInitialize(PoolKey calldata key, uint160 sqrtPriceX96, bool recordTick) external {
+        poolManager.initialize(key, sqrtPriceX96);
+
+        if (recordTick) _recordTickLowerLast(key);
+    }
+
+    /**
      * @dev Swaps `amount` toward `targetTick` from inside this hook's own unlock callback, which the pool
      * does not report. Fills the orders it crossed when `fillCrossed`, and models the subclass that forgets
      * to otherwise.

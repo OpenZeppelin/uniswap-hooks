@@ -42,6 +42,16 @@ contract LimitOrderHookTest is HookTest {
     /// @dev Tolerance for the truncation dust of pro-rata splits.
     uint256 constant DUST = 2;
 
+    /**
+     * @dev Donation used to drive an order's fee accumulator. Credited over a single unit of liquidity it
+     * advances the accumulator by `2**254`, so four of them take it past `2**256`. It stays under
+     * `type(int128).max` so that realizing it does not overflow the pool's own fee accounting.
+     */
+    uint256 constant DONATION = 2 ** 126;
+
+    /// @dev Tolerance for the pool fees the donation cycle accrues alongside the donation itself.
+    uint256 constant SWAP_FEE_DUST = 1e6;
+
     function setUp() public {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
@@ -109,14 +119,19 @@ contract LimitOrderHookTest is HookTest {
         ) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(rawOrderId));
     }
 
-    /// @dev Fees owed to `owner`, recomputed from the order accumulators and the owner's checkpoints.
+    /**
+     * @dev Fees owed to `owner`, recomputed from the order accumulators and the owner's checkpoints. The
+     * growth is taken modulo `2**256`, as the hook takes it, so it stays exact once an accumulator wraps.
+     */
     function feesOwedTo(uint232 rawOrderId, address owner) internal view returns (uint256, uint256) {
         LimitOrderHook.UserInfo memory info = hook.getUserInfo(OrderIdLibrary.OrderId.wrap(rawOrderId), owner);
         OrderInfoView memory order = getOrderInfoView(rawOrderId);
-        return (
-            FullMath.mulDiv(order.accFee0PerLiqX128 - info.feeCheckpoint0X128, info.liquidity, FixedPoint128.Q128),
-            FullMath.mulDiv(order.accFee1PerLiqX128 - info.feeCheckpoint1X128, info.liquidity, FixedPoint128.Q128)
-        );
+        unchecked {
+            return (
+                FullMath.mulDiv(order.accFee0PerLiqX128 - info.feeCheckpoint0X128, info.liquidity, FixedPoint128.Q128),
+                FullMath.mulDiv(order.accFee1PerLiqX128 - info.feeCheckpoint1X128, info.liquidity, FixedPoint128.Q128)
+            );
+        }
     }
 
     /// @dev Principal owed to `owner`, its liquidity's pro-rata share of the credited principal.
@@ -193,6 +208,39 @@ contract LimitOrderHookTest is HookTest {
         swapToLimit(key, true, -1e18, -tickSpacing / 2);
         swapToLimit(noHookKey, true, -1e18, -tickSpacing / 2);
         vm.stopPrank();
+    }
+
+    /**
+     * @dev Swaps into the order's range, donates `amount0` to it, and swaps back out so the tick stays
+     * placeable. The order's liquidity must be the pool's only liquidity for it to earn the whole donation.
+     */
+    function donateToOrder(int24 orderTick, uint256 amount0) internal {
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e6, orderTick + tickSpacing / 2);
+        assertGe(getCurrentTick(key), orderTick, "the donation needs the price inside the order's range");
+
+        donateRouter.donate(key, amount0, 0, ZERO_BYTES);
+
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e6, orderTick - tickSpacing / 2);
+        assertLt(getCurrentTick(key), orderTick, "the order should be out of range again");
+    }
+
+    /**
+     * @dev Recycles a donation through an order holding a single unit of liquidity. `joiner` adds a unit,
+     * which realizes the donation over the unit already there, and `leaver` cancels to take it back out.
+     * The order is left holding `joiner`'s single unit. Returns what `leaver` received in `currency0`.
+     */
+    function recycleDonation(int24 orderTick, address joiner, address leaver) internal returns (uint256 received) {
+        donateToOrder(orderTick, DONATION);
+
+        vm.prank(joiner);
+        hook.placeOrder(key, orderTick, true, 1);
+
+        uint256 balanceBefore = currency0.balanceOf(leaver);
+        vm.prank(leaver);
+        hook.cancelOrder(key, orderTick, true, leaver);
+        received = currency0.balanceOf(leaver) - balanceBefore;
     }
 
     function initRejectZeroTransferPool()
@@ -987,6 +1035,84 @@ contract LimitOrderHookTest is HookTest {
 
         assertApproxEqAbs(ownerAmount0 - attackerAmount0, preJoin0, DUST, "attacker should not skim currency0 fees");
         assertApproxEqAbs(ownerAmount1 - attackerAmount1, preJoin1, DUST, "attacker should not skim currency1 fees");
+    }
+
+    // -------------------------------- Fee accumulator -------------------------------- //
+
+    /**
+     * @dev Fees are credited per unit of liquidity, so an order holding a single unit advances its
+     * accumulator by the fee scaled by `2**128`. Repeated donations therefore take it past `2**256`, which
+     * must wrap rather than block the order and the swaps that cross its tick.
+     */
+    function test_feeAccumulator_wrapDoesNotBlockTheOrder() public {
+        int24 orderTick = tickSpacing;
+
+        // a single unit, and the pool's only liquidity, so the order earns every donation
+        hook.placeOrder(key, orderTick, true, 1);
+
+        bool wrapped;
+        for (uint256 i = 0; i < 6; i++) {
+            uint256 accBefore = getOrderInfoView(1).accFee0PerLiqX128;
+
+            (address joiner, address leaver) = i % 2 == 0 ? (user, address(this)) : (address(this), user);
+            uint256 received = recycleDonation(orderTick, joiner, leaver);
+
+            if (getOrderInfoView(1).accFee0PerLiqX128 < accBefore) wrapped = true;
+
+            assertApproxEqAbs(
+                received, DONATION, SWAP_FEE_DUST, "the leaving owner should recover the donation it earned"
+            );
+            assertEq(getOrderInfoView(1).liquidityTotal, 1, "the order should be back to a single unit");
+        }
+
+        assertTrue(wrapped, "the accumulator should have wrapped");
+
+        // the tick is still usable, so a swap crossing it fills the order
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e18, orderTick + 2 * tickSpacing);
+        assertTrue(getOrderInfoView(1).filled, "a crossing swap should still fill the order");
+    }
+
+    /**
+     * @dev An owner adding liquidity is re-checkpointed behind the accumulator by what it is already owed.
+     * When the accumulator has just wrapped, that offset exceeds it and the checkpoint has to wrap too.
+     */
+    function test_feeAccumulator_wrapKeepsFeesOwedOnPlacement() public {
+        int24 orderTick = tickSpacing;
+
+        hook.placeOrder(key, orderTick, true, 1);
+
+        // three donations leave the accumulator one donation short of `2**256`
+        recycleDonation(orderTick, user, address(this));
+        recycleDonation(orderTick, address(this), user);
+        recycleDonation(orderTick, user, address(this));
+
+        // the fourth wraps it, and credits the donation to `user`, the sole owner at the time
+        uint256 accBefore = getOrderInfoView(1).accFee0PerLiqX128;
+        donateToOrder(orderTick, DONATION);
+        hook.placeOrder(key, orderTick, true, 1);
+        assertLt(getOrderInfoView(1).accFee0PerLiqX128, accBefore, "the accumulator should have wrapped");
+
+        (uint256 owedBefore,) = feesOwedTo(1, user);
+        assertApproxEqAbs(owedBefore, DONATION, SWAP_FEE_DUST, "the donation should be owed to the sole owner");
+
+        // the offset this placement checkpoints `user` by is larger than the wrapped accumulator
+        vm.prank(user);
+        hook.placeOrder(key, orderTick, true, 1);
+
+        (uint256 owedAfter,) = feesOwedTo(1, user);
+        assertApproxEqAbs(owedAfter, owedBefore, DUST, "adding liquidity should not change the fees owed");
+
+        // and the owner can still take them out
+        uint256 balanceBefore = currency0.balanceOf(user);
+        vm.prank(user);
+        hook.cancelOrder(key, orderTick, true, user);
+        assertApproxEqAbs(
+            currency0.balanceOf(user) - balanceBefore,
+            owedAfter,
+            SWAP_FEE_DUST,
+            "the owner should recover the fees owed across the wrap"
+        );
     }
 
     // ------------------------------------- Getters ------------------------------------- //

@@ -43,7 +43,7 @@ contract LimitOrderHookMock is LimitOrderHook {
 
         BalanceDelta delta = poolManager.swap(key, params, "");
 
-        if (fillCrossed) _fillCrossedOrders(key, params.zeroForOne);
+        if (fillCrossed) _fillCrossedOrders(key);
 
         _settle(key, delta);
 

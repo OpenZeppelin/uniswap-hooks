@@ -233,13 +233,13 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /// @dev Hooks into the `afterSwap` hook to fill the orders the swap crossed.
-    function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta, bytes calldata)
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         virtual
         override
         returns (bytes4, int128)
     {
-        _fillCrossedOrders(key, params.zeroForOne);
+        _fillCrossedOrders(key);
 
         return (this.afterSwap.selector, 0);
     }
@@ -578,21 +578,23 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /**
      * @dev Fills the orders the price crossed since the tick last recorded for `key`, and records the tick
-     * it reached. `swapZeroForOne` is the swap's direction, not the filled orders'.
+     * it reached. Orders fill against the way the price moved over that span. A swap the hook did not
+     * record can leave that opposite to the swap's own direction.
      *
      * IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
      * pool does not report such a swap.
      */
-    function _fillCrossedOrders(PoolKey memory key, bool swapZeroForOne) internal virtual {
+    function _fillCrossedOrders(PoolKey memory key) internal virtual {
         PoolId poolId = key.toId();
         (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(poolId, key.tickSpacing);
 
         if (lower > upper) return;
 
+        bool zeroForOne = tickLower >= getTickLowerLast(poolId);
+
         // set the last tick lower for the pool
         _tickLowerLasts[poolId] = tickLower;
 
-        bool zeroForOne = !swapZeroForOne;
         for (; lower <= upper; lower += key.tickSpacing) {
             _fillOrder(key, lower, zeroForOne);
         }

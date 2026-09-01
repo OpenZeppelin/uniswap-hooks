@@ -26,6 +26,11 @@ library CurrencySettler {
 
     /**
      * @notice Settle (pay) a currency to the `PoolManager`
+     *
+     * IMPORTANT: The funds are pulled from `payer`, while the delta settled belongs to the calling contract.
+     * Derive `payer` from trusted context, given that an untrusted value lets an attacker pay the debt of the
+     * calling contract with an allowance that a third party granted to it.
+     *
      * @param currency Currency to settle
      * @param poolManager `PoolManager` to settle to
      * @param payer Address of the payer, which can be the hook itself or an external address. The native

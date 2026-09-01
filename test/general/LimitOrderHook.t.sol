@@ -802,6 +802,43 @@ contract LimitOrderHookTest is HookTest {
         assertLt(used, 3_000_000, "a 5000 spacing move should not cost a lookup per tick");
     }
 
+    /// @dev A word of the bitmap spans 256 spaced ticks, so a scan that steps past one must not lose the
+    /// orders on either side of the seam.
+    function test_fill_scanCrossesAWordBoundary() public {
+        PoolKey memory wordKey = PoolKey({
+            currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 1, hooks: IHooks(address(hook))
+        });
+        manager.initialize(wordKey, TickMath.getSqrtPriceAtTick(0));
+
+        // at a spacing of one, ticks 255 and 256 sit in adjacent words
+        hook.placeOrder(wordKey, 255, true, 1e12);
+        hook.placeOrder(wordKey, 256, true, 1e12);
+        uint232 below = rawOrderIdOf(wordKey, 255, true);
+        uint232 above = rawOrderIdOf(wordKey, 256, true);
+
+        vm.prank(swapper);
+        swapToLimit(wordKey, false, -1e21, 300);
+
+        assertGt(getCurrentTick(wordKey), 256, "the price should be past both orders");
+        assertTrue(getOrderInfoView(below).filled, "the order below the seam should fill");
+        assertTrue(getOrderInfoView(above).filled, "the order above the seam should fill");
+    }
+
+    /// @dev Negative ticks compress to negative word positions, which the scan must index the same way.
+    function test_fill_scanOverNegativeTicks() public {
+        hook.placeOrder(key, -60, false, 1e15);
+        hook.placeOrder(key, -180, false, 1e15);
+        uint232 near = rawOrderIdOf(key, -60, false);
+        uint232 far = rawOrderIdOf(key, -180, false);
+
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e21, -240);
+
+        assertLt(getCurrentTick(key), -180, "the price should be past both orders");
+        assertTrue(getOrderInfoView(near).filled, "the nearer negative order should fill");
+        assertTrue(getOrderInfoView(far).filled, "the further negative order should fill");
+    }
+
     // ------------------------------------- Withdraw ------------------------------------- //
 
     function test_withdraw_notFilled_reverts() public {

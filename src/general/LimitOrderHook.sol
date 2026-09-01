@@ -150,6 +150,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /// @dev The default order id, used to indicate that an order is not yet initialized.
     OrderIdLibrary.OrderId internal constant ORDER_ID_DEFAULT = OrderIdLibrary.OrderId.wrap(0);
 
+    /// @dev The largest amount the `PoolManager` settles at once, since it accounts deltas as an `int128`.
+    uint256 private constant MAX_SETTLEMENT = uint256(uint128(type(int128).max));
+
     /// @dev The next order id to be used.
     OrderIdLibrary.OrderId private _orderIdNext = OrderIdLibrary.OrderId.wrap(1);
 
@@ -695,17 +698,28 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it. Returns early when
-     * `amount` is zero, since the transfer it would otherwise make reverts for tokens that reject zero-value
-     * transfers, and for recipients that cannot receive the native currency.
+     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it.
+     *
+     * An owner's entitlement aggregates batches that each fit in an `int128`, so it can exceed
+     * `MAX_SETTLEMENT`. It is then redeemed over several settlements, each pass replacing a redemption
+     * that would otherwise revert.
+     *
+     * Nothing is sent when `amount` is zero, since the transfer it would otherwise make reverts for tokens
+     * that reject zero-value transfers, and for recipients that cannot receive the native currency.
      */
     function _sendFromClaims(Currency currency, address to, uint256 amount) private {
-        if (amount == 0) return;
+        uint256 id = currency.toId();
 
-        // burn the claims the hook holds for the currency
-        poolManager.burn(address(this), currency.toId(), amount);
-        // take the currency from the pool and send it to the `to` address
-        poolManager.take(currency, to, amount);
+        while (amount > 0) {
+            uint256 settlement = amount < MAX_SETTLEMENT ? amount : MAX_SETTLEMENT;
+
+            poolManager.burn(address(this), id, settlement);
+            poolManager.take(currency, to, settlement);
+
+            unchecked {
+                amount -= settlement;
+            }
+        }
     }
 
     /**

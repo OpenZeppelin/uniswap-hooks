@@ -595,6 +595,110 @@ contract BaseCustomCurveTest is HookTest {
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1);
     }
 
+    /// @dev Shares are backed by the reserves, so the last redemption empties the hook whatever the swaps did to
+    /// the composition of those reserves.
+    function test_removeLiquidity_lastExit_strandsNothing() public {
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                100 ether, 100 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -100 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(
+                hook.balanceOf(address(this)), 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        assertEq(hook.totalSupply(), 0);
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 0);
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0);
+    }
+
+    /// @dev Minting and redemption are inverses, so a deposit of any ratio survives a round trip untouched.
+    function test_removeLiquidity_roundTripFuzz_succeeds(uint112 amount0, uint112 amount1) public {
+        vm.assume(uint256(amount0) + uint256(amount1) > 0);
+
+        uint256 prevBalance0 = key.currency0.balanceOf(address(this));
+        uint256 prevBalance1 = key.currency1.balanceOf(address(this));
+
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                amount0, amount1, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(
+                hook.balanceOf(address(this)), 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        assertEq(key.currency0.balanceOf(address(this)), prevBalance0);
+        assertEq(key.currency1.balanceOf(address(this)), prevBalance1);
+        assertEq(hook.totalSupply(), 0);
+    }
+
+    /// @dev Equal deposits earn equal shares, and a swap between the two redemptions moves the reserve composition
+    /// without moving its total, so both providers withdraw the value they put in.
+    function test_removeLiquidity_twoProviders_noDilution() public {
+        deal(Currency.unwrap(currency0), address(1), 2 ** 100);
+        deal(Currency.unwrap(currency1), address(1), 2 ** 100);
+        vm.startPrank(address(1));
+        ERC20(Currency.unwrap(currency0)).approve(address(hook), type(uint256).max);
+        ERC20(Currency.unwrap(currency1)).approve(address(hook), type(uint256).max);
+        vm.stopPrank();
+
+        BaseCustomAccounting.AddLiquidityParams memory addParams = BaseCustomAccounting.AddLiquidityParams(
+            100 ether, 100 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+        );
+
+        hook.addLiquidity(addParams);
+        vm.prank(address(1));
+        hook.addLiquidity(addParams);
+
+        assertEq(hook.balanceOf(address(this)), hook.balanceOf(address(1)));
+
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -50 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        uint256 prevBalance0 = key.currency0.balanceOf(address(this));
+        uint256 prevBalance1 = key.currency1.balanceOf(address(this));
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(
+                hook.balanceOf(address(this)), 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+        assertEq(
+            (key.currency0.balanceOf(address(this)) - prevBalance0)
+                + (key.currency1.balanceOf(address(this)) - prevBalance1),
+            200 ether
+        );
+
+        uint256 prevOther0 = key.currency0.balanceOf(address(1));
+        uint256 prevOther1 = key.currency1.balanceOf(address(1));
+        uint256 otherShares = hook.balanceOf(address(1));
+        vm.prank(address(1));
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(otherShares, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
+        );
+        assertEq(
+            (key.currency0.balanceOf(address(1)) - prevOther0) + (key.currency1.balanceOf(address(1)) - prevOther1),
+            200 ether
+        );
+    }
+
     /// @dev Per `IHookEvents.HookSwap` NatSpec: amount0/amount1 are positive for input, negative for output.
     /// The mock is a constant-sum 1:1 curve, so the absolute values are equal on both sides. Exercises all 4
     /// (zeroForOne x exactInput) combinations in a single test.

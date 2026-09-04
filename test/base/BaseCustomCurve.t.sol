@@ -19,6 +19,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 // Internal imports
 import {BaseCustomCurveMock} from "../../src/mocks/base/BaseCustomCurveMock.sol";
+import {BaseCustomCurveFeeMock} from "../../src/mocks/base/BaseCustomCurveFeeMock.sol";
 import {HookTest} from "../utils/HookTest.sol";
 
 contract BaseCustomCurveTest is HookTest {
@@ -598,6 +599,87 @@ contract BaseCustomCurveTest is HookTest {
             assertEq(amount0, expected0, string.concat(tag, "amount0 sign/magnitude mismatch"));
             assertEq(amount1, expected1, string.concat(tag, "amount1 sign/magnitude mismatch"));
         }
+    }
+
+    /// @dev Per `IHookEvents.HookSwap` NatSpec: `hookLPfeeAmount0` and `hookLPfeeAmount1` are the LP fees charged in
+    /// currency0 and currency1. The fee accrues in the unspecified currency, which is the output on exact input swaps
+    /// and the input on exact output swaps. Exercises all 4 (zeroForOne x exactInput) combinations in a single test.
+    function test_hookSwap_event_feeOnUnspecifiedCurrency() public {
+        uint160 flags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+                | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+        );
+        // Deploy above the flag bits, so that the pool differs from the one initialized in `setUp`
+        BaseCustomCurveFeeMock feeHook = BaseCustomCurveFeeMock(payable(address(flags | (uint160(1) << 20))));
+        deployCodeTo(
+            "src/mocks/base/BaseCustomCurveFeeMock.sol:BaseCustomCurveFeeMock",
+            abi.encode(address(manager)),
+            address(feeHook)
+        );
+
+        (key, id) =
+            initPool(currency0, currency1, IHooks(address(feeHook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1);
+        ERC20(Currency.unwrap(currency0)).approve(address(feeHook), type(uint256).max);
+        ERC20(Currency.unwrap(currency1)).approve(address(feeHook), type(uint256).max);
+
+        feeHook.setSwapFee(300); // 3%
+        feeHook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 9 ether, 9 ether, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        for (uint256 i = 0; i < 4; i++) {
+            bool zeroForOne = i < 2;
+            bool exactInput = i % 2 == 0;
+            _assertHookSwapFee(
+                feeHook,
+                zeroForOne,
+                exactInput,
+                string.concat("[zeroForOne=", zeroForOne ? "T" : "F", ", exactInput=", exactInput ? "T" : "F", "] ")
+            );
+        }
+    }
+
+    /// @dev Swaps `0.1 ether` on `feeHook` and asserts that the fee both accrues in and is reported against the
+    /// unspecified currency, which is currency`zeroForOne == exactInput ? 1 : 0`.
+    function _assertHookSwapFee(BaseCustomCurveFeeMock feeHook, bool zeroForOne, bool exactInput, string memory tag)
+        private
+    {
+        int256 amount = 0.1 ether;
+        int256 fee = int256(feeHook.swapFee(amount));
+        assertEq(fee, 0.003 ether, string.concat(tag, "unexpected mock fee"));
+
+        Currency unspecified = zeroForOne == exactInput ? currency1 : currency0;
+        int256 balanceBefore = int256(manager.balanceOf(address(feeHook), unspecified.toId()));
+
+        vm.recordLogs();
+        swapRouter.swap(
+            key,
+            SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: exactInput ? -amount : amount,
+                sqrtPriceLimitX96: zeroForOne ? SQRT_PRICE_1_2 : SQRT_PRICE_2_1
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        // The hook retains the fee in the unspecified currency: on a 1:1 curve it settles `amount - fee` of output
+        // for an exact input swap, and takes `amount + fee` of input for an exact output swap.
+        assertEq(
+            int256(manager.balanceOf(address(feeHook), unspecified.toId())) - balanceBefore,
+            exactInput ? fee - amount : fee + amount,
+            string.concat(tag, "the fee did not accrue in the unspecified currency")
+        );
+
+        (bytes memory data, bool found) = findLogData(vm.getRecordedLogs(), address(feeHook), HookSwap.selector);
+        assertTrue(found, string.concat(tag, "HookSwap not emitted"));
+        (,, uint128 hookLPfeeAmount0, uint128 hookLPfeeAmount1) = abi.decode(data, (int128, int128, uint128, uint128));
+
+        (int256 expectedFee0, int256 expectedFee1) = zeroForOne == exactInput ? (int256(0), fee) : (fee, int256(0));
+        assertEq(int256(uint256(hookLPfeeAmount0)), expectedFee0, string.concat(tag, "hookLPfeeAmount0 mismatch"));
+        assertEq(int256(uint256(hookLPfeeAmount1)), expectedFee1, string.concat(tag, "hookLPfeeAmount1 mismatch"));
     }
 
     /// @dev Per the `BaseCustomCurve._modifyLiquidity` flow, the emitted `HookModifyLiquidity` amounts

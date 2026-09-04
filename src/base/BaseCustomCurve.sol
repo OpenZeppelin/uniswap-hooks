@@ -123,53 +123,29 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
             returnDelta = toBeforeSwapDelta(-specifiedAmount.toInt128(), unspecifiedAmount.toInt128());
         }
 
-        // Emit the swap event with the amounts ordered correctly and signed per the
-        // `IHookEvents.HookSwap` convention (positive for input, negative for output).
-        // NOTE: the fee is paid in the input currency.
+        // Emit the swap event with the amounts and the fee ordered by currency. The `returnDelta` components
+        // already follow the `IHookEvents.HookSwap` convention, which is positive for input and negative for output.
+        // NOTE: the fee is paid in the unspecified currency.
         if (specified == key.currency0) {
-            if (exactInput) {
-                // currency0 is input, currency1 is output
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    specifiedAmount.toInt128(),
-                    -unspecifiedAmount.toInt128(),
-                    swapFeeAmount.toUint128(),
-                    0
-                );
-            } else {
-                // currency0 is output, currency1 is input
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    -specifiedAmount.toInt128(),
-                    unspecifiedAmount.toInt128(),
-                    0,
-                    swapFeeAmount.toUint128()
-                );
-            }
+            // currency0 is specified, currency1 is unspecified
+            emit HookSwap(
+                PoolId.unwrap(key.toId()),
+                sender,
+                returnDelta.getSpecifiedDelta(),
+                returnDelta.getUnspecifiedDelta(),
+                0,
+                swapFeeAmount.toUint128()
+            );
         } else {
-            if (exactInput) {
-                // currency1 is input, currency0 is output
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    -unspecifiedAmount.toInt128(),
-                    specifiedAmount.toInt128(),
-                    0,
-                    swapFeeAmount.toUint128()
-                );
-            } else {
-                // currency1 is output, currency0 is input
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    unspecifiedAmount.toInt128(),
-                    -specifiedAmount.toInt128(),
-                    swapFeeAmount.toUint128(),
-                    0
-                );
-            }
+            // currency1 is specified, currency0 is unspecified
+            emit HookSwap(
+                PoolId.unwrap(key.toId()),
+                sender,
+                returnDelta.getUnspecifiedDelta(),
+                returnDelta.getSpecifiedDelta(),
+                swapFeeAmount.toUint128(),
+                0
+            );
         }
 
         return (this.beforeSwap.selector, returnDelta, 0);
@@ -287,9 +263,13 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     /**
      * @dev Calculate the amount of fees to be paid to LPs in a swap.
      *
+     * The fee is denominated in the unspecified currency, which is the output currency on exact input swaps and the
+     * input currency on exact output swaps. On an exact input swap the hook takes the full specified input from the
+     * pool, so the fee can only be realized as output that the hook retains.
+     *
      * @param params The swap parameters.
      * @param unspecifiedAmount The amount of the unspecified currency to be taken or settled.
-     * @return swapFeeAmount The amount of fees to be paid to LPs in the swap (in currency0 and currency1).
+     * @return swapFeeAmount The amount of fees to be paid to LPs in the swap, denominated in the unspecified currency.
      */
     function _getSwapFeeAmount(SwapParams calldata params, uint256 unspecifiedAmount)
         internal

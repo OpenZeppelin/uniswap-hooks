@@ -24,6 +24,7 @@ import {HookTest} from "../utils/HookTest.sol";
 contract BaseCustomCurveTest is HookTest {
     using SafeCast for uint256;
     using StateLibrary for IPoolManager;
+    using CurrencyLibrary for Currency;
 
     BaseCustomCurveMock hook;
 
@@ -90,7 +91,7 @@ contract BaseCustomCurveTest is HookTest {
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
 
-        assertEq(liquidityTokenBal, 10 ether);
+        assertEq(liquidityTokenBal, 20 ether);
     }
 
     function test_addLiquidity_native_succeeds() public {
@@ -127,7 +128,7 @@ contract BaseCustomCurveTest is HookTest {
         assertEq(address(this).balance, prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
 
-        assertEq(liquidityTokenBal, 10 ether);
+        assertEq(liquidityTokenBal, 20 ether);
     }
 
     function test_addLiquidity_fuzz_succeeds(uint112 amount) public {
@@ -138,7 +139,7 @@ contract BaseCustomCurveTest is HookTest {
         );
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
-        assertEq(liquidityTokenBal, amount);
+        assertEq(liquidityTokenBal, uint256(amount) * 2);
     }
 
     function test_addLiquidity_swapThenAdd_succeeds() public {
@@ -153,7 +154,7 @@ contract BaseCustomCurveTest is HookTest {
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
-        assertEq(liquidityTokenBal, 10 ether);
+        assertEq(liquidityTokenBal, 20 ether);
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
 
@@ -178,8 +179,7 @@ contract BaseCustomCurveTest is HookTest {
 
         liquidityTokenBal = hook.balanceOf(address(this));
 
-        assertEq(liquidityTokenBal, 15 ether);
-        assertEq(liquidityTokenBal, 15 ether);
+        assertEq(liquidityTokenBal, 30 ether);
     }
 
     function test_addLiquidity_expired_revert() public {
@@ -253,7 +253,7 @@ contract BaseCustomCurveTest is HookTest {
         hook.removeLiquidity(removeLiquidityParams);
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
-        assertEq(liquidityTokenBal, 99 ether);
+        assertEq(liquidityTokenBal, 199 ether);
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 + 0.5 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 + 0.5 ether);
     }
@@ -298,7 +298,7 @@ contract BaseCustomCurveTest is HookTest {
             )
         );
 
-        assertEq(hook.balanceOf(address(this)), 10 ether);
+        assertEq(hook.balanceOf(address(this)), 20 ether);
         assertEq(key.currency0.balanceOfSelf(), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOfSelf(), prevBalance1 - 10 ether);
 
@@ -307,7 +307,7 @@ contract BaseCustomCurveTest is HookTest {
         );
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
-        assertEq(liquidityTokenBal, 5 ether);
+        assertEq(liquidityTokenBal, 15 ether);
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 7.5 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 7.5 ether);
     }
@@ -324,7 +324,7 @@ contract BaseCustomCurveTest is HookTest {
 
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 10 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
-        assertEq(hook.balanceOf(address(this)), 10 ether);
+        assertEq(hook.balanceOf(address(this)), 20 ether);
 
         hook.addLiquidity(
             BaseCustomAccounting.AddLiquidityParams(
@@ -334,15 +334,16 @@ contract BaseCustomCurveTest is HookTest {
 
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 15 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 12.5 ether);
-        assertEq(hook.balanceOf(address(this)), 13.75 ether);
+        assertEq(hook.balanceOf(address(this)), 27.5 ether);
 
+        // Reserves are 15 and 12.5 against a supply of 27.5, so 5.5 shares redeem 3 and 2.5
         hook.removeLiquidity(
-            BaseCustomAccounting.RemoveLiquidityParams(5 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
+            BaseCustomAccounting.RemoveLiquidityParams(5.5 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
         );
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
-        assertEq(liquidityTokenBal, 8.75 ether);
-        assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 12.5 ether);
+        assertEq(liquidityTokenBal, 22 ether);
+        assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 12 ether);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 10 ether);
     }
 
@@ -403,8 +404,9 @@ contract BaseCustomCurveTest is HookTest {
 
         assertEq(manager.getLiquidity(id), 0);
 
-        assertEq(address(this).balance, prevBalance0 - 5 ether);
-        assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 5 ether);
+        // Redeeming every share returns the whole deposit
+        assertEq(address(this).balance, prevBalance0);
+        assertEq(key.currency1.balanceOf(address(this)), prevBalance1);
     }
 
     function test_removeLiquidity_multiple_succeeds() public {
@@ -529,7 +531,7 @@ contract BaseCustomCurveTest is HookTest {
 
         uint256 liquidityTokenBal = hook.balanceOf(address(this));
 
-        assertEq(liquidityTokenBal, 0.5 ether);
+        assertEq(liquidityTokenBal, 1 ether);
         assertEq(key.currency0.balanceOf(address(this)), prevBalance0);
         assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 1 ether);
 
@@ -554,9 +556,43 @@ contract BaseCustomCurveTest is HookTest {
 
         liquidityTokenBal = hook.balanceOf(address(this));
 
+        // The swap moved the reserves but not their total, so redeeming every share returns the whole deposit
         assertEq(liquidityTokenBal, 0);
-        assertEq(key.currency0.balanceOf(address(this)), prevBalance0 - 0.25 ether);
-        assertEq(key.currency1.balanceOf(address(this)), prevBalance1 - 0.25 ether);
+        assertEq(key.currency0.balanceOf(address(this)), prevBalance0);
+        assertEq(key.currency1.balanceOf(address(this)), prevBalance1);
+    }
+
+    /// @dev A swap can move the whole reserve into one currency. Redemptions are quoted against the reserves, so
+    /// they stay feasible and pay out only what the hook holds.
+    function test_removeLiquidity_depletedReserve_succeeds() public {
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                100 ether, 100 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+        assertEq(hook.balanceOf(address(this)), 200 ether);
+
+        // Swap out every unit of currency1 held by the hook
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: true, amountSpecified: -100 ether, sqrtPriceLimitX96: SQRT_PRICE_1_2}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 200 ether);
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 0);
+
+        uint256 prevBalance0 = key.currency0.balanceOf(address(this));
+        uint256 prevBalance1 = key.currency1.balanceOf(address(this));
+
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(2 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
+        );
+
+        assertEq(hook.balanceOf(address(this)), 198 ether);
+        assertEq(key.currency0.balanceOf(address(this)), prevBalance0 + 2 ether);
+        assertEq(key.currency1.balanceOf(address(this)), prevBalance1);
     }
 
     /// @dev Per `IHookEvents.HookSwap` NatSpec: amount0/amount1 are positive for input, negative for output.

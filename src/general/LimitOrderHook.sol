@@ -255,6 +255,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * Requirements:
      *
      * - `key` must identify a pool configured with this hook, otherwise the order could never be filled.
+     * - `key` must not use the native currency, otherwise it reverts {NativeCurrencyUnsupported}.
      * - The placement must require only the currency being sold, otherwise it reverts {InRange}.
      */
     function placeOrder(PoolKey calldata key, int24 tick, bool zeroForOne, uint128 liquidity)

@@ -880,4 +880,43 @@ contract BaseCustomAccountingTest is HookTest {
         assertGt(remAmount0, int128(0), "remove: amount0 should be positive (caller receives)");
         assertGt(remAmount1, int128(0), "remove: amount1 should be positive (caller receives)");
     }
+
+    function test_removeLiquidity_inactiveRange_succeeds() public {
+        int24 tickLower = -600;
+        int24 tickUpper = 600;
+
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 0, 0, MAX_DEADLINE, tickLower, tickUpper, bytes32(0)
+            )
+        );
+
+        uint256 liquidityTokenBal = hook.balanceOf(address(this));
+
+        // Swap the price above the range, so that none of the position's liquidity is active
+        SwapParams memory params =
+            SwapParams({zeroForOne: false, amountSpecified: -100 ether, sqrtPriceLimitX96: SQRT_PRICE_4_1});
+        PoolSwapTest.TestSettings memory settings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        swapRouter.swap(key, params, settings, ZERO_BYTES);
+
+        assertEq(manager.getLiquidity(id), 0);
+
+        // Above the range the position holds only currency1
+        uint256 prevBalance1 = key.currency1.balanceOf(address(this));
+
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(
+                liquidityTokenBal, 0, 1, MAX_DEADLINE, tickLower, tickUpper, bytes32(0)
+            )
+        );
+
+        // The position is fully redeemed even though no liquidity was active
+        assertEq(hook.balanceOf(address(this)), 0);
+        (uint128 positionLiquidity,,) = manager.getPositionInfo(
+            id, address(hook), tickLower, tickUpper, keccak256(abi.encode(address(this), bytes32(0)))
+        );
+        assertEq(positionLiquidity, 0);
+        assertGt(key.currency1.balanceOf(address(this)), prevBalance1);
+    }
 }

@@ -19,6 +19,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 // Internal imports
 import {BaseCustomAccountingFeeMock} from "../../src/mocks/base/BaseCustomAccountingFeeMock.sol";
 import {BaseCustomAccountingMock} from "../../src/mocks/base/BaseCustomAccountingMock.sol";
+import {BaseCustomAccountingSharedPositionMock} from "../../src/mocks/base/BaseCustomAccountingSharedPositionMock.sol";
 import {HookTest} from "../utils/HookTest.sol";
 
 contract BaseCustomAccountingTest is HookTest {
@@ -882,9 +883,12 @@ contract BaseCustomAccountingTest is HookTest {
     }
 
     function test_getPositionSalt_sharedPosition_redeemsTransferredShares() public {
-        SharedPositionMock sharedHook = SharedPositionMock(payable(HOOK_DEPLOYMENT_ADDRESS));
+        BaseCustomAccountingSharedPositionMock sharedHook =
+            BaseCustomAccountingSharedPositionMock(payable(HOOK_DEPLOYMENT_ADDRESS));
         deployCodeTo(
-            "test/base/BaseCustomAccounting.t.sol:SharedPositionMock", abi.encode(address(manager)), address(sharedHook)
+            "src/mocks/base/BaseCustomAccountingSharedPositionMock.sol:BaseCustomAccountingSharedPositionMock",
+            abi.encode(address(manager)),
+            address(sharedHook)
         );
         (key,) =
             initPool(currency0, currency1, IHooks(address(sharedHook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1);
@@ -910,13 +914,5 @@ contract BaseCustomAccountingTest is HookTest {
         assertEq(sharedHook.balanceOf(recipient), 0);
         assertGt(key.currency0.balanceOf(recipient), 0);
         assertGt(key.currency1.balanceOf(recipient), 0);
-    }
-}
-
-contract SharedPositionMock is BaseCustomAccountingMock {
-    constructor(IPoolManager _poolManager) BaseCustomAccountingMock(_poolManager) {}
-
-    function _getPositionSalt(address, bytes32 salt) internal view override returns (bytes32) {
-        return salt;
     }
 }

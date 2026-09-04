@@ -304,21 +304,12 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
     /**
      * @dev Returns the salt of the Uniswap V4 position that a liquidity modification applies to. By default it is
-     * the hash of `sender` and the `salt` returned by {_getAddLiquidity} or {_getRemoveLiquidity}, so a position
-     * belongs to the caller that created it and no other account can modify it.
+     * the hash of `sender` and the salt returned by {_getAddLiquidity} or {_getRemoveLiquidity}, so a position
+     * belongs to the caller that created it.
      *
-     * Override this function to share a position between callers, for example to back fungible liquidity shares
-     * with a single position:
-     *
-     * ```solidity
-     * function _getPositionSalt(address, bytes32 salt) internal view override returns (bytes32) {
-     *     return salt;
-     * }
-     * ```
-     *
-     * IMPORTANT: A salt that does not depend on `sender` lets any caller modify the position. The inheriting
-     * contract must then gate {addLiquidity} and {removeLiquidity} on its own accounting, such as the balance of
-     * a share token.
+     * IMPORTANT: A salt that does not depend on `sender` shares the position between callers. Such an override
+     * must also override {_handleAccruedFees}, which by default pays every fee accrued in the position to
+     * whichever caller modifies it.
      */
     function _getPositionSalt(address sender, bytes32 salt) internal view virtual returns (bytes32) {
         return keccak256(abi.encode(sender, salt));

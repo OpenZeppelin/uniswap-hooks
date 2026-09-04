@@ -104,6 +104,9 @@ abstract contract BaseOracleHook is BaseHook {
     ///
     /// NOTE: Note that this hook does not return either a `BeforeSwapDelta` or lp fee override — this call is used exclusively for recording price observations.
     ///
+    /// NOTE: The observation records the tick before the swap applies, so it never reflects a price moved within
+    /// the current transaction. A hook that swaps on its own skips this callback and moves the tick unrecorded.
+    ///
     /// @param key The key for the pool
     /// @return bytes4 The function selector for the hook
     /// @return BeforeSwapDelta The hook's delta in specified and unspecified currencies. Positive: the hook is owed/took currency, negative: the hook owes/sent currency

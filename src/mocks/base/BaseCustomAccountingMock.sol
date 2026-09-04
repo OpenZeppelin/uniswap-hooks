@@ -4,12 +4,10 @@ pragma solidity ^0.8.26;
 // External imports
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-periphery/src/libraries/LiquidityAmounts.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
-import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 // Internal imports
 import {BaseCustomAccounting} from "../../base/BaseCustomAccounting.sol";
@@ -17,7 +15,6 @@ import {BaseHook} from "../../base/BaseHook.sol";
 
 contract BaseCustomAccountingMock is BaseCustomAccounting, ERC20 {
     using SafeCast for uint256;
-    using StateLibrary for IPoolManager;
 
     uint256 private _nativeRefund;
 
@@ -58,11 +55,12 @@ contract BaseCustomAccountingMock is BaseCustomAccounting, ERC20 {
 
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal
-        view
+        pure
         override
         returns (bytes memory, uint256 liquidity)
     {
-        liquidity = FullMath.mulDiv(params.liquidity, poolManager.getLiquidity(poolKey().toId()), totalSupply());
+        // A share is one unit of position liquidity, so redeeming shares removes the same amount of liquidity
+        liquidity = params.liquidity;
 
         return (
             abi.encode(

@@ -32,6 +32,11 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * accounting hook for multiple pools, you must have multiple storage instances of this contract and
  * initialize them via the `PoolManager` with their respective pool keys.
  *
+ * WARNING: By default every position belongs to the caller that created it, since {_getPositionSalt} derives
+ * the position salt from the caller. Liquidity shares minted as a receipt for such a position must not be
+ * transferable, because the recipient cannot modify the position the shares represent. Override
+ * {_getPositionSalt} to back transferable shares with a position shared between callers.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -253,9 +258,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
         CallbackData memory data = abi.decode(rawData, (CallbackData));
 
-        // Set the salt value of the liquidity position, which is the keccak256 hash of the sender and salt from the callback data
-        // This ensures that each liquidity position is unique and cannot be accessed by other users
-        data.params.salt = keccak256(abi.encode(data.sender, data.params.salt));
+        // Resolve the position the liquidity modification applies to
+        data.params.salt = _getPositionSalt(data.sender, data.params.salt);
 
         // Get liquidity modification deltas
         (BalanceDelta callerDelta, BalanceDelta feesAccrued) = poolManager.modifyLiquidity(key, data.params, "");
@@ -296,6 +300,28 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
         // Return both deltas so that slippage checks can be done on the principal delta
         return abi.encode(callerDelta, feesAccrued);
+    }
+
+    /**
+     * @dev Returns the salt of the Uniswap V4 position that a liquidity modification applies to. By default it is
+     * the hash of `sender` and the `salt` returned by {_getAddLiquidity} or {_getRemoveLiquidity}, so a position
+     * belongs to the caller that created it and no other account can modify it.
+     *
+     * Override this function to share a position between callers, for example to back fungible liquidity shares
+     * with a single position:
+     *
+     * ```solidity
+     * function _getPositionSalt(address, bytes32 salt) internal view override returns (bytes32) {
+     *     return salt;
+     * }
+     * ```
+     *
+     * IMPORTANT: A salt that does not depend on `sender` lets any caller modify the position. The inheriting
+     * contract must then gate {addLiquidity} and {removeLiquidity} on its own accounting, such as the balance of
+     * a share token.
+     */
+    function _getPositionSalt(address sender, bytes32 salt) internal view virtual returns (bytes32) {
+        return keccak256(abi.encode(sender, salt));
     }
 
     /**
@@ -367,10 +393,9 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
      * @return shares The liquidity shares to mint.
      *
      * IMPORTANT: The salt returned in `modify` indicates which position of the sender the liquidity
-     * modification is applied given that the `unlockCallback` function uses the keccak256 hash of
-     * the sender and the salt returned here to determine the liquidity position. By default, we
-     * recommend using the `userInputSalt` parameter from the `AddLiquidityParams` struct as the salt
-     * here.
+     * modification is applied to, given that {_getPositionSalt} derives the liquidity position from the
+     * sender and the salt returned here. By default, we recommend using the `userInputSalt` parameter
+     * from the `AddLiquidityParams` struct as the salt here.
      */
     function _getAddLiquidity(uint160 sqrtPriceX96, AddLiquidityParams memory params)
         internal
@@ -387,10 +412,9 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
      * @return shares The liquidity shares to burn.
      *
      * IMPORTANT: The salt returned in `modify` indicates which position of the sender the liquidity
-     * modification is applied given that the `unlockCallback` function uses the keccak256 hash of
-     * the sender and the salt returned here to determine the liquidity position. By default, we
-     * recommend using the `userInputSalt` parameter from the `AddLiquidityParams` struct as the salt
-     * here.
+     * modification is applied to, given that {_getPositionSalt} derives the liquidity position from the
+     * sender and the salt returned here. By default, we recommend using the `userInputSalt` parameter
+     * from the `AddLiquidityParams` struct as the salt here.
      */
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal

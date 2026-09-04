@@ -880,4 +880,43 @@ contract BaseCustomAccountingTest is HookTest {
         assertGt(remAmount0, int128(0), "remove: amount0 should be positive (caller receives)");
         assertGt(remAmount1, int128(0), "remove: amount1 should be positive (caller receives)");
     }
+
+    function test_getPositionSalt_sharedPosition_redeemsTransferredShares() public {
+        SharedPositionMock sharedHook = SharedPositionMock(payable(HOOK_DEPLOYMENT_ADDRESS));
+        deployCodeTo(
+            "test/base/BaseCustomAccounting.t.sol:SharedPositionMock", abi.encode(address(manager)), address(sharedHook)
+        );
+        (key,) =
+            initPool(currency0, currency1, IHooks(address(sharedHook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1);
+
+        ERC20(Currency.unwrap(currency0)).approve(address(sharedHook), type(uint256).max);
+        ERC20(Currency.unwrap(currency1)).approve(address(sharedHook), type(uint256).max);
+
+        sharedHook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        uint256 shares = sharedHook.balanceOf(address(this));
+        address recipient = makeAddr("recipient");
+        sharedHook.transfer(recipient, shares);
+
+        vm.prank(recipient);
+        sharedHook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(shares, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
+        );
+
+        assertEq(sharedHook.balanceOf(recipient), 0);
+        assertGt(key.currency0.balanceOf(recipient), 0);
+        assertGt(key.currency1.balanceOf(recipient), 0);
+    }
+}
+
+contract SharedPositionMock is BaseCustomAccountingMock {
+    constructor(IPoolManager _poolManager) BaseCustomAccountingMock(_poolManager) {}
+
+    function _getPositionSalt(address, bytes32 salt) internal view override returns (bytes32) {
+        return salt;
+    }
 }

@@ -33,8 +33,10 @@ import {BaseHook} from "../base/BaseHook.sol";
  * underlying currency, burn them with the `settle` function from the `CurrencySettler` library, passing `burn`
  * as true, and withdraw with `take`, passing `claims` as false, within the same unlock callback.
  *
- * IMPORTANT: If the hook is used for multiple pools, the ERC-6909 tokens must be separated and managed
- * independently for each pool in order to prevent draining of ERC-6909 tokens from one pool to another.
+ * WARNING: Pool initialization is permissionless, so any pool can be created with this hook. The claim tokens
+ * the hook holds are keyed by currency with no pool component, so a hook serving multiple pools must key its own
+ * accounting by `PoolId` to prevent draining of ERC-6909 tokens from one pool to another. To serve a single pool
+ * instead, enable `beforeInitialize` in `getHookPermissions` and override `_beforeInitialize` to reject any other key.
  *
  * NOTE: The hook only supports async exact-input swaps. Exact-output swaps will be processed normally
  * by the `PoolManager`.

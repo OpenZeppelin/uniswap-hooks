@@ -10,6 +10,10 @@ import {BaseOracleHook} from "./BaseOracleHook.sol";
 import {V3TruncatedOracleAdapter} from "./adapters/V3TruncatedOracleAdapter.sol";
 
 /// @dev A hook that enables a Uniswap V4 pool to record price observations and expose an oracle interface with Uniswap V3-compatible adapters
+///
+/// NOTE: The adapters match the V3 interface shape for tick data only. They implement four V3 functions and
+/// return placeholder values for the fields V4 does not record. See {V3OracleAdapter} and
+/// {V3TruncatedOracleAdapter}.
 abstract contract OracleHookWithV3Adapters is BaseOracleHook {
     /// @dev Emitted when adapter contracts are deployed for a pool.
     ///

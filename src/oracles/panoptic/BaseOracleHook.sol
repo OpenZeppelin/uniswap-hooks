@@ -165,7 +165,7 @@ abstract contract BaseOracleHook is BaseHook {
         );
     }
 
-    /// @dev Increase the maximum number of price and liquidity observations that the oracle of `underlyingPoolId`.
+    /// @dev Increase the maximum number of observations that the oracle of `underlyingPoolId` can store.
     ///
     /// @param observationCardinalityNext The desired minimum number of observations for the oracle to store
     /// @param underlyingPoolId The pool ID of the underlying V4 pool

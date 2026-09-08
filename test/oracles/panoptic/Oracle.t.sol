@@ -16,6 +16,7 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
 // Internal
 import {OracleHookWithV3Adapters} from "../../../src/oracles/panoptic/OracleHookWithV3Adapters.sol";
+import {BaseOracleHook} from "../../../src/oracles/panoptic/BaseOracleHook.sol";
 import {V3OracleAdapter} from "../../../src/oracles/panoptic/adapters/V3OracleAdapter.sol";
 import {V3TruncatedOracleAdapter} from "../../../src/oracles/panoptic/adapters/V3TruncatedOracleAdapter.sol";
 import {HookTest} from "test/utils/HookTest.sol";
@@ -1773,6 +1774,43 @@ contract OracleLibTest is Test {
         int24 truncatedTick = oracle.truncatedOracleTick();
         assertEq(tick, -10000);
         assertEq(truncatedTick, 0); // Should be back to 0 after moving -9116 from 9116
+    }
+
+    function test_fail_observe_uninitializedPool() public {
+        // A pool this hook never initialized. Before the guard, this extrapolated from the zeroed
+        // observation at timestamp 0 and reported the unrelated pool's live tick as a mature TWAP.
+        PoolId unknownPool = PoolId.wrap(bytes32("unknown"));
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 3600;
+        secondsAgos[1] = 0;
+
+        vm.expectRevert(BaseOracleHook.PoolNotInitialized.selector);
+        ORACLE_BASE.observe(secondsAgos, unknownPool);
+    }
+
+    function test_fail_observe_uninitializedPool_wrappingSecondsAgo() public {
+        // Same guard also covers the `cardinality == 0` modulo path, which a wrapping `secondsAgo`
+        // reaches. Before the guard this panicked with a division by zero.
+        PoolId unknownPool = PoolId.wrap(bytes32("unknown"));
+
+        uint32[] memory secondsAgos = new uint32[](1);
+        secondsAgos[0] = type(uint32).max;
+
+        vm.expectRevert(BaseOracleHook.PoolNotInitialized.selector);
+        ORACLE_BASE.observe(secondsAgos, unknownPool);
+    }
+
+    function test_observe_initializedPoolStillWorks() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 5}));
+        oracle.advanceTime(1800);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1800;
+        secondsAgos[1] = 0;
+
+        (int56[] memory tickCumulatives,) = ORACLE_BASE.observe(secondsAgos, oracle.poolId());
+        assertEq((tickCumulatives[1] - tickCumulatives[0]) / 1800, 5);
     }
 
     function min(uint256 a, uint256 b) internal pure returns (uint256) {

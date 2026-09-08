@@ -44,6 +44,10 @@ abstract contract BaseOracleHook is BaseHook {
     }
 
     /// @dev The maximum absolute tick delta that can be observed for the truncated oracle
+    ///
+    /// NOTE: The bound applies per written observation, and observations are written on swaps only. The
+    /// truncated tick therefore converges toward the pool tick only while the pool trades, and holds a stale
+    /// value for as long as the pool stays idle.
     int24 public immutable MAX_ABS_TICK_DELTA;
 
     /// @dev The list of observations for a given pool ID

@@ -760,6 +760,28 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertEq(hook.totalSupply(), 0);
     }
 
+    function test_remove_finalExit_leavesNoResidualBacking() public {
+        _seed();
+
+        uint256 backing0 = hook.getAmountInYieldSource(currency0);
+        uint256 backing1 = hook.getAmountInYieldSource(currency1);
+        uint256 before0 = IERC20(Currency.unwrap(currency0)).balanceOf(address(this));
+        uint256 before1 = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
+
+        // the sole holder redeems every share
+        hook.removeReHypothecatedLiquidity(hook.balanceOf(address(this)));
+
+        assertEq(hook.totalSupply(), 0, "all shares should be redeemed");
+        assertEq(hook.getAmountInYieldSource(currency0), 0, "no residual currency0 backing should remain");
+        assertEq(hook.getAmountInYieldSource(currency1), 0, "no residual currency1 backing should remain");
+        assertEq(
+            IERC20(Currency.unwrap(currency0)).balanceOf(address(this)) - before0, backing0, "should receive all currency0"
+        );
+        assertEq(
+            IERC20(Currency.unwrap(currency1)).balanceOf(address(this)) - before1, backing1, "should receive all currency1"
+        );
+    }
+
     // -- DIFFERENTIAL -- //
 
     function testFuzz_differential_add_swap_remove_SingleLP(uint256 liquidity, int256 amountToSwap) public {

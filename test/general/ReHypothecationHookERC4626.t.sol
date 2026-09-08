@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 // External imports
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -21,6 +22,7 @@ import {
     ERC4626YieldSourceMock
 } from "../../src/mocks/general/ReHypothecationERC4626Mock.sol";
 import {ReHypothecationHook} from "../../src/general/ReHypothecationHook.sol";
+import {ERC20RejectZeroTransferMock} from "../../src/mocks/general/ERC20RejectZeroTransferMock.sol";
 import {HookTest} from "../utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
 import {BaseHook} from "../../src/base/BaseHook.sol";
@@ -850,6 +852,53 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
         // Must not revert: the zero currency0 withdrawal is skipped instead of hitting the reverting yield source.
         h.removeReHypothecatedLiquidity(smallShares);
+    }
+
+    function test_remove_zeroLeg_rejectZeroTransferCurrency() public {
+        // A pool where one currency reverts on zero-value transfers, as some tokens do.
+        ERC20RejectZeroTransferMock rejectToken = new ERC20RejectZeroTransferMock();
+        ERC20Mock plainToken = new ERC20Mock();
+        bool rejectIsCurrency0 = address(rejectToken) < address(plainToken);
+        (Currency c0, Currency c1) = rejectIsCurrency0
+            ? (Currency.wrap(address(rejectToken)), Currency.wrap(address(plainToken)))
+            : (Currency.wrap(address(plainToken)), Currency.wrap(address(rejectToken)));
+
+        ERC4626YieldSourceMock ys0 = new ERC4626YieldSourceMock(IERC20(Currency.unwrap(c0)));
+        ERC4626YieldSourceMock ys1 = new ERC4626YieldSourceMock(IERC20(Currency.unwrap(c1)));
+        address hookAddr = _flagAddr(0x40000000000000000000000000000000);
+        deployCodeTo(
+            "src/mocks/general/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
+            abi.encode(address(manager), address(ys0), address(ys1)),
+            hookAddr
+        );
+        ReHypothecationERC4626Mock h = ReHypothecationERC4626Mock(payable(hookAddr));
+        initPool(c0, c1, IHooks(hookAddr), fee, SQRT_PRICE_1_1);
+
+        ERC20Mock(Currency.unwrap(c0)).mint(address(this), 1e24);
+        ERC20Mock(Currency.unwrap(c1)).mint(address(this), 1e24);
+        IERC20(Currency.unwrap(c0)).approve(hookAddr, type(uint256).max);
+        IERC20(Currency.unwrap(c1)).approve(hookAddr, type(uint256).max);
+        h.seedLiquidity(SEED, SEED);
+
+        // Drain the reject-zero currency's yield source of its underlying, so its leg redeems to zero.
+        Currency rejectCurrency = rejectIsCurrency0 ? c0 : c1;
+        Currency fundedCurrency = rejectIsCurrency0 ? c1 : c0;
+        address rejectYs = rejectIsCurrency0 ? address(ys0) : address(ys1);
+        uint256 held = IERC20(Currency.unwrap(rejectCurrency)).balanceOf(rejectYs);
+        vm.prank(rejectYs);
+        IERC20(Currency.unwrap(rejectCurrency)).transfer(address(0xdead), held);
+
+        (uint256 amount0, uint256 amount1) = h.previewRedeem(1e6);
+        assertEq(rejectIsCurrency0 ? amount0 : amount1, 0, "reject-zero leg should redeem to zero");
+        assertGt(rejectIsCurrency0 ? amount1 : amount0, 0, "the funded leg should be non-zero");
+
+        uint256 balanceBefore = IERC20(Currency.unwrap(fundedCurrency)).balanceOf(address(this));
+        h.removeReHypothecatedLiquidity(1e6);
+        assertGt(
+            IERC20(Currency.unwrap(fundedCurrency)).balanceOf(address(this)),
+            balanceBefore,
+            "the funded leg should be received"
+        );
     }
 
     // -- JIT TICK SNAPSHOT -- //

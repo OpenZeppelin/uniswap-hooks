@@ -821,6 +821,52 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertLt(hook.getLiquidityToUse(), liqFull, "capped liquidity should be lower");
     }
 
+    // -- SWAP REQUIRES USABLE JIT LIQUIDITY -- //
+
+    function test_swap_revertsWhenJITLiquidityZero_cappedVault() public {
+        _seed();
+
+        // Gate currency1's yield source to zero withdrawable, leaving currency0 backed.
+        yieldSource1.setCap(0);
+
+        assertEq(hook.getMaxWithdrawFromYieldSource(currency1), 0, "currency1 withdrawable should be zero");
+        assertGt(hook.getAmountInYieldSource(currency0), 0, "currency0 backing should remain");
+        assertEq(hook.getLiquidityToUse(), 0, "JIT position should size to zero");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.beforeSwap.selector,
+                abi.encodeWithSelector(ReHypothecationHook.NoUsableLiquidity.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        swap(key, true, -1e15, ZERO_BYTES);
+    }
+
+    function test_swap_revertsWhenJITLiquidityZero_vaultLoss() public {
+        _seed();
+
+        // Currency1's yield source loses its whole balance.
+        hook.burnYieldSourcesBalance(currency1, hook.getAmountInYieldSource(currency1));
+
+        assertEq(hook.getAmountInYieldSource(currency1), 0, "currency1 backing should be zero");
+        assertGt(hook.getAmountInYieldSource(currency0), 0, "currency0 backing should remain");
+        assertEq(hook.getLiquidityToUse(), 0, "JIT position should size to zero");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.beforeSwap.selector,
+                abi.encodeWithSelector(ReHypothecationHook.NoUsableLiquidity.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        swap(key, false, -1e15, ZERO_BYTES);
+    }
+
     // -- ZERO-AMOUNT YIELD-SOURCE CALLS -- //
 
     function test_remove_zeroLeg_skipsZeroYieldSourceWithdraw() public {

@@ -14,6 +14,7 @@ import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
+import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
@@ -509,13 +510,18 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      */
     function _getLiquidityToUse(int24 tickLower, int24 tickUpper) internal view virtual returns (uint256) {
         (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
-        return LiquidityAmounts.getLiquidityForAmounts(
+        uint256 liquidity = LiquidityAmounts.getLiquidityForAmounts(
             currentSqrtPriceX96,
             TickMath.getSqrtPriceAtTick(tickLower),
             TickMath.getSqrtPriceAtTick(tickUpper),
             _getMaxWithdrawFromYieldSource(_poolKey.currency0),
             _getMaxWithdrawFromYieldSource(_poolKey.currency1)
         );
+
+        // A position cannot take either boundary tick past the pool's per-tick gross-liquidity limit, so cap
+        // the liquidity there and leave any excess backing idle.
+        uint256 maxLiquidityPerTick = Pool.tickSpacingToMaxLiquidityPerTick(_poolKey.tickSpacing);
+        return liquidity < maxLiquidityPerTick ? liquidity : maxLiquidityPerTick;
     }
 
     /**

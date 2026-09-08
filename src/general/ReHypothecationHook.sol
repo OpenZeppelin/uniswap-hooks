@@ -59,6 +59,10 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
  * such as variations in the yield rates, rebalances, impermanent loss, and other risks associated.
  *
+ * WARNING: Settlement deposits the full received amount into the yield source, so a source that cannot accept a
+ * deposit (e.g. at a deposit cap or paused) reverts the swap. Supporting such a source requires an override that
+ * holds the undepositable amount as accounted idle backing.
+ *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
  * As a consequence, the PoolManager singleton may lack sufficient reserves for illiquid tokens in the instants between the swap

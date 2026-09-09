@@ -40,21 +40,27 @@ contract NativeYieldSourceMock is ERC20 {
     }
 
     function _convertToShares(uint256 assets) internal view virtual returns (uint256) {
-        return assets.mulDiv(totalSupply(), totalAssets());
+        uint256 supply = totalSupply();
+        return supply == 0 ? assets : assets.mulDiv(supply, totalAssets());
     }
 
     function _convertToAssets(uint256 shares) internal view virtual returns (uint256) {
-        return shares.mulDiv(totalAssets(), totalSupply());
+        uint256 supply = totalSupply();
+        return supply == 0 ? 0 : shares.mulDiv(totalAssets(), supply);
     }
 
     function deposit(uint256 amount, address to) public payable {
         if (msg.value != amount) revert InvalidAmount();
-        _mint(to, amount);
+        // msg.value is already in the balance, so the pre-deposit backing is `totalAssets() - amount`.
+        uint256 supply = totalSupply();
+        uint256 shares = supply == 0 ? amount : amount.mulDiv(supply, totalAssets() - amount);
+        if (shares == 0) revert InvalidAmount();
+        _mint(to, shares);
     }
 
     function withdraw(uint256 assets, address to) public payable {
         if (to == address(0)) revert InvalidTarget();
-        uint256 shares = _convertToShares(assets);
+        uint256 shares = assets.mulDiv(totalSupply(), totalAssets(), Math.Rounding.Ceil);
         _burn(msg.sender, shares);
         payable(to).transfer(assets);
     }
@@ -124,6 +130,12 @@ contract ReHypothecationNativeMock is ReHypothecationHook {
         return NativeYieldSourceMock(yieldSource).convertToAssets(yieldSourceShares);
     }
 
+    /// @inheritdoc ReHypothecationHook
+    function _getMaxWithdrawFromYieldSource(Currency currency) internal view virtual override returns (uint256) {
+        if (currency.isAddressZero()) return _getAmountInYieldSource(currency);
+        return ERC4626YieldSourceMock(getCurrencyYieldSource(currency)).maxWithdraw(address(this));
+    }
+
     /// Override required to handle native ETH
     function _transferFromSenderToHook(Currency currency, uint256 amount, address sender) internal virtual override {
         if (currency.isAddressZero()) {
@@ -141,6 +153,10 @@ contract ReHypothecationNativeMock is ReHypothecationHook {
     /// @dev Helpers for testing
     function getAmountInYieldSource(Currency currency) public view returns (uint256) {
         return _getAmountInYieldSource(currency);
+    }
+
+    function getMaxWithdrawFromYieldSource(Currency currency) public view returns (uint256) {
+        return _getMaxWithdrawFromYieldSource(currency);
     }
 
     // Exclude from coverage report

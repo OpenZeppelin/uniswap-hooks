@@ -148,27 +148,28 @@ abstract contract LiquidityPenaltyHook is BaseHook {
         // Receive back the `withheldFees` retained during previous liquidity additions within the `blockNumberOffset`.
         BalanceDelta withheldFees = _settleFeesFromHook(key, positionKey);
 
-        // The total fees accrued by the LP are the sum of the `feeDelta` plus the `withheldFees`.
-        BalanceDelta totalFees = feeDelta + withheldFees;
-
         // cache lastAddedLiquidity in memory
         uint48 lastAddedLiquidityBlock = getLastAddedLiquidityBlock(poolId, positionKey);
 
-        if (
-            _getBlockNumber() - lastAddedLiquidityBlock < blockNumberOffset
-                && totalFees != BalanceDeltaLibrary.ZERO_DELTA
-        ) {
-            BalanceDelta liquidityPenalty = _calculateLiquidityPenalty(totalFees, lastAddedLiquidityBlock);
+        // Only aggregate the fresh and withheld fees while the penalty applies. An expired position returns its
+        // withheld fees below without the aggregation, so it can always be removed once the offset has passed.
+        if (_getBlockNumber() - lastAddedLiquidityBlock < blockNumberOffset) {
+            // The total fees accrued by the LP are the sum of the `feeDelta` plus the `withheldFees`.
+            BalanceDelta totalFees = feeDelta + withheldFees;
 
-            // If there is a penalty to be applied but there are no active liquidity positions in range to
-            // receive the donation, then the liquidity removal is not possible and the offset must be awaited.
-            if (poolManager.getLiquidity(poolId) == 0) revert NoLiquidityToReceiveDonation();
+            if (totalFees != BalanceDeltaLibrary.ZERO_DELTA) {
+                BalanceDelta liquidityPenalty = _calculateLiquidityPenalty(totalFees, lastAddedLiquidityBlock);
 
-            poolManager.donate(
-                key, uint256(int256(liquidityPenalty.amount0())), uint256(int256(liquidityPenalty.amount1())), ""
-            );
+                // If there is a penalty to be applied but there are no active liquidity positions in range to
+                // receive the donation, then the liquidity removal is not possible and the offset must be awaited.
+                if (poolManager.getLiquidity(poolId) == 0) revert NoLiquidityToReceiveDonation();
 
-            return (this.afterRemoveLiquidity.selector, liquidityPenalty - withheldFees);
+                poolManager.donate(
+                    key, uint256(int256(liquidityPenalty.amount0())), uint256(int256(liquidityPenalty.amount1())), ""
+                );
+
+                return (this.afterRemoveLiquidity.selector, liquidityPenalty - withheldFees);
+            }
         }
 
         // If the liquidity removal was not penalized, return the withheld fees if any.

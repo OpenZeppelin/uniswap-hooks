@@ -72,7 +72,9 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
 
         if (unspecifiedAmount == 0) return (this.afterSwap.selector, 0);
 
-        if (unspecifiedAmount < 0) unspecifiedAmount = -unspecifiedAmount;
+        // Take the absolute value via int256 so the full int128 range is representable.
+        uint256 absUnspecifiedAmount =
+            unspecifiedAmount < 0 ? uint256(-int256(unspecifiedAmount)) : uint256(int256(unspecifiedAmount));
 
         uint24 hookFee = _getHookFee(sender, key, params, delta, hookData);
 
@@ -80,7 +82,7 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
 
         if (hookFee > MAX_HOOK_FEE) revert HookFeeTooLarge();
 
-        uint256 feeAmount = FullMath.mulDiv(uint256(unspecifiedAmount.toUint128()), hookFee, MAX_HOOK_FEE);
+        uint256 feeAmount = FullMath.mulDiv(absUnspecifiedAmount, hookFee, MAX_HOOK_FEE);
 
         // Take the fee amount to the hook as ERC-6909 claims in order to save gas,
         // which can be redeemed back for tokens with the PoolManager at any point.

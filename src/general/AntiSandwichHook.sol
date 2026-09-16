@@ -1,49 +1,66 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Uniswap Hooks (last updated v1.2.0) (src/general/AntiSandwichHook.sol)
+// OpenZeppelin Uniswap Hooks (last updated v1.2.2) (src/general/AntiSandwichHook.sol)
 
 pragma solidity ^0.8.26;
 
 // External imports
-import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
+import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
-import {Slot0} from "@uniswap/v4-core/src/types/Slot0.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 // Internal imports
 import {BaseDynamicAfterFee} from "../fee/BaseDynamicAfterFee.sol";
-import {CurrencySettler} from "../utils/CurrencySettler.sol";
 
 /**
- * @dev This hook implements the sandwich-resistant AMM design introduced
+ * @dev This hook is inspired by the sandwich-resistant AMM design introduced
  * https://www.umbraresearch.xyz/writings/sandwich-resistant-amm[here]. Specifically,
  * this hook guarantees that no swaps get filled at a price better than the price at
- * the beginning of the slot window (i.e. one block).
+ * the beginning of the slot window (i.e. one block), up to rounding.
  *
- * Within a slot window, swaps impact the pool asymmetrically for buys and sells.
- * When a buy order is executed, the offer on the pool increases in accordance with
- * the xy=k curve. However, the bid price remains constant, instead increasing the
- * amount of liquidity on the bid. Subsequent sells eat into this liquidity, while
- * decreasing the offer price according to xy=k.
+ * That price is recorded at the block's first swap, and any excess a later swap gains over it is taken as a
+ * hook fee. A sandwich therefore closes no better than the price its opening leg moved away from, and ends
+ * never ends the block ahead. Only the price is read, so neither the tick layout nor the depth the pool holds
+ * enters the target.
  *
- * In order to use this hook, the inheriting contract must implement the {_handleCollectedFees} function
+ * In order to use this hook, the inheriting contract must implement the {_afterSwapHandler} function
  * to determine how to handle the collected fees from the anti-sandwich mechanism.
  *
- * NOTE: The Anti-sandwich mechanism only protects swaps in the zeroForOne swap direction.
- * Swaps in the !zeroForOne direction are not protected by this hook design.
+ * NOTE: The price is read at the block's first swap, which is the price the block opened with: in Uniswap v4
+ * only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
  *
- * WARNING: Since this hook makes MEV not profitable, there's not as much arbitrage in
- * the pool, making prices at beginning of the block not necessarily close to market price.
+ * NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
+ * held to the opening price. Whoever moved it is held to the same price squaring its own position.
  *
- * WARNING: In `_beforeSwap`, the hook iterates over all ticks between last tick and current tick.
- * Developers must be aware that for large price changes in pools with small tick spacing, the `for`
- * loop will iterate over a large number of ticks, which could lead to `MemoryOOG` error.
+ * IMPORTANT: Only a swap's gain is taken, and its loss is never made good. A swap filled worse than the
+ * recorded price keeps that fill and is paid nothing, so liquidity withdrawn after the block's first swap
+ * costs the swapper and the hook does not make up the difference. The protection is one-sided in that sense:
+ * it removes the attacker's profit rather than restoring the victim's.
+ *
+ * IMPORTANT: Only swaps are bounded. An attacker can supply the liquidity a victim trades through and
+ * withdraw it in the same block, and an attack whose legs sit in different blocks is measured against a
+ * price its own opening leg set. Consider combining with a JIT protection mechanism such as
+ * https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/general/LiquidityPenaltyHook.sol[LiquidityPenaltyHook].
+ *
+ * IMPORTANT: A swap is refused with {TargetOutOfRange} where the recorded price values it past what a
+ * `BalanceDelta` carries, rather than let through uncharged. Reaching it needs the price to move by an
+ * enormous factor inside one block: the measured case crosses about 800,000 ticks, close to half of what a
+ * pool can express. That in turn needs liquidity thin enough for one swap to cross that range, so a pool
+ * holding its liquidity near its price cannot reach it, while a single position stretched over most of the
+ * tick range can. Consider the width liquidity is provided over before deploying.
+ *
+ * IMPORTANT: The fee is a sandwich's own gain, so {_afterSwapHandler} must not pay it to in-range liquidity.
+ * An attacker can supply that liquidity and collect the fee back, whether it is paid in the same block or a
+ * later one. See {AntiSandwichMock}.
+ *
+ * WARNING: Since this hook removes the profit from sandwiching, there is less arbitrage in the pool, so
+ * prices at the beginning of a block are not necessarily close to market price.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -52,131 +69,118 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * _Available since v1.1.0_
  */
 abstract contract AntiSandwichHook is BaseDynamicAfterFee {
-    using Pool for *;
     using StateLibrary for IPoolManager;
-    using CurrencySettler for Currency;
-    using SafeCast for *;
 
-    /// @dev Represents a checkpoint of the pool state at the beginning of a block.
+    /// @dev A swap ran against a pool holding no beginning-of-block price to hold it to.
+    error CheckpointNotSet();
+
+    /// @dev The beginning-of-block price values the swap past what a `BalanceDelta` carries, so the amount it
+    /// would have to pay cannot be charged.
+    error TargetOutOfRange();
+
+    /// @dev The pool price at a block's first swap, and the block it was recorded in.
     struct Checkpoint {
+        uint160 sqrtPriceX96;
         uint48 blockNumber;
-        Pool.State state;
     }
+
+    /// @dev Largest amount a `BalanceDelta` carries on one side.
+    uint256 private constant MAX_BALANCE_DELTA = uint256(uint128(type(int128).max));
 
     /// @dev Maps each pool to its last checkpoint.
     mapping(PoolId id => Checkpoint checkpoint) private _lastCheckpoints;
 
-    /**
-     * @dev Handles the before swap hook.
-     *
-     * For the first swap in a block, it saves the current pool state as a checkpoint.
-     *
-     * For subsequent swaps in the same block, it calculates a target output based on the beginning-of-block state,
-     * and sets the inherited `_targetOutput` and `_applyTargetOutput` variables to enforce price limits in {_afterSwap}.
-     */
-    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
+    /// @dev Records the pool price at the block's first swap. Later swaps in the block leave it untouched.
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
         internal
         virtual
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        PoolId poolId = key.toId();
-        IPoolManager manager = poolManager;
-        Checkpoint storage _lastCheckpoint = _lastCheckpoints[poolId];
-
+        Checkpoint storage checkpoint = _lastCheckpoints[key.toId()];
         uint48 currentBlock = _getBlockNumber();
 
-        // update the top-of-block `slot0` if new block
-        if (_lastCheckpoint.blockNumber != currentBlock) {
-            int24 lastTick = _lastCheckpoint.state.slot0.tick();
-            _lastCheckpoint.state.slot0 = Slot0.wrap(manager.extsload(StateLibrary._getPoolStateSlot(poolId)));
-            _lastCheckpoint.blockNumber = currentBlock;
-
-            // iterate over ticks
-            (, int24 currentTick,,) = manager.getSlot0(poolId);
-            if (currentTick < lastTick) {
-                for (int24 tick = currentTick; tick <= lastTick; tick += key.tickSpacing) {
-                    (
-                        _lastCheckpoint.state.ticks[tick].liquidityGross,
-                        _lastCheckpoint.state.ticks[tick].liquidityNet,
-                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside0X128,
-                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside1X128
-                    ) = manager.getTickInfo(poolId, tick);
-                }
-            } else {
-                for (int24 tick = currentTick; tick >= lastTick; tick -= key.tickSpacing) {
-                    (
-                        _lastCheckpoint.state.ticks[tick].liquidityGross,
-                        _lastCheckpoint.state.ticks[tick].liquidityNet,
-                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside0X128,
-                        _lastCheckpoint.state.ticks[tick].feeGrowthOutside1X128
-                    ) = manager.getTickInfo(poolId, tick);
-                }
-            }
-
-            (_lastCheckpoint.state.feeGrowthGlobal0X128, _lastCheckpoint.state.feeGrowthGlobal1X128) =
-                manager.getFeeGrowthGlobals(poolId);
-            _lastCheckpoint.state.liquidity = manager.getLiquidity(poolId);
+        // A checkpoint holding no price has not been taken, whatever block it claims. Without that clause a
+        // pool whose first swap lands in block zero would never take one, and every swap in it would revert.
+        if (checkpoint.blockNumber != currentBlock || checkpoint.sqrtPriceX96 == 0) {
+            checkpoint.blockNumber = currentBlock;
+            (checkpoint.sqrtPriceX96,,,) = poolManager.getSlot0(key.toId());
         }
 
-        return super._beforeSwap(sender, key, params, hookData);
+        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
     /**
-     * @dev Returns the current block number.
+     * @dev Returns the block a swap belongs to.
+     *
+     * IMPORTANT: An override must return one value per block and a different one in the next. A value that
+     * moves within a block re-records the price on every swap, which removes the protection. One that never moves
+     * anchors the pool to a single price. Both fail silently.
      */
     function _getBlockNumber() internal view virtual returns (uint48) {
         return uint48(block.number);
     }
 
+    /// @dev Returns the checkpoint `poolId` holds. A pool never swapped in holds a zero one.
+    function getLastCheckpoint(PoolId poolId) public view virtual returns (Checkpoint memory) {
+        return _lastCheckpoints[poolId];
+    }
+
     /**
-     * @dev Calculates the unspecified amount based on the pool state at the beginning of the block.
-     * This prevents sandwich attacks by ensuring trades can't get better prices than what was available
-     * at the start of the block. Note that the calculated unspecified amount could either be input or output, depending
-     * if it's an exactInput or outputOutput swap. In cases of zeroForOne == true, the target unspecified amount is not
-     * applicable, and the max uint256 value is returned as a flag only.
+     * @dev Returns the target `delta` is held to, and whether it applies.
      *
-     * The anti-sandwich mechanism works such as:
+     * The unspecified side carries the target, so an exact input reads it as a ceiling on what the swap keeps
+     * and an exact output as a floor on what it pays. {BaseDynamicAfterFee-_afterSwap} takes the difference
+     * either way.
      *
-     * - For currency0 to currency1 swaps (zeroForOne = true): The pool behaves normally with xy=k curve.
-     * - For currency1 to currency0 swaps (zeroForOne = false): The price is fixed at the beginning-of-block
-     *   price, which prevents attackers from manipulating the price within a block.
+     * Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. The
+     * target is loose by the conversion's resolution in exchange, which grows with the price but never with
+     * the size of a swap, while the slippage a sandwich pays to open grows with its size.
+     *
+     * NOTE: No fee is taken where the target is a ceiling past what a `BalanceDelta` carries, and that
+     * changes nothing: such a ceiling already sits above every amount the swap could have received. The same
+     * overflow on a floor does bind, and reverts rather than charging nothing.
      */
-    function _getTargetUnspecified(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
-        internal
-        virtual
-        override
-        returns (uint256 targetUnspecifiedAmount, bool applyTarget)
-    {
-        if (params.zeroForOne) {
-            // when zeroForOne == true, the xy=k curve is used, so the target output doesn't matter, since it's not going to be used
-            // we return the max value to indicate that the target output is not applicable
-            return (type(uint256).max, false);
+    function _getTargetUnspecified(
+        address,
+        PoolKey calldata key,
+        SwapParams calldata params,
+        BalanceDelta delta,
+        bytes calldata
+    ) internal view virtual override returns (uint256 targetUnspecifiedAmount, bool applyTarget) {
+        uint256 sqrtPriceX96 = _lastCheckpoints[key.toId()].sqrtPriceX96;
+        if (sqrtPriceX96 == 0) revert CheckpointNotSet();
+
+        bool exactInput = params.amountSpecified < 0;
+        bool unspecifiedIsCurrency1 = exactInput == params.zeroForOne;
+
+        // The specified amount as the swap executed it, which the target for the unspecified side is calculated from.
+        uint256 specifiedAmount = SignedMath.abs(unspecifiedIsCurrency1 ? delta.amount0() : delta.amount1());
+
+        // The ratio that carries one currency into the other.
+        (uint256 multiplier, uint256 divisor) =
+            unspecifiedIsCurrency1 ? (sqrtPriceX96, FixedPoint96.Q96) : (FixedPoint96.Q96, sqrtPriceX96);
+
+        // An exact input rounds its ceiling up and an exact output rounds its floor down, so the wei that
+        // rounding decides always goes to the swapper.
+        Math.Rounding rounding = exactInput ? Math.Rounding.Ceil : Math.Rounding.Floor;
+
+        // Most either step may take while its result stays inside a `BalanceDelta`.
+        uint256 largest = Math.mulDiv(MAX_BALANCE_DELTA, divisor, multiplier);
+
+        if (specifiedAmount <= largest) {
+            // The first step applies the square root of the price, the second completes the conversion.
+            uint256 halfway = Math.mulDiv(specifiedAmount, multiplier, divisor, rounding);
+            if (halfway <= largest) return (Math.mulDiv(halfway, multiplier, divisor, rounding), true);
         }
 
-        Checkpoint storage _lastCheckpoint = _lastCheckpoints[key.toId()];
+        // Past that the two readings of the target part. A floor still binds, and no expressible amount
+        // satisfies it, so the swap cannot be held to the price and is refused.
+        if (!exactInput) revert TargetOutOfRange();
 
-        // Simulate the swap to get the swap delta
-        // NOTE: this functions does not execute the swap, it only calculates the output of a swap in the given state
-        (BalanceDelta swapDelta,,,) = Pool.swap(
-            _lastCheckpoint.state,
-            Pool.SwapParams({
-                tickSpacing: key.tickSpacing,
-                zeroForOne: params.zeroForOne,
-                amountSpecified: params.amountSpecified,
-                sqrtPriceLimitX96: params.sqrtPriceLimitX96,
-                lpFeeOverride: 0
-            })
-        );
-
-        // Get the unspecified amount from the swap delta
-        int128 target = (params.amountSpecified < 0 == params.zeroForOne) ? swapDelta.amount1() : swapDelta.amount0();
-
-        // Get the absolute unspecified amount
-        if (target < 0) target = -target;
-
-        targetUnspecifiedAmount = target.toUint256();
-        applyTarget = true;
+        // A ceiling cannot bind, since the amount it caps came out of a `BalanceDelta` and is therefore
+        // smaller. Charging nothing is not a concession here, it is the same answer the ceiling would give.
+        return (type(uint256).max, false);
     }
 
     /**

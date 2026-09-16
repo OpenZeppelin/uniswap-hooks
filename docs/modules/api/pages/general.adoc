@@ -483,10 +483,14 @@ difference taken as a fee, while a swap filled worse keeps that fill and receive
 fill was worsened, by liquidity withdrawn after the block's first swap for example, is not compensated:
 the mechanism removes an attacker's profit rather than restoring a victim's loss.
 
-NOTE: Only swaps are bounded. An attacker can supply the liquidity a victim trades through and
-withdraw it in the same block, and an attack whose legs sit in different blocks is measured against a
-price its own opening leg set. Consider combining with a JIT protection mechanism such as
+NOTE: Only swaps are bounded, so an attacker can supply the liquidity a victim trades through and withdraw
+it in the same block. Consider combining with a JIT protection mechanism such as
 https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/general/LiquidityPenaltyHook.sol[LiquidityPenaltyHook].
+
+IMPORTANT: A sandwich split across two blocks is not protected against, and pays as if this hook were not
+there. The baseline resets every block, so the closing leg is measured against a price the opening leg
+itself set. What the design removes is atomicity: the position has to be carried from one block into the
+next, with the price risk that brings.
 
 IMPORTANT: {TargetOutOfRange} refuses a swap that would owe more than a `BalanceDelta` holds, rather than
 charge it nothing. Reaching it needs the price to cross most of the tick range inside one block, which

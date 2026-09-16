@@ -32,7 +32,7 @@ import {BaseDynamicAfterFee} from "../fee/BaseDynamicAfterFee.sol";
  * to determine how to handle the collected fees from the anti-sandwich mechanism.
  *
  * NOTE: The price is read at the block's first swap, which is the price the block opened with: in Uniswap v4
- * only a swap moves it, so liquidity changes and donations landing earlier in the block doesn't.
+ * only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
  *
  * NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
  * held to the opening price.
@@ -56,10 +56,6 @@ import {BaseDynamicAfterFee} from "../fee/BaseDynamicAfterFee.sol";
  * An attacker can supply that liquidity and collect the fee back, whether it is paid in the same block or a
  * later one.
  *
- * WARNING: A price move made inside a block is not corrected inside it, since a correcting trade and a
- * sandwich's closing leg are the same trade. Correction waits for the next block, where the checkpoint has
- * reset to the moved price and trading away from it is free. Arbitrage is delayed a block, not discouraged.
- *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -72,7 +68,7 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
     /// @dev A swap ran against a pool holding no beginning-of-block price to hold it to.
     error CheckpointNotSet();
 
-    /// @dev The swap would owe more than a `BalanceDelta` holds, so it cannot be charged what it owes.
+    /// @dev The swap would owe more than a `BalanceDelta` holds, so the amount cannot be charged.
     error TargetOutOfRange();
 
     /// @dev The pool price at a block's first swap, and the block it was recorded in.
@@ -118,7 +114,7 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
         return uint48(block.number);
     }
 
-    /// @dev Returns the checkpoint `poolId` holds. A pool never swapped in holds a zero one.
+    /// @dev Returns the checkpoint `poolId` holds, which is zero for a pool never swapped in.
     function getLastCheckpoint(PoolId poolId) public view virtual returns (Checkpoint memory) {
         return _lastCheckpoints[poolId];
     }
@@ -130,13 +126,12 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
      * and an exact output as a floor on what it pays. {BaseDynamicAfterFee-_afterSwap} takes the difference
      * either way.
      *
-     * Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. The
-     * target is loose by the conversion's resolution in exchange, which grows with the price but never with
-     * the size of a swap, while the slippage a sandwich pays to open grows with its size.
+     * Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. In
+     * return the target is loose by the conversion's resolution, which grows with the price but never with a
+     * swap's size, while the slippage a sandwich pays to open does.
      *
-     * NOTE: No fee is taken where the target is a ceiling past what a `BalanceDelta` carries, and that
-     * changes nothing: such a ceiling already sits above every amount the swap could have received. The same
-     * overflow on a floor does bind, and reverts rather than charging nothing.
+     * NOTE: Where the target passes what a `BalanceDelta` carries, a ceiling is dropped and a floor
+     * reverts.
      */
     function _getTargetUnspecified(
         address,
@@ -171,8 +166,7 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
             if (halfway <= largest) return (Math.mulDiv(halfway, multiplier, divisor, rounding), true);
         }
 
-        // Past that the two readings of the target part. A floor still binds, and no expressible amount
-        // satisfies it, so the swap cannot be held to the price and is refused.
+        // Past that, a floor still binds and no expressible amount satisfies it, so the swap is refused.
         if (!exactInput) revert TargetOutOfRange();
 
         // A ceiling cannot bind, since the amount it caps came out of a `BalanceDelta` and is therefore

@@ -473,7 +473,7 @@ In order to use this hook, the inheriting contract must implement the {_afterSwa
 to determine how to handle the collected fees from the anti-sandwich mechanism.
 
 NOTE: The price is read at the block's first swap, which is the price the block opened with: in Uniswap v4
-only a swap moves it, so liquidity changes and donations landing earlier in the block doesn't.
+only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
 
 NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
 held to the opening price.
@@ -496,10 +496,6 @@ deploying.
 IMPORTANT: The fee is a sandwich's own gain, so {_afterSwapHandler} must not pay it to in-range liquidity.
 An attacker can supply that liquidity and collect the fee back, whether it is paid in the same block or a
 later one.
-
-WARNING: A price move made inside a block is not corrected inside it, since a correcting trade and a
-sandwich's closing leg are the same trade. Correction waits for the next block, where the checkpoint has
-reset to the moved price and trading away from it is free. Arbitrage is delayed a block, not discouraged.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -617,7 +613,7 @@ moves anchors the pool to a single price. Both fail silently.
 [[AntiSandwichHook-getLastCheckpoint-PoolId-]]
 ==== `[.contract-item-name]#++getLastCheckpoint++#++(PoolId poolId) → struct AntiSandwichHook.Checkpoint++` [.item-kind]#public#
 
-Returns the checkpoint `poolId` holds. A pool never swapped in holds a zero one.
+Returns the checkpoint `poolId` holds, which is zero for a pool never swapped in.
 
 [.contract-item]
 [[AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-]]
@@ -629,13 +625,12 @@ The unspecified side carries the target, so an exact input reads it as a ceiling
 and an exact output as a floor on what it pays. {BaseDynamicAfterFee-_afterSwap} takes the difference
 either way.
 
-Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. The
-target is loose by the conversion's resolution in exchange, which grows with the price but never with
-the size of a swap, while the slippage a sandwich pays to open grows with its size.
+Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. In
+return the target is loose by the conversion's resolution, which grows with the price but never with a
+swap's size, while the slippage a sandwich pays to open does.
 
-NOTE: No fee is taken where the target is a ceiling past what a `BalanceDelta` carries, and that
-changes nothing: such a ceiling already sits above every amount the swap could have received. The same
-overflow on a floor does bind, and reverts rather than charging nothing.
+NOTE: Where the target passes what a `BalanceDelta` carries, a ceiling is dropped and a floor
+reverts.
 
 [.contract-item]
 [[AntiSandwichHook-getHookPermissions--]]
@@ -653,7 +648,7 @@ A swap ran against a pool holding no beginning-of-block price to hold it to.
 [[AntiSandwichHook-TargetOutOfRange--]]
 ==== `[.contract-item-name]#++TargetOutOfRange++#++()++` [.item-kind]#error#
 
-The swap would owe more than a `BalanceDelta` holds, so it cannot be charged what it owes.
+The swap would owe more than a `BalanceDelta` holds, so the amount cannot be charged.
 
 :OrderInfo: pass:normal[xref:#LimitOrderHook-OrderInfo[`++OrderInfo++`]]
 :UserInfo: pass:normal[xref:#LimitOrderHook-UserInfo[`++UserInfo++`]]

@@ -115,7 +115,7 @@ contract AntiSandwichHookInvariantsTest is HookTest {
         selectors = new bytes4[](7);
         selectors[0] = AntiSandwichHookHandler.swap.selector;
         selectors[1] = AntiSandwichHookHandler.sandwich.selector;
-        selectors[2] = AntiSandwichHookHandler.jitSandwich.selector;
+        selectors[2] = AntiSandwichHookHandler.sandwichOverOwnBook.selector;
         selectors[3] = AntiSandwichHookHandler.addLiquidity.selector;
         selectors[4] = AntiSandwichHookHandler.removeLiquidity.selector;
         selectors[5] = AntiSandwichHookHandler.donate.selector;
@@ -142,10 +142,10 @@ contract AntiSandwichHookInvariantsTest is HookTest {
         int256 tolerance = handler.sandwichTolerance();
 
         assertLe(handler.ghost_bestPlainSandwichPnl(), tolerance, "INV-03: a plain sandwich ended a block ahead");
-        // A JIT attacker is compared against itself holding the identical position while someone else takes
+        // An attacker owning the book is compared against itself holding the identical position while someone
         // the identical legs. What is left is what swapping bought it, which is what the bound answers for.
         // Liquidity provision itself the umbra design leaves open, and `LiquidityPenaltyHook` addresses it.
-        assertLe(handler.ghost_bestJitEdge(), tolerance, "INV-03: swapping beat providing for a JIT attacker");
+        assertLe(handler.ghost_bestOwnedBookEdge(), tolerance, "INV-03: swapping beat providing over an owned book");
     }
 
     /// @dev INV-04: the block's first swap pays no fee. It is measured against the price standing before it
@@ -218,7 +218,7 @@ contract AntiSandwichHookInvariantsTest is HookTest {
         console.log("--- actions ---");
         console.log("swap          ", handler.calls("swap"));
         console.log("sandwich      ", handler.calls("sandwich"));
-        console.log("jitSandwich   ", handler.calls("jitSandwich"));
+        console.log("sandwichOverOwnBook   ", handler.calls("sandwichOverOwnBook"));
         console.log("addLiquidity  ", handler.calls("addLiquidity"));
         console.log("removeLiquidity", handler.calls("removeLiquidity"));
         console.log("donate        ", handler.calls("donate"));
@@ -230,12 +230,12 @@ contract AntiSandwichHookInvariantsTest is HookTest {
         console.log("first swaps of a block ", handler.ghost_firstSwapsOfBlock());
         console.log("blocks with two or more", handler.ghost_multiSwapBlocks());
         console.log("sandwiches measured    ", handler.ghost_sandwichesMeasured());
-        console.log("jit sandwiches measured", handler.ghost_jitSandwichesMeasured());
+        console.log("own-book sandwiches    ", handler.ghost_ownedBookSandwiches());
         console.log("max first swap gas     ", handler.ghost_maxFirstSwapGas());
 
         assertGt(handler.calls("swap"), 0, "swap was not exercised");
         assertGt(handler.calls("sandwich"), 0, "sandwich was not exercised");
-        assertGt(handler.calls("jitSandwich"), 0, "jitSandwich was not exercised");
+        assertGt(handler.calls("sandwichOverOwnBook"), 0, "sandwichOverOwnBook was not exercised");
         assertGt(handler.calls("addLiquidity"), 0, "addLiquidity was not exercised");
         assertGt(handler.calls("removeLiquidity"), 0, "removeLiquidity was not exercised");
         assertGt(handler.calls("donate"), 0, "donate was not exercised");
@@ -245,7 +245,9 @@ contract AntiSandwichHookInvariantsTest is HookTest {
         assertGt(handler.ghost_feeCharges(), 0, "no swap ever paid a fee, so the bound never bound");
         assertGt(handler.ghost_multiSwapBlocks(), 0, "no block saw more than one swap");
         assertGt(handler.ghost_sandwichesMeasured(), 0, "no sandwich was measured end to end");
-        assertGt(handler.ghost_jitSandwichesMeasured(), 0, "no JIT sandwich was measured, so half of INV-03 is vacuous");
+        assertGt(
+            handler.ghost_ownedBookSandwiches(), 0, "no own-book sandwich was measured, so half of INV-03 is vacuous"
+        );
         assertGt(handler.ghost_firstSwapsOfBlock(), 0, "no swap was the first of its block, so INV-04 is vacuous");
     }
 }

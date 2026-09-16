@@ -26,7 +26,7 @@ import {BaseHandler} from "../BaseHandler.sol";
  * Fuzzable surface:
  * - `swap`
  * - `sandwich`
- * - `jitSandwich`
+ * - `sandwichOverOwnBook`
  * - `addLiquidity`
  * - `removeLiquidity`
  * - `donate`
@@ -99,11 +99,11 @@ contract AntiSandwichHookHandler is BaseHandler {
     int256 public ghost_bestSandwichPnl;
     int256 public ghost_bestPlainSandwichPnl;
     uint256 public ghost_sandwichesMeasured;
-    uint256 public ghost_jitSandwichesMeasured;
+    uint256 public ghost_ownedBookSandwiches;
 
-    /// @dev The most a JIT attacker gained by taking the swap legs itself rather than leaving them to
+    /// @dev The most an attacker owning the book gained by taking the swap legs itself rather than leaving
     /// someone else, with the position and the flow held identical.
-    int256 public ghost_bestJitEdge;
+    int256 public ghost_bestOwnedBookEdge;
 
     /// @dev Swaps the pool accepted whose `afterSwap` the hook rejected.
     uint256 public ghost_hookRejections;
@@ -161,7 +161,7 @@ contract AntiSandwichHookHandler is BaseHandler {
         stateTransition
     {
         uint256 amount = bound(amountSeed, AMOUNT_MIN_BOUND, AMOUNT_MAX_BOUND);
-        _trade(_actorFromSeed(actorSeed), zeroForOne, exactInput ? -int256(amount) : int256(amount));
+        _checkedSwap(_actorFromSeed(actorSeed), zeroForOne, exactInput ? -int256(amount) : int256(amount));
     }
 
     /// @dev A front run, a victim and a back run in one block, closing the same size the attack opened.
@@ -186,7 +186,7 @@ contract AntiSandwichHookHandler is BaseHandler {
 
     /// @dev The same attack with the attacker also providing the liquidity the victim trades through, added
     /// and removed inside the block. The hook takes no liquidity callbacks, so nothing records this.
-    struct JitPlan {
+    struct OwnBookPlan {
         uint256 size;
         uint256 victim;
         uint256 liquidity;
@@ -205,41 +205,41 @@ contract AntiSandwichHookHandler is BaseHandler {
      * difference is what the attacker gained by swapping rather than by providing, which is the part a bound
      * on swaps is answerable for.
      */
-    function jitSandwich(uint256 sizeSeed, uint256 victimSeed, uint256 liquiditySeed, bool openWithBuy)
+    function sandwichOverOwnBook(uint256 sizeSeed, uint256 victimSeed, uint256 liquiditySeed, bool openWithBuy)
         external
-        recordCall("jitSandwich")
+        recordCall("sandwichOverOwnBook")
         stateTransition
     {
-        JitPlan memory plan;
+        OwnBookPlan memory plan;
         plan.size = bound(sizeSeed, AMOUNT_MIN_BOUND, AMOUNT_MAX_BOUND / 4);
         plan.victim = bound(victimSeed, AMOUNT_MIN_BOUND, AMOUNT_MAX_BOUND / 4);
         plan.liquidity = bound(liquiditySeed, LIQUIDITY_MIN_BOUND, LIQUIDITY_MAX_BOUND);
         plan.lower = _floor(_storedTick()) - 4 * key.tickSpacing;
         plan.upper = plan.lower + 8 * key.tickSpacing;
-        plan.salt = keccak256(abi.encode("jit", liquiditySeed, block.number));
+        plan.salt = keccak256(abi.encode("ownBook", liquiditySeed, block.number));
         plan.openWithBuy = openWithBuy;
 
         uint256 snap = vm.snapshotState();
-        (int256 attacking, bool attackingOk) = _runJit(plan, _actorFromSeed(0));
+        (int256 attacking, bool attackingOk) = _runOverOwnBook(plan, _actorFromSeed(0));
         vm.revertToState(snap);
 
         snap = vm.snapshotState();
-        (int256 providing, bool providingOk) = _runJit(plan, _actorFromSeed(2));
+        (int256 providing, bool providingOk) = _runOverOwnBook(plan, _actorFromSeed(2));
         vm.revertToState(snap);
 
         if (!attackingOk || !providingOk) return;
 
         // Leave the attacking arm standing, so the sequence carries its state forward.
-        _runJit(plan, _actorFromSeed(0));
+        _runOverOwnBook(plan, _actorFromSeed(0));
 
         int256 edge = attacking - providing;
-        if (edge > ghost_bestJitEdge) ghost_bestJitEdge = edge;
-        ++ghost_jitSandwichesMeasured;
+        if (edge > ghost_bestOwnedBookEdge) ghost_bestOwnedBookEdge = edge;
+        ++ghost_ownedBookSandwiches;
     }
 
     /// @dev Runs `plan` with actor 0 providing the liquidity and `opener` taking both swap legs. Returns
     /// what the provider gained, valued at the price the block is measured against.
-    function _runJit(JitPlan memory plan, address opener) private returns (int256 pnl, bool ok) {
+    function _runOverOwnBook(OwnBookPlan memory plan, address opener) private returns (int256 pnl, bool ok) {
         address provider = _actorFromSeed(0);
         uint160 price = _valuationPrice();
         int256 opening = _measureValue(provider, price);
@@ -322,8 +322,9 @@ contract AntiSandwichHookHandler is BaseHandler {
         return (checkpoint.sqrtPriceX96, checkpoint.blockNumber);
     }
 
-    /// @dev Runs one swap and asserts what it filled against the beginning-of-block price.
-    function _trade(address actor, bool zeroForOne, int256 amountSpecified) private returns (bool filled) {
+    /// @dev Runs one swap as `actor` and asserts what it filled against the beginning-of-block price.
+    /// Named apart from {BaseHandler-_swap}, which takes no actor and makes no assertion.
+    function _checkedSwap(address actor, bool zeroForOne, int256 amountSpecified) private returns (bool filled) {
         (uint160 priceBefore, uint48 blockBefore) = _checkpoint();
         bool isFirstOfBlock = blockBefore != uint48(block.number);
 
@@ -474,10 +475,10 @@ contract AntiSandwichHookHandler is BaseHandler {
         int256 open = openWithBuy ? int256(size) : -int256(size);
         int256 close = openWithBuy ? -int256(size) : int256(size);
 
-        if (!_trade(attacker, zeroForOneOpen, open)) return false;
-        _trade(prey, zeroForOneOpen, openWithBuy ? int256(victim) : -int256(victim));
+        if (!_checkedSwap(attacker, zeroForOneOpen, open)) return false;
+        _checkedSwap(prey, zeroForOneOpen, openWithBuy ? int256(victim) : -int256(victim));
 
-        return _trade(attacker, !zeroForOneOpen, close);
+        return _checkedSwap(attacker, !zeroForOneOpen, close);
     }
 
     function _recordSandwich(address attacker, int256 opening, uint160 price) private returns (int256 pnl) {

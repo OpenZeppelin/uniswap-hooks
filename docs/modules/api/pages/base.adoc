@@ -49,6 +49,7 @@
 :xref-BaseCustomAccounting-AlreadyInitialized--: xref:base.adoc#BaseCustomAccounting-AlreadyInitialized--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :BaseCustomAccounting: pass:normal[xref:base.adoc#BaseCustomAccounting[`BaseCustomAccounting`]]
 :xref-BaseCustomCurve-_getAddLiquidity-uint160-struct-BaseCustomAccounting-AddLiquidityParams-: xref:base.adoc#BaseCustomCurve-_getAddLiquidity-uint160-struct-BaseCustomAccounting-AddLiquidityParams-
 :xref-BaseCustomCurve-_getRemoveLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-: xref:base.adoc#BaseCustomCurve-_getRemoveLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-
@@ -99,7 +100,9 @@
 :xref-BaseCustomAccounting-AlreadyInitialized--: xref:base.adoc#BaseCustomAccounting-AlreadyInitialized--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-BaseHook-onlyPoolManager--: xref:base.adoc#BaseHook-onlyPoolManager--
+:xref-BaseHook-onlyValidPools-contract-IHooks-: xref:base.adoc#BaseHook-onlyValidPools-contract-IHooks-
 :xref-BaseHook-constructor-contract-IPoolManager-: xref:base.adoc#BaseHook-constructor-contract-IPoolManager-
 :xref-BaseHook-getHookPermissions--: xref:base.adoc#BaseHook-getHookPermissions--
 :xref-BaseHook-_validateHookAddress-contract-BaseHook-: xref:base.adoc#BaseHook-_validateHookAddress-contract-BaseHook-
@@ -126,6 +129,7 @@
 :xref-BaseHook-poolManager-contract-IPoolManager: xref:base.adoc#BaseHook-poolManager-contract-IPoolManager
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-BaseAsyncSwap-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-: xref:base.adoc#BaseAsyncSwap-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-
 :xref-BaseAsyncSwap-_calculateSwapFee-struct-PoolKey-uint256-: xref:base.adoc#BaseAsyncSwap-_calculateSwapFee-struct-PoolKey-uint256-
 :xref-BaseAsyncSwap-getHookPermissions--: xref:base.adoc#BaseAsyncSwap-getHookPermissions--
@@ -156,6 +160,7 @@
 :xref-IHookEvents-HookBonus-bytes32-uint128-uint128-: xref:interfaces.adoc#IHookEvents-HookBonus-bytes32-uint128-uint128-
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 = Base
 
 [.readme-notice]
@@ -322,6 +327,7 @@ _Available since v0.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -603,6 +609,7 @@ _Available since v0.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -681,8 +688,10 @@ Set the hook permissions, specifically `beforeInitialize`, `beforeAddLiquidity`,
 :poolManager: pass:normal[xref:#BaseHook-poolManager-contract-IPoolManager[`++poolManager++`]]
 :HookNotImplemented: pass:normal[xref:#BaseHook-HookNotImplemented--[`++HookNotImplemented++`]]
 :NotPoolManager: pass:normal[xref:#BaseHook-NotPoolManager--[`++NotPoolManager++`]]
+:InvalidPool: pass:normal[xref:#BaseHook-InvalidPool--[`++InvalidPool++`]]
 :constructor: pass:normal[xref:#BaseHook-constructor-contract-IPoolManager-[`++constructor++`]]
 :onlyPoolManager: pass:normal[xref:#BaseHook-onlyPoolManager--[`++onlyPoolManager++`]]
+:onlyValidPools: pass:normal[xref:#BaseHook-onlyValidPools-contract-IHooks-[`++onlyValidPools++`]]
 :getHookPermissions: pass:normal[xref:#BaseHook-getHookPermissions--[`++getHookPermissions++`]]
 :_validateHookAddress: pass:normal[xref:#BaseHook-_validateHookAddress-contract-BaseHook-[`++_validateHookAddress++`]]
 :beforeInitialize: pass:normal[xref:#BaseHook-beforeInitialize-address-struct-PoolKey-uint160-[`++beforeInitialize++`]]
@@ -733,6 +742,7 @@ _Available since v0.1.0_
 .Modifiers
 --
 * {xref-BaseHook-onlyPoolManager--}[`++onlyPoolManager()++`]
+* {xref-BaseHook-onlyValidPools-contract-IHooks-}[`++onlyValidPools(hooks)++`]
 --
 
 [.contract-index]
@@ -773,6 +783,7 @@ _Available since v0.1.0_
 --
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -782,6 +793,15 @@ _Available since v0.1.0_
 [.contract-item]
 [[BaseHook-onlyPoolManager--]]
 ==== `[.contract-item-name]#++onlyPoolManager++#++()++` [.item-kind]#modifier#
+
+[.contract-item]
+[[BaseHook-onlyValidPools-contract-IHooks-]]
+==== `[.contract-item-name]#++onlyValidPools++#++(contract IHooks hooks)++` [.item-kind]#modifier#
+
+Only allow calls for a pool whose `hooks` is this contract.
+
+Functions that take a `PoolKey` from the caller should use this modifier, since the `poolManager` accepts any
+initialized pool and a pool configured with a different hook never calls into this contract.
 
 [.contract-item]
 [[BaseHook-constructor-contract-IPoolManager-]]
@@ -927,6 +947,12 @@ The hook function is not implemented.
 [[BaseHook-NotPoolManager--]]
 ==== `[.contract-item-name]#++NotPoolManager++#++()++` [.item-kind]#error#
 
+[.contract-item]
+[[BaseHook-InvalidPool--]]
+==== `[.contract-item-name]#++InvalidPool++#++()++` [.item-kind]#error#
+
+The pool is not configured to use this hook.
+
 :_beforeSwap: pass:normal[xref:#BaseAsyncSwap-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-[`++_beforeSwap++`]]
 :_calculateSwapFee: pass:normal[xref:#BaseAsyncSwap-_calculateSwapFee-struct-PoolKey-uint256-[`++_calculateSwapFee++`]]
 :getHookPermissions: pass:normal[xref:#BaseAsyncSwap-getHookPermissions--[`++getHookPermissions++`]]
@@ -1032,6 +1058,7 @@ _Available since v0.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks

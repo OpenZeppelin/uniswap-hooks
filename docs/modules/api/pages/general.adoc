@@ -466,41 +466,40 @@ this hook guarantees that no swaps get filled at a price better than the price a
 the beginning of the slot window (i.e. one block), up to rounding.
 
 That price is recorded at the block's first swap, and any excess a later swap gains over it is taken as a
-hook fee. A sandwich therefore closes no better than the price its opening leg moved away from, and ends
-never ends the block ahead. Only the price is read, so neither the tick layout nor the depth the pool holds
-enters the target.
+hook fee. A sandwich therefore closes no better than the price its opening leg moved away from, so it cannot
+turn a profit.
 
 In order to use this hook, the inheriting contract must implement the {_afterSwapHandler} function
 to determine how to handle the collected fees from the anti-sandwich mechanism.
 
 NOTE: The price is read at the block's first swap, which is the price the block opened with: in Uniswap v4
-only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
+only a swap moves it, so liquidity changes and donations landing earlier in the block doesn't.
 
 NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
-held to the opening price. Whoever moved it is held to the same price squaring its own position.
+held to the opening price.
 
-NOTE: Only what a swap gained is taken. A swap filled worse than the recorded price keeps that fill and is
-paid nothing back, so liquidity withdrawn after the block's first swap costs a swapper without the hook
-intervening.
+NOTE: The hook only takes, it never pays. A swap filled better than the recorded price has the
+difference taken as a fee, while a swap filled worse keeps that fill and receives nothing. A swapper whose
+fill was worsened, by liquidity withdrawn after the block's first swap for example, is not compensated:
+the mechanism removes an attacker's profit rather than restoring a victim's loss.
 
-IMPORTANT: Only swaps are bounded. An attacker can supply the liquidity a victim trades through and
+NOTE: Only swaps are bounded. An attacker can supply the liquidity a victim trades through and
 withdraw it in the same block, and an attack whose legs sit in different blocks is measured against a
 price its own opening leg set. Consider combining with a JIT protection mechanism such as
 https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/general/LiquidityPenaltyHook.sol[LiquidityPenaltyHook].
 
-IMPORTANT: A swap is refused with {TargetOutOfRange} where the recorded price values it past what a
-`BalanceDelta` carries, rather than let through uncharged. Reaching it needs the price to move by an
-enormous factor inside one block: the measured case crosses about 800,000 ticks, close to half of what a
-pool can express. That in turn needs liquidity thin enough for one swap to cross that range, so a pool
-holding its liquidity near its price cannot reach it, while a single position stretched over most of the
-tick range can. Consider the width liquidity is provided over before deploying.
+IMPORTANT: {TargetOutOfRange} refuses a swap that would owe more than a `BalanceDelta` holds, rather than
+charge it nothing. Reaching it needs the price to cross most of the tick range inside one block, which
+needs liquidity thin enough for a single swap to do that. Consider how widely liquidity is provided before
+deploying.
 
 IMPORTANT: The fee is a sandwich's own gain, so {_afterSwapHandler} must not pay it to in-range liquidity.
 An attacker can supply that liquidity and collect the fee back, whether it is paid in the same block or a
-later one. See {AntiSandwichMock}.
+later one.
 
-WARNING: Since this hook removes the profit from sandwiching, there is less arbitrage in the pool, so
-prices at the beginning of a block are not necessarily close to market price.
+WARNING: A price move made inside a block is not corrected inside it, since a correcting trade and a
+sandwich's closing leg are the same trade. Correction waits for the next block, where the checkpoint has
+reset to the moved price and trading away from it is free. Arbitrage is delayed a block, not discouraged.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -611,8 +610,8 @@ Records the pool price at the block's first swap. Later swaps in the block leave
 Returns the block a swap belongs to.
 
 IMPORTANT: An override must return one value per block and a different one in the next. A value that
-moves within a block re-records the price on every swap, which removes the protection. One that never moves
-anchors the pool to a single price. Both fail silently.
+moves within a block re-records the price on every swap, which removes the protection. One that never
+moves anchors the pool to a single price. Both fail silently.
 
 [.contract-item]
 [[AntiSandwichHook-getLastCheckpoint-PoolId-]]
@@ -654,8 +653,7 @@ A swap ran against a pool holding no beginning-of-block price to hold it to.
 [[AntiSandwichHook-TargetOutOfRange--]]
 ==== `[.contract-item-name]#++TargetOutOfRange++#++()++` [.item-kind]#error#
 
-The beginning-of-block price values the swap past what a `BalanceDelta` carries, so the amount it
-would have to pay cannot be charged.
+The swap would owe more than a `BalanceDelta` holds, so it cannot be charged what it owes.
 
 :OrderInfo: pass:normal[xref:#LimitOrderHook-OrderInfo[`++OrderInfo++`]]
 :UserInfo: pass:normal[xref:#LimitOrderHook-UserInfo[`++UserInfo++`]]

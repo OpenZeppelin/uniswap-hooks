@@ -813,6 +813,76 @@ contract LimitOrderHookTest is HookTest {
         assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
     }
 
+    /// @dev The scan searches strictly above the tick it holds, so the range's own upper bound is the
+    /// tick it can most easily miss. An order there is converted and must fill; one above it must not.
+    function test_fill_orderOnTheScannedRangesUpperBoundFills() public {
+        int24 onBound = 50 * tickSpacing;
+        int24 above = 51 * tickSpacing;
+
+        hook.placeOrder(key, onBound, true, 1e15);
+        hook.placeOrder(key, above, true, 1e15);
+
+        modifyPoolLiquidity(key, -600000, 600000, 1e21, SALT_THIS);
+
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, above);
+
+        assertEq(hook.getTickLowerLast(key.toId()) - tickSpacing, onBound, "the range's upper bound moved");
+        assertEq(rawOrderIdOf(key, onBound, true), 0, "the order on the upper bound was skipped");
+        assertEq(rawOrderIdOf(key, above, true), 2, "an order above the range was filled");
+    }
+
+    /// @dev The scan visits ticks holding an order, not every tick crossed, so a wide move stays cheap
+    /// even with no orders to fill. Reading one slot per tick made this exceed the block gas limit.
+    function test_fill_wideBandCostsFarLessThanABlock() public {
+        modifyPoolLiquidity(key, -600000, 600000, 1e21, SALT_THIS);
+
+        uint256 before = gasleft();
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e27, -300000);
+        uint256 used = before - gasleft();
+
+        assertLt(getCurrentTick(key), -200000, "the swap should cover a wide band");
+        assertLt(used, 3_000_000, "a 5000 spacing move should not cost a lookup per tick");
+    }
+
+    /// @dev A word of the bitmap spans 256 spaced ticks, so a scan that steps past one must not lose the
+    /// orders on either side of the seam.
+    function test_fill_scanCrossesAWordBoundary() public {
+        PoolKey memory wordKey = PoolKey({
+            currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 1, hooks: IHooks(address(hook))
+        });
+        manager.initialize(wordKey, TickMath.getSqrtPriceAtTick(0));
+
+        // at a spacing of one, ticks 255 and 256 sit in adjacent words
+        hook.placeOrder(wordKey, 255, true, 1e12);
+        hook.placeOrder(wordKey, 256, true, 1e12);
+        uint232 below = rawOrderIdOf(wordKey, 255, true);
+        uint232 above = rawOrderIdOf(wordKey, 256, true);
+
+        vm.prank(swapper);
+        swapToLimit(wordKey, false, -1e21, 300);
+
+        assertGt(getCurrentTick(wordKey), 256, "the price should be past both orders");
+        assertTrue(getOrderInfoView(below).filled, "the order below the seam should fill");
+        assertTrue(getOrderInfoView(above).filled, "the order above the seam should fill");
+    }
+
+    /// @dev Negative ticks compress to negative word positions, which the scan must index the same way.
+    function test_fill_scanOverNegativeTicks() public {
+        hook.placeOrder(key, -60, false, 1e15);
+        hook.placeOrder(key, -180, false, 1e15);
+        uint232 near = rawOrderIdOf(key, -60, false);
+        uint232 far = rawOrderIdOf(key, -180, false);
+
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e21, -240);
+
+        assertLt(getCurrentTick(key), -180, "the price should be past both orders");
+        assertTrue(getOrderInfoView(near).filled, "the nearer negative order should fill");
+        assertTrue(getOrderInfoView(far).filled, "the further negative order should fill");
+    }
+
     // ------------------------------------- Withdraw ------------------------------------- //
 
     function test_withdraw_notFilled_reverts() public {

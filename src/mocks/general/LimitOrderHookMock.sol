@@ -20,6 +20,10 @@ contract LimitOrderHookMock is LimitOrderHook {
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
+    function hasOrderAtTick(PoolKey memory key, int24 tickLower, bool zeroForOne) external view returns (bool) {
+        return _hasOrderAtTick(key.toId(), key.tickSpacing, tickLower, zeroForOne);
+    }
+
     /**
      * @dev Swaps `amount` toward `targetTick` from inside this hook's own unlock callback, which the pool
      * does not report. Fills the orders it crossed when `fillCrossed`, and models the subclass that forgets

@@ -44,6 +44,15 @@ once by the fill and split pro-rata.
 - Mutation checked: collapsing the position salt to `bytes32(0)` restores the shared position and
   fails it.
 
+### INV-L-05: A tick is recorded as holding an order exactly when one is live there
+
+- `∀ (t, d) in the handler's tick set: hasOrderAtTick(t, d) ⟺ orderId(t, d) != 0`
+- Holds. 10 runs, 5k calls.
+- The fill scan visits only recorded ticks, so a live order whose bit is clear is never filled while its
+  liquidity converts, leaving its owner a free option to cancel after a round trip.
+- Mutation checked: sensitive to a single-tick desync at 10 runs. `ghost_multiWordCrossings` is a
+  coverage floor, so the campaign fails if no swap ever crosses a word boundary.
+
 ## F: the filled state
 
 ### INV-F-01: A fully withdrawn order holds no liquidity

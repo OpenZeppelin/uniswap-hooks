@@ -182,6 +182,29 @@ contract LimitOrderHookInvariantsTest is HookTest {
         assertEq(positionLiquidity, liquidityTotal, "INV-L-04: a live order does not hold its pool position alone");
     }
 
+    /// @dev INV-L-05: a tick is recorded as holding an order exactly when one is live there.
+    function invariant_L05_recordedTickAgreesWithTheOrder() public view {
+        int24[] memory tickList = handler.ticks();
+
+        for (uint256 i; i < tickList.length; ++i) {
+            _assertRecordedTickAgrees(tickList[i], true);
+            _assertRecordedTickAgrees(tickList[i], false);
+        }
+    }
+
+    /// @dev The fill scan visits a tick only when it is recorded, so a tick holding a live order whose
+    /// bit is clear is never filled. Its liquidity converts while the order stays live, and its owner
+    /// can cancel after a round trip through the range and take back what they deposited.
+    function _assertRecordedTickAgrees(int24 tickLower, bool zeroForOne) private view {
+        bool live = OrderIdLibrary.OrderId.unwrap(hook.getOrderId(key, tickLower, zeroForOne)) != 0;
+
+        assertEq(
+            hook.hasOrderAtTick(key, tickLower, zeroForOne),
+            live,
+            "INV-L-05: a tick's record disagrees with whether an order is live there"
+        );
+    }
+
     /// @dev INV-F-01: a fully withdrawn order holds no liquidity.
     function invariant_F01_fullyWithdrawnOrderHoldsNoLiquidity() public view {
         uint232[] memory ids = handler.orderIds();
@@ -370,12 +393,15 @@ contract LimitOrderHookInvariantsTest is HookTest {
         console.log("multi canceller ratio", multiCancellerRatio, "%");
         console.log("boundary placements", handler.ghost_boundaryPlacements());
         console.log("in-range boundary placements", handler.ghost_inRangeBoundaryPlacements());
+        console.log("widest word span crossed by one swap", handler.ghost_maxWordSpanCrossed());
+        console.log("swaps crossing more than one word", handler.ghost_multiWordCrossings());
 
         assertGt(orderCount, 0, "no order was created");
         assertGt(fillCount, 0, "no order was filled");
         assertGt(fullyWithdrawnCount, 0, "no order was fully withdrawn");
         assertGt(fullyCancelledCount, 0, "no order was fully cancelled");
         assertGt(handler.ghost_boundaryPlacements(), 0, "no order was placed at the price boundary");
+        assertGt(handler.ghost_multiWordCrossings(), 0, "no swap crossed a word, so the scan never advanced");
     }
 
     /// @dev Orders whose exit was split across more than one actor.

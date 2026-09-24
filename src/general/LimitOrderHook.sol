@@ -236,13 +236,13 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     event Withdraw(address indexed owner, OrderIdLibrary.OrderId indexed orderId, uint128 liquidity);
 
     /// @dev Hooks into the `afterInitialize` hook to set the last tick lower for the pool.
-    function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick)
+    function _afterInitialize(address, PoolKey calldata key, uint160, int24)
         internal
         virtual
         override
         returns (bytes4)
     {
-        _tickLowerLasts[key.toId()] = _getTickLower(tick, key.tickSpacing);
+        _recordTickLowerLast(key);
 
         return this.afterInitialize.selector;
     }
@@ -251,8 +251,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Records the tick `key` currently sits at as the baseline the next crossing is measured from,
      * without filling anything.
      *
-     * IMPORTANT: A subclass that initializes a pool itself must call this, since the pool does not report
-     * such an initialization back to the hook.
+     * IMPORTANT: {_afterInitialize} calls this, but does not run for a pool this hook initializes itself.
+     * A subclass that does so must call it right after.
      */
     function _recordTickLowerLast(PoolKey memory key) internal virtual {
         PoolId poolId = key.toId();

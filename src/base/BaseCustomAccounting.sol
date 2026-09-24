@@ -32,6 +32,10 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * accounting hook for multiple pools, you must have multiple storage instances of this contract and
  * initialize them via the `PoolManager` with their respective pool keys.
  *
+ * WARNING: The share supply is stale for the length of a liquidity modification, since {_mint} and {_burn} run
+ * once {unlockCallback} returns. Account for it wherever the shares enter a computation, in this hook or in a
+ * contract that reads them.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -263,7 +267,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         // Calculate the principal delta
         BalanceDelta principalDelta = callerDelta - feesAccrued;
 
-        // Handle each currency amount based on its sign after applying the liquidity modification
+        // Settle both currencies before sending either one out, so untrusted code sees no one-sided state
         if (principalDelta.amount0() < 0) {
             // If amount0 is negative, send tokens from the sender to the pool. The native currency is paid
             // from this contract, which holds the sender's value for the length of the call
@@ -274,15 +278,19 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
                     uint256(int256(-principalDelta.amount0())),
                     false
                 );
-        } else {
-            // If amount0 is positive, send tokens from the pool to the sender
-            key.currency0.take(poolManager, data.sender, uint256(int256(principalDelta.amount0())), false);
         }
 
         if (principalDelta.amount1() < 0) {
             // If amount1 is negative, send tokens from the sender to the pool
             key.currency1.settle(poolManager, data.sender, uint256(int256(-principalDelta.amount1())), false);
-        } else {
+        }
+
+        if (principalDelta.amount0() > 0) {
+            // If amount0 is positive, send tokens from the pool to the sender
+            key.currency0.take(poolManager, data.sender, uint256(int256(principalDelta.amount0())), false);
+        }
+
+        if (principalDelta.amount1() > 0) {
             // If amount1 is positive, send tokens from the pool to the sender
             key.currency1.take(poolManager, data.sender, uint256(int256(principalDelta.amount1())), false);
         }

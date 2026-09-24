@@ -31,6 +31,10 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * NOTE: This hook by default does not include fee or salt mechanisms, which can be implemented by inheriting
  * contracts if needed.
  *
+ * WARNING: The share supply is stale for the length of a liquidity modification, since {_mint} and {_burn} run
+ * once {unlockCallback} returns. Account for it wherever the shares enter a computation, in this hook or in a
+ * contract that reads them.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -212,39 +216,22 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     {
         CallbackDataCustom memory data = abi.decode(rawData, (CallbackDataCustom));
 
-        // slither-disable-next-line uninitialized-local
-        int128 amount0;
-        // slither-disable-next-line uninitialized-local
-        int128 amount1;
-
         // This section handles liquidity modifications (adding/removing) for both tokens in the pool
         // The sign of data.amount0/1 determines if we're removing (-) or adding (+) liquidity
 
         PoolKey memory key = poolKey();
 
-        // Remove liquidity if amount0 is negative
+        // The delta owed to the hook is the opposite of the amounts moved for the user
+        int128 amount0 = -data.amount0;
+        int128 amount1 = -data.amount1;
+
+        // Settle both currencies before taking either one, so untrusted code sees no one-sided state
+
         if (data.amount0 < 0) {
             // Burns ERC-6909 tokens to receive tokens
             key.currency0.settle(poolManager, address(this), uint256(int256(-data.amount0)), true);
-            // Sends tokens from the pool to the user
-            key.currency0.take(poolManager, data.sender, uint256(int256(-data.amount0)), false);
-            // Record the amount so that it can be then encoded into the delta
-            amount0 = -data.amount0;
-        }
-
-        // Remove liquidity if amount1 is negative
-        if (data.amount1 < 0) {
-            // Burns ERC-6909 tokens to receive tokens
-            key.currency1.settle(poolManager, address(this), uint256(int256(-data.amount1)), true);
-            // Sends tokens from the pool to the user
-            key.currency1.take(poolManager, data.sender, uint256(int256(-data.amount1)), false);
-            // Record the amount so that it can be then encoded into the delta
-            amount1 = -data.amount1;
-        }
-
-        // Add liquidity if amount0 is positive
-        if (data.amount0 > 0) {
-            // First settle (send) tokens from user to pool. The native currency is paid from this
+        } else if (data.amount0 > 0) {
+            // Settle (send) tokens from user to pool. The native currency is paid from this
             // contract, which holds the sender's value for the length of the call
             key.currency0
                 .settle(
@@ -253,20 +240,30 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
                     uint256(int256(data.amount0)),
                     false
                 );
-            // Take (mint) ERC-6909 tokens to be received by this hook
-            key.currency0.take(poolManager, address(this), uint256(int256(data.amount0)), true);
-            // Record the amount so that it can be then encoded into the delta
-            amount0 = -data.amount0;
         }
 
-        // Add liquidity if amount1 is positive
-        if (data.amount1 > 0) {
-            // First settle (send) tokens from user to pool
+        if (data.amount1 < 0) {
+            // Burns ERC-6909 tokens to receive tokens
+            key.currency1.settle(poolManager, address(this), uint256(int256(-data.amount1)), true);
+        } else if (data.amount1 > 0) {
+            // Settle (send) tokens from user to pool
             key.currency1.settle(poolManager, data.sender, uint256(int256(data.amount1)), false);
+        }
+
+        if (data.amount0 < 0) {
+            // Sends tokens from the pool to the user
+            key.currency0.take(poolManager, data.sender, uint256(int256(-data.amount0)), false);
+        } else if (data.amount0 > 0) {
+            // Take (mint) ERC-6909 tokens to be received by this hook
+            key.currency0.take(poolManager, address(this), uint256(int256(data.amount0)), true);
+        }
+
+        if (data.amount1 < 0) {
+            // Sends tokens from the pool to the user
+            key.currency1.take(poolManager, data.sender, uint256(int256(-data.amount1)), false);
+        } else if (data.amount1 > 0) {
             // Take (mint) ERC-6909 tokens to be received by this hook
             key.currency1.take(poolManager, address(this), uint256(int256(data.amount1)), true);
-            // Record the amount so that it can be then encoded into the delta
-            amount1 = -data.amount1;
         }
 
         emit HookModifyLiquidity(PoolId.unwrap(key.toId()), data.sender, amount0, amount1);

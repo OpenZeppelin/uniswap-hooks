@@ -17,6 +17,12 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
  * Based on the https://github.com/Uniswap/v4-core/blob/main/test/utils/CurrencySettler.sol[Uniswap v4 test utils implementation].
  *
  * NOTE: Deltas are synced before any ERC-20 transfers in {settle} function.
+ *
+ * IMPORTANT: Moving an underlying token hands execution to code the hook does not control: {take} calls the
+ * recipient for the native currency, and both {take} and {settle} call the token contract for an ERC-20. The
+ * `PoolManager` is unlocked there, so that code can reach the hook partway through an operation, when the state
+ * it exposes is not yet consistent. Follow checks-effects-interactions and update that state before either call.
+ * The ERC-6909 paths and a native {settle} reach only the `PoolManager`.
  */
 library CurrencySettler {
     using SafeERC20 for IERC20;

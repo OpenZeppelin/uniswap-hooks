@@ -32,16 +32,13 @@ library CurrencySettler {
 
     /**
      * @notice Settle (pay) a currency to the `PoolManager`
-     *
-     * IMPORTANT: The funds are pulled from `payer`, while the delta settled belongs to the calling contract.
-     * Derive `payer` from trusted context, given that an untrusted value lets an attacker pay the debt of the
-     * calling contract with an allowance that a third party granted to it.
-     *
      * @param currency Currency to settle
      * @param poolManager `PoolManager` to settle to
      * @param payer Address of the payer, which can be the hook itself or an external address. The native
      * currency is paid from the balance of the calling contract, so `payer` must be that contract when
      * `currency` is native and `burn` is false, otherwise the call reverts with {InvalidNativePayer}.
+     * Tokens are pulled from `payer` to settle the calling contract's delta, so `payer` must not come from
+     * untrusted input.
      * @param amount Amount to send
      * @param burn If true, burn the ERC-6909 token, otherwise transfer ERC-20 to the `PoolManager`
      */

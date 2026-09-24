@@ -264,6 +264,9 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
      * input currency on exact output swaps. On an exact input swap the hook takes the full specified input from the
      * pool, so the fee can only be realized as output that the hook retains.
      *
+     * NOTE: The returned amount is only reported in the `HookSwap` event and is not applied to the settlement.
+     * The amount returned by {_getUnspecifiedAmount} must therefore already account for the fee.
+     *
      * @param params The swap parameters.
      * @param unspecifiedAmount The amount of the unspecified currency to be taken or settled.
      * @return swapFeeAmount The amount of fees to be paid to LPs in the swap, denominated in the unspecified currency.

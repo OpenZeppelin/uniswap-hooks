@@ -151,6 +151,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /// @dev The default order id, used to indicate that an order is not yet initialized.
     OrderIdLibrary.OrderId internal constant ORDER_ID_DEFAULT = OrderIdLibrary.OrderId.wrap(0);
 
+    /// @dev The largest amount the `PoolManager` settles at once, since it accounts deltas as an `int128`.
+    uint256 private constant MAX_SETTLEMENT = uint256(uint128(type(int128).max));
+
     /// @dev The next order id to be used.
     OrderIdLibrary.OrderId private _orderIdNext = OrderIdLibrary.OrderId.wrap(1);
 
@@ -679,19 +682,24 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /**
      * @dev Collects `amount0` and `amount1` of fees owed by the pool into the hook and credits them to
      * `orderInfo`, dividing them over the liquidity currently in it.
+     *
+     * The accumulators wrap on overflow, as Uniswap's fee growth does, since only their difference
+     * against a checkpoint is read and that stays exact across a wrap.
      */
     function _collectFees(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
         uint128 liquidityTotal = orderInfo.liquidityTotal;
         if (liquidityTotal == 0) return;
 
         // note: if amount0 or amount1 are non-zero, liquidityTotal is not zero.
-        if (amount0 > 0) {
-            orderInfo.accFee0PerLiqX128 += FullMath.mulDiv(amount0, FixedPoint128.Q128, liquidityTotal);
-            _takeAsClaims(orderInfo.currency0, amount0);
-        }
-        if (amount1 > 0) {
-            orderInfo.accFee1PerLiqX128 += FullMath.mulDiv(amount1, FixedPoint128.Q128, liquidityTotal);
-            _takeAsClaims(orderInfo.currency1, amount1);
+        unchecked {
+            if (amount0 > 0) {
+                orderInfo.accFee0PerLiqX128 += FullMath.mulDiv(amount0, FixedPoint128.Q128, liquidityTotal);
+                _takeAsClaims(orderInfo.currency0, amount0);
+            }
+            if (amount1 > 0) {
+                orderInfo.accFee1PerLiqX128 += FullMath.mulDiv(amount1, FixedPoint128.Q128, liquidityTotal);
+                _takeAsClaims(orderInfo.currency1, amount1);
+            }
         }
     }
 
@@ -719,17 +727,28 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it. Returns early when
-     * `amount` is zero, since the transfer it would otherwise make reverts for tokens that reject zero-value
-     * transfers, and for recipients that cannot receive the native currency.
+     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it.
+     *
+     * An owner's entitlement aggregates batches that each fit in an `int128`, so it can exceed
+     * `MAX_SETTLEMENT`. It is then redeemed over several settlements, each pass replacing a redemption
+     * that would otherwise revert.
+     *
+     * Nothing is sent when `amount` is zero, since the transfer it would otherwise make reverts for tokens
+     * that reject zero-value transfers, and for recipients that cannot receive the native currency.
      */
     function _sendFromClaims(Currency currency, address to, uint256 amount) private {
-        if (amount == 0) return;
+        uint256 id = currency.toId();
 
-        // burn the claims the hook holds for the currency
-        poolManager.burn(address(this), currency.toId(), amount);
-        // take the currency from the pool and send it to the `to` address
-        poolManager.take(currency, to, amount);
+        while (amount > 0) {
+            uint256 settlement = amount < MAX_SETTLEMENT ? amount : MAX_SETTLEMENT;
+
+            poolManager.burn(address(this), id, settlement);
+            poolManager.take(currency, to, settlement);
+
+            unchecked {
+                amount -= settlement;
+            }
+        }
     }
 
     /**
@@ -740,14 +759,16 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * by `owed` expressed per unit of that liquidity. An owner adding liquidity is therefore re-checkpointed
      * without forfeiting what it had already accrued over its previous, smaller liquidity.
      *
-     * The offset cannot exceed the accumulator, since those fees were owed over a liquidity no greater than
-     * `liquidity`. It is zero for an owner with nothing owed, leaving the checkpoint at the accumulator.
+     * The offset is zero for an owner with nothing owed, and is subtracted modulo `2**256` so the
+     * checkpoint can trail an accumulator that has wrapped.
      *
      * IMPORTANT: `liquidity` is the owner's resulting liquidity, not the amount being added, and must not be
      * zero.
      */
     function _feeCheckpoint(uint256 accFeePerLiqX128, uint256 owed, uint128 liquidity) private pure returns (uint256) {
-        return accFeePerLiqX128 - FullMath.mulDiv(owed, FixedPoint128.Q128, liquidity);
+        unchecked {
+            return accFeePerLiqX128 - FullMath.mulDiv(owed, FixedPoint128.Q128, liquidity);
+        }
     }
 
     /**
@@ -772,6 +793,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Returns the fees owed to `userInfo`, given by its liquidity's share of the accumulator growth
      * since its checkpoints. Fees are only paid out on cancellation or withdrawal, so an owner holding
      * liquidity is owed everything its checkpoints have accrued.
+     *
+     * The growth is taken modulo `2**256`, so it stays exact across a wrap.
      */
     function _feesOwed(OrderInfo storage orderInfo, UserInfo storage userInfo)
         private
@@ -780,10 +803,14 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     {
         uint128 liquidity = userInfo.liquidity;
 
-        amount0 =
-            FullMath.mulDiv(orderInfo.accFee0PerLiqX128 - userInfo.feeCheckpoint0X128, liquidity, FixedPoint128.Q128);
-        amount1 =
-            FullMath.mulDiv(orderInfo.accFee1PerLiqX128 - userInfo.feeCheckpoint1X128, liquidity, FixedPoint128.Q128);
+        unchecked {
+            amount0 = FullMath.mulDiv(
+                orderInfo.accFee0PerLiqX128 - userInfo.feeCheckpoint0X128, liquidity, FixedPoint128.Q128
+            );
+            amount1 = FullMath.mulDiv(
+                orderInfo.accFee1PerLiqX128 - userInfo.feeCheckpoint1X128, liquidity, FixedPoint128.Q128
+            );
+        }
     }
 
     /**

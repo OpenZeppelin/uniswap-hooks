@@ -21,6 +21,7 @@ module.exports = {
   },
   paths: {
     sources: "src",
+    cache: "cache_hardhat",
   },
   docgen: require('./docs/config'),
 };

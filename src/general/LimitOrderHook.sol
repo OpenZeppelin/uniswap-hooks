@@ -69,6 +69,9 @@ library OrderIdLibrary {
  * initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
  * tick-zero baseline and the first swap can leave the orders it crosses unfilled.
  *
+ * NOTE: Filling the orders a swap crosses adds to the swap's gas cost, so a large swap may need to be split
+ * into smaller ones.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -88,7 +91,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         /// @dev The principal credited to the order.
         uint256 principalCredited0;
         uint256 principalCredited1;
-        /// @dev Monotonic accumulators that accumulate the accrued fees per liquidity unit.
+        /// @dev Accumulators of the accrued fees per liquidity unit, which wrap on overflow.
         uint256 accFee0PerLiqX128;
         uint256 accFee1PerLiqX128;
         /// @dev The total liquidity added to the order.
@@ -938,7 +941,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Get the order info for a given order id. Takes an {OrderId} `orderId` and returns the order info.
      *
      * `accFee0PerLiqX128` and `accFee1PerLiqX128` are the fees credited to the order per unit of liquidity, as
-     * `X128` fixed point values. Both only ever increase, and an owner's checkpoints are never above them.
+     * `X128` fixed point values. Both wrap on overflow, so only their difference against a checkpoint is meaningful.
      */
     function getOrderInfo(OrderIdLibrary.OrderId orderId)
         external

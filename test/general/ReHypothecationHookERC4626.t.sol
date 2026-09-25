@@ -15,6 +15,7 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
 // Internal imports
 import {
     ReHypothecationERC4626Mock,
@@ -818,6 +819,25 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
 
         // ...so the just-in-time liquidity is sized down accordingly, never above what can be withdrawn back.
         assertLt(hook.getLiquidityToUse(), liqFull, "capped liquidity should be lower");
+    }
+
+    function test_swap_succeedsWhenBackingExceedsPerTickLimit() public {
+        _seed();
+
+        uint256 maxLiquidityPerTick = Pool.tickSpacingToMaxLiquidityPerTick(key.tickSpacing);
+
+        // Inflate both yield sources so the sizing would exceed the pool's per-tick gross-liquidity limit.
+        deal(Currency.unwrap(currency0), address(yieldSource0), 3 * maxLiquidityPerTick);
+        deal(Currency.unwrap(currency1), address(yieldSource1), 3 * maxLiquidityPerTick);
+
+        assertGt(hook.getAmountInYieldSource(currency0), maxLiquidityPerTick, "backing should exceed the limit");
+        assertLe(hook.getLiquidityToUse(), maxLiquidityPerTick, "JIT liquidity should be capped at the limit");
+
+        uint256 balanceBefore = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
+        swap(key, true, -1e15, ZERO_BYTES);
+        assertGt(
+            IERC20(Currency.unwrap(currency1)).balanceOf(address(this)), balanceBefore, "swap should deliver output"
+        );
     }
 
     // -- ZERO-AMOUNT YIELD-SOURCE CALLS -- //

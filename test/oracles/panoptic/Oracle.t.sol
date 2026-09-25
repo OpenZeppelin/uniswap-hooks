@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 // External
-import {Test, Vm, stdMath} from "forge-std/Test.sol";
+import {Test, Vm, stdMath, stdError} from "forge-std/Test.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -1774,6 +1774,50 @@ contract OracleLibTest is Test {
         int24 truncatedTick = oracle.truncatedOracleTick();
         assertEq(tick, -10000);
         assertEq(truncatedTick, 0); // Should be back to 0 after moving -9116 from 9116
+    }
+
+    function test_secondsPerLiquidityIsZeroAndBreaksV3LiquidityMath() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
+        oracle.advanceTime(1800);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1800;
+        secondsAgos[1] = 0;
+        (, uint160[] memory secondsPerLiquidityCumulativeX128s) = oracle.observe(secondsAgos);
+
+        // The adapters do not record seconds per liquidity, so both endpoints, and the delta a V3 consumer
+        // divides by, are zero.
+        assertEq(secondsPerLiquidityCumulativeX128s[0], 0);
+        assertEq(secondsPerLiquidityCumulativeX128s[1], 0);
+
+        vm.expectRevert(stdError.divisionError);
+        this.harmonicMeanLiquidity(1800, secondsPerLiquidityCumulativeX128s);
+    }
+
+    function test_truncated_secondsPerLiquidityIsZeroAndBreaksV3LiquidityMath() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
+        oracle.advanceTime(1800);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1800;
+        secondsAgos[1] = 0;
+        (, uint160[] memory secondsPerLiquidityCumulativeX128s) = oracle.observeTruncated(secondsAgos);
+
+        assertEq(secondsPerLiquidityCumulativeX128s[0], 0);
+        assertEq(secondsPerLiquidityCumulativeX128s[1], 0);
+
+        vm.expectRevert(stdError.divisionError);
+        this.harmonicMeanLiquidity(1800, secondsPerLiquidityCumulativeX128s);
+    }
+
+    /// @dev The harmonic mean liquidity computation from the canonical `OracleLibrary.consult`.
+    function harmonicMeanLiquidity(uint32 secondsAgo, uint160[] calldata secondsPerLiquidityCumulativeX128s)
+        external
+        pure
+        returns (uint128)
+    {
+        uint160 delta = secondsPerLiquidityCumulativeX128s[1] - secondsPerLiquidityCumulativeX128s[0];
+        return uint128((uint192(secondsAgo) * type(uint160).max) / (uint192(delta) << 32));
     }
 
     function test_fail_observe_uninitializedPool() public {

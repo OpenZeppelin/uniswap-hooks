@@ -981,19 +981,19 @@ contract LimitOrderHookTest is HookTest {
         assertEq(hook.getTickLowerLast(selfKey.toId()), 0, "the hook should record nothing for it");
     }
 
-    function test_fill_selfInitializeWithoutRecordFillsUncrossedOrders() public {
+    function test_fill_selfInitializeWithoutRecordMissesCrossedOrders() public {
         PoolKey memory selfKey = selfInitKey();
         hook.selfInitialize(selfKey, TickMath.getSqrtPriceAtTick(6015), false);
 
-        // an order far below the price, which no swap in this test reaches
         hook.placeOrder(selfKey, 3000, false, 1e12);
         uint232 orderId = rawOrderIdOf(selfKey, 3000, false);
 
+        // the price falls through the order, but the tick-zero baseline makes the window rise from zero
         vm.prank(swapper);
-        swapToLimit(selfKey, true, -1e6, 6014);
+        swapToLimit(selfKey, true, -1e18, 2000);
 
-        assertGt(getCurrentTick(selfKey), 3000, "the price should stay above the order");
-        assertTrue(getOrderInfoView(orderId).filled, "the tick-zero baseline fills it anyway");
+        assertLt(getCurrentTick(selfKey), 3000, "the price should cross the order");
+        assertFalse(getOrderInfoView(orderId).filled, "the tick-zero baseline misses it");
     }
 
     function test_fill_selfInitializeWithRecordLeavesUncrossedOrders() public {
@@ -1009,6 +1009,52 @@ contract LimitOrderHookTest is HookTest {
         swapToLimit(selfKey, true, -1e6, 6014);
 
         assertFalse(getOrderInfoView(orderId).filled, "an order the price never crossed should stay unfilled");
+    }
+
+    /// @dev A swap the hook does not record leaves the window spanning orders the price converted moving
+    /// the other way. Filling the swap's direction credits them the currency their owners deposited.
+    function test_fill_unrecordedSwapDoesNotFillAgainstTheWindow() public {
+        fundHook();
+
+        // the hook moves the price down from inside its own unlock callback, which the pool does not
+        // report, so the recorded tick stays above the price
+        hook.internalSwap(key, -10 * tickSpacing, 1e18, false);
+        assertEq(hook.getTickLowerLast(key.toId()), 0, "the hook should record nothing for it");
+
+        int24 orderTick = -5 * tickSpacing;
+        uint128 liquidity = 1e15;
+        hook.placeOrder(key, orderTick, true, liquidity);
+
+        // an upward swap that stops below the order: the window reaches the order, the price does not
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, -8 * tickSpacing);
+        assertLt(currentTickLower(), orderTick, "the price should stop below the order");
+
+        OrderInfoView memory order = getOrderInfoView(1);
+        assertFalse(order.filled, "an order the price never reached should not fill");
+        assertEq(order.principalCredited0, 0, "the fill should not credit the deposited currency");
+        assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
+    }
+
+    /// @dev The same window fills the orders the price converted, though the swap moved the other way.
+    function test_fill_unrecordedSwapFillsWithTheWindow() public {
+        fundHook();
+
+        int24 orderTick = -3 * tickSpacing;
+        hook.placeOrder(key, orderTick, false, 1e15);
+        uint232 orderId = rawOrderIdOf(key, orderTick, false);
+
+        // the hook moves the price down through the order without recording it
+        hook.internalSwap(key, -10 * tickSpacing, 1e18, false);
+
+        // an upward swap that stops below the order, which stays converted
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, -8 * tickSpacing);
+
+        OrderInfoView memory order = getOrderInfoView(orderId);
+        assertTrue(order.filled, "an order the price converted should fill");
+        assertGt(order.principalCredited0, 0, "the fill should credit the bought currency");
+        assertEq(order.principalCredited1, 0, "the fill should not credit the deposited currency");
     }
 
     // ------------------------------------- Withdraw ------------------------------------- //

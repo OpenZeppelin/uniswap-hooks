@@ -239,7 +239,7 @@ contract LimitOrderHookHandler is BaseHandler {
     }
 
     /// @dev Records the bitmap words a swap's crossed range spanned.
-    function _swap(bool zeroForOne, uint256 amount, int24 tickLimit) internal override {
+    function _swap(bool zeroForOne, uint256 amount, int24 tickLimit) internal virtual override {
         int24 before = hook.getTickLowerLast(key.toId());
 
         super._swap(zeroForOne, amount, tickLimit);
@@ -503,7 +503,7 @@ contract LimitOrderHookHandler is BaseHandler {
 
     /// @dev A live order id picked from `seed`, or zero when none is live. Rotates the id set for an
     /// increased chance of hitting a valid live order.
-    function _liveOrderFromSeed(uint256 seed) private view returns (uint232) {
+    function _liveOrderFromSeed(uint256 seed) internal view returns (uint232) {
         uint256 count = ghost_orderIds.count();
         if (count == 0) return 0;
 

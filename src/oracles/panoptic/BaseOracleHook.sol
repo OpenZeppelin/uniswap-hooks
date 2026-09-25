@@ -146,8 +146,6 @@ abstract contract BaseOracleHook is BaseHook {
     /// log base sqrt(1.0001) of currency1 / currency0. The TickMath library can be used to go from a tick value to a ratio.
     ///
     /// NOTE: Reverts with {PoolNotInitialized} when `underlyingPoolId` was not initialized with this hook.
-    /// Without that check the call would extrapolate from a zeroed observation and report the unrelated
-    /// pool's current tick as a mature time weighted average.
     ///
     /// @param secondsAgos From how long ago each cumulative tick and liquidity value should be returned
     /// @param underlyingPoolId The pool ID of the underlying V4 pool

@@ -1821,8 +1821,7 @@ contract OracleLibTest is Test {
     }
 
     function test_fail_observe_uninitializedPool() public {
-        // A pool this hook never initialized. Before the guard, this extrapolated from the zeroed
-        // observation at timestamp 0 and reported the unrelated pool's live tick as a mature TWAP.
+        vm.warp(TEST_POOL_START_TIME);
         PoolId unknownPool = PoolId.wrap(bytes32("unknown"));
 
         uint32[] memory secondsAgos = new uint32[](2);
@@ -1845,7 +1844,7 @@ contract OracleLibTest is Test {
         ORACLE_BASE.observe(secondsAgos, unknownPool);
     }
 
-    function test_observe_initializedPoolStillWorks() public {
+    function test_observe_initializedPool_succeeds() public {
         oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 5}));
         oracle.advanceTime(1800);
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Uniswap Hooks (last updated v1.2.0) (src/fee/BaseDynamicAfterFee.sol)
+// OpenZeppelin Uniswap Hooks (last updated v1.2.2) (src/fee/BaseDynamicAfterFee.sol)
 
 pragma solidity ^0.8.26;
 
@@ -8,11 +8,8 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
@@ -22,9 +19,12 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
 /**
  * @dev Base implementation for dynamic target hook fees applied after swaps.
  *
- * Enables to enforce a dynamic target determined by {_getTargetUnspecified} for the unspecified currency of the swap
- * during {_beforeSwap}, where if the swap outcome results better than the target, any positive difference is taken
- * as a hook fee, being posteriorily handled or distributed by the hook via {_afterSwapHandler}.
+ * Enables to enforce a dynamic target determined by {_getTargetUnspecified} for the unspecified currency of the swap,
+ * where if the swap outcome results better than the target, any positive difference is taken as a hook fee, being
+ * posteriorily handled or distributed by the hook via {_afterSwapHandler}.
+ *
+ * The target is determined after the swap, so {_getTargetUnspecified} receives the `BalanceDelta` the swap produced
+ * and can size the target against the amount the swap filled rather than the amount it requested.
  *
  * NOTE: In order to use this hook, the inheriting contract must implement {_getTargetUnspecified} to determine the target,
  * and {_afterSwapHandler} to handle accumulated fees.
@@ -36,75 +36,8 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * _Available since v0.1.0_
  */
 abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
-    using TransientSlot for *;
-    using SlotDerivation for *;
     using SafeCast for *;
     using CurrencySettler for Currency;
-
-    /*
-     * @dev The slot for the BaseDynamicAfterFee contract.
-     * keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.BaseDynamicAfterFee")) - 1)) & ~bytes32(uint256(0xff))
-    */
-    bytes32 private constant BASE_DYNAMIC_AFTER_FEE_SLOT =
-        0x573e65eb8119149aa4b92cb540f79645b8190fcaf67b1af773f62674fbe27900;
-
-    /*
-     * @dev The offset for the slot of the target unspecified amount.
-    */
-    uint256 private constant TARGET_UNSPECIFIED_AMOUNT_OFFSET = 0;
-
-    /*
-     * @dev The offset for the slot of the apply target boolean.
-    */
-    uint256 private constant APPLY_TARGET_OFFSET = 1;
-
-    /**
-     * @dev The target unspecified amount to be enforced by the `afterSwap` hook.
-     */
-    function _transientTargetUnspecifiedAmount() internal view returns (uint256) {
-        return BASE_DYNAMIC_AFTER_FEE_SLOT.offset(TARGET_UNSPECIFIED_AMOUNT_OFFSET).asUint256().tload();
-    }
-
-    /**
-     * @dev Whether the target unspecified amount should be enforced by the `afterSwap` hook.
-     */
-    function _transientApplyTarget() internal view returns (bool) {
-        return BASE_DYNAMIC_AFTER_FEE_SLOT.offset(APPLY_TARGET_OFFSET).asBoolean().tload();
-    }
-
-    /**
-     * @dev Set the target unspecified amount to be enforced by the `afterSwap` hook.
-     */
-    function _setTransientTargetUnspecifiedAmount(uint256 value) internal {
-        BASE_DYNAMIC_AFTER_FEE_SLOT.offset(TARGET_UNSPECIFIED_AMOUNT_OFFSET).asUint256().tstore(value);
-    }
-
-    /**
-     * @dev Set the apply flag to be used in the `afterSwap` hook.
-     */
-    function _setTransientApplyTarget(bool value) internal {
-        BASE_DYNAMIC_AFTER_FEE_SLOT.offset(APPLY_TARGET_OFFSET).asBoolean().tstore(value);
-    }
-
-    /**
-     * @dev Sets the target unspecified amount and apply flag to be used in the `afterSwap` hook.
-     *
-     * NOTE: The target unspecified amount and the apply flag are reset in the `afterSwap` hook.
-     */
-    function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
-        internal
-        virtual
-        override
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
-        // Get and transiently store the target unspecified amount and the apply flag, overriding any previous values.
-        (uint256 targetUnspecifiedAmount, bool applyTarget) = _getTargetUnspecified(sender, key, params, hookData);
-
-        _setTransientTargetUnspecifiedAmount(targetUnspecifiedAmount);
-        _setTransientApplyTarget(applyTarget);
-
-        return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
-    }
 
     /**
      * @dev Enforce the target unspecified amount to the unspecified currency of the swap.
@@ -115,29 +48,19 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
      * currency of the swap, regardless of the swap direction.
      *
      * The fees are minted to this hook as ERC-6909 tokens, which can then be distributed in {_afterSwapHandler}
-     *
-     * NOTE: The target unspecified amount and the apply flag are reset on purpose to avoid state overlapping across swaps.
      */
     function _afterSwap(
         address sender,
         PoolKey calldata key,
         SwapParams calldata params,
         BalanceDelta delta,
-        bytes calldata
+        bytes calldata hookData
     ) internal virtual override returns (bytes4, int128) {
-        // Cache the target unspecified amount in memory
-        uint256 targetUnspecifiedAmount = _transientTargetUnspecifiedAmount();
-
-        // Reset the transiently stored target unspecified amount to 0, use the cached value in memory.
-        _setTransientTargetUnspecifiedAmount(0);
+        (uint256 targetUnspecifiedAmount, bool applyTarget) =
+            _getTargetUnspecified(sender, key, params, delta, hookData);
 
         // Skip if the target unspecified amount should not be applied
-        if (!_transientApplyTarget()) {
-            return (this.afterSwap.selector, 0);
-        }
-
-        // Reset the stored apply flag
-        _setTransientApplyTarget(false);
+        if (!applyTarget) return (this.afterSwap.selector, 0);
 
         // Fee defined in the unspecified currency of the swap
         (Currency unspecified, int128 unspecifiedAmount) = (params.amountSpecified < 0 == params.zeroForOne)
@@ -187,7 +110,11 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     }
 
     /**
-     * @dev Return the target unspecified amount to be enforced by the `afterSwap` hook.
+     * @dev Return the target unspecified amount to be enforced on the swap that `delta` reports.
+     *
+     * IMPORTANT: The call happens after the swap, so anything this function reads from the `PoolManager` is
+     * the state the swap left behind. An implementation that needs the state as it stood before the swap must
+     * capture it in its own `beforeSwap`.
      *
      * @return targetUnspecifiedAmount The target unspecified amount, defined in the unspecified currency of the swap.
      * @return applyTarget The apply flag, which can be set to `false` to skip applying the target output.
@@ -196,6 +123,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
         address sender,
         PoolKey calldata key,
         SwapParams calldata params,
+        BalanceDelta delta,
         bytes calldata hookData
     ) internal virtual returns (uint256 targetUnspecifiedAmount, bool applyTarget);
 
@@ -220,7 +148,10 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     ) internal virtual;
 
     /**
-     * @dev Set the hook permissions, specifically {beforeSwap}, {afterSwap} and {afterSwapReturnDelta}.
+     * @dev Set the hook permissions, specifically {afterSwap} and {afterSwapReturnDelta}.
+     *
+     * NOTE: `beforeSwap` is not requested. A hook that needs it must enable it here and implement
+     * {BaseHook-_beforeSwap}, which reverts otherwise.
      *
      * @return permissions The hook permissions.
      */
@@ -232,7 +163,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
-            beforeSwap: true,
+            beforeSwap: false,
             afterSwap: true,
             beforeDonate: false,
             afterDonate: false,

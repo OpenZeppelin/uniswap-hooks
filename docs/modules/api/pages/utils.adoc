@@ -2,6 +2,7 @@
 :CurrencySettler: pass:normal[xref:utils.adoc#CurrencySettler[`CurrencySettler`]]
 :xref-CurrencySettler-settle-Currency-contract-IPoolManager-address-uint256-bool-: xref:utils.adoc#CurrencySettler-settle-Currency-contract-IPoolManager-address-uint256-bool-
 :xref-CurrencySettler-take-Currency-contract-IPoolManager-address-uint256-bool-: xref:utils.adoc#CurrencySettler-take-Currency-contract-IPoolManager-address-uint256-bool-
+:xref-CurrencySettler-InvalidNativePayer-address-: xref:utils.adoc#CurrencySettler-InvalidNativePayer-address-
 = Utilities
 
 [.readme-notice]
@@ -14,6 +15,7 @@ Libraries and general purpose utilities to help develop hooks.
 
 == Libraries
 
+:InvalidNativePayer: pass:normal[xref:#CurrencySettler-InvalidNativePayer-address-[`++InvalidNativePayer++`]]
 :settle: pass:normal[xref:#CurrencySettler-settle-Currency-contract-IPoolManager-address-uint256-bool-[`++settle++`]]
 :take: pass:normal[xref:#CurrencySettler-take-Currency-contract-IPoolManager-address-uint256-bool-[`++take++`]]
 
@@ -42,6 +44,13 @@ NOTE: Deltas are synced before any ERC-20 transfers in {settle} function.
 
 --
 
+[.contract-index]
+.Errors
+--
+* {xref-CurrencySettler-InvalidNativePayer-address-}[`++InvalidNativePayer(payer)++`]
+
+--
+
 [.contract-item]
 [[CurrencySettler-settle-Currency-contract-IPoolManager-address-uint256-bool-]]
 ==== `[.contract-item-name]#++settle++#++(Currency currency, contract IPoolManager poolManager, address payer, uint256 amount, bool burn)++` [.item-kind]#internal#
@@ -49,4 +58,10 @@ NOTE: Deltas are synced before any ERC-20 transfers in {settle} function.
 [.contract-item]
 [[CurrencySettler-take-Currency-contract-IPoolManager-address-uint256-bool-]]
 ==== `[.contract-item-name]#++take++#++(Currency currency, contract IPoolManager poolManager, address recipient, uint256 amount, bool claims)++` [.item-kind]#internal#
+
+[.contract-item]
+[[CurrencySettler-InvalidNativePayer-address-]]
+==== `[.contract-item-name]#++InvalidNativePayer++#++(address payer)++` [.item-kind]#error#
+
+The native currency was settled on behalf of a `payer` other than the contract paying it.
 

@@ -34,6 +34,7 @@
 :xref-BaseOracleHook-PoolNotInitialized--: xref:oracles.adoc#BaseOracleHook-PoolNotInitialized--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-OracleHookWithV3Adapters-constructor-int24-: xref:oracles.adoc#OracleHookWithV3Adapters-constructor-int24-
 :xref-OracleHookWithV3Adapters-_afterInitialize-address-struct-PoolKey-uint160-int24-: xref:oracles.adoc#OracleHookWithV3Adapters-_afterInitialize-address-struct-PoolKey-uint160-int24-
 :xref-OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-: xref:oracles.adoc#OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-
@@ -70,6 +71,7 @@
 :xref-BaseOracleHook-PoolNotInitialized--: xref:oracles.adoc#BaseOracleHook-PoolNotInitialized--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 = Oracles
 
 [.readme-notice]
@@ -169,6 +171,7 @@ A hook that enables a Uniswap V4 pool to record price observations and expose an
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -347,6 +350,7 @@ A hook that enables a Uniswap V4 pool to record price observations and expose an
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks

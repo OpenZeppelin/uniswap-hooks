@@ -40,14 +40,12 @@
 :xref-LiquidityPenaltyHook-NoLiquidityToReceiveDonation--: xref:general.adoc#LiquidityPenaltyHook-NoLiquidityToReceiveDonation--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-: xref:general.adoc#AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-
 :xref-AntiSandwichHook-_getBlockNumber--: xref:general.adoc#AntiSandwichHook-_getBlockNumber--
-:xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-: xref:general.adoc#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-
+:xref-AntiSandwichHook-getLastCheckpoint-PoolId-: xref:general.adoc#AntiSandwichHook-getLastCheckpoint-PoolId-
+:xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:general.adoc#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-AntiSandwichHook-getHookPermissions--: xref:general.adoc#AntiSandwichHook-getHookPermissions--
-:xref-BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--: xref:fee.adoc#BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--
-:xref-BaseDynamicAfterFee-_transientApplyTarget--: xref:fee.adoc#BaseDynamicAfterFee-_transientApplyTarget--
-:xref-BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-: xref:fee.adoc#BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-
-:xref-BaseDynamicAfterFee-_setTransientApplyTarget-bool-: xref:fee.adoc#BaseDynamicAfterFee-_setTransientApplyTarget-bool-
 :xref-BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:fee.adoc#BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-BaseDynamicAfterFee-_afterSwapHandler-struct-PoolKey-struct-SwapParams-BalanceDelta-uint256-uint256-: xref:fee.adoc#BaseDynamicAfterFee-_afterSwapHandler-struct-PoolKey-struct-SwapParams-BalanceDelta-uint256-uint256-
 :xref-BaseHook-_validateHookAddress-contract-BaseHook-: xref:base.adoc#BaseHook-_validateHookAddress-contract-BaseHook-
@@ -74,8 +72,12 @@
 :xref-IHookEvents-HookFee-bytes32-address-uint128-uint128-: xref:interfaces.adoc#IHookEvents-HookFee-bytes32-address-uint128-uint128-
 :xref-IHookEvents-HookModifyLiquidity-bytes32-address-int128-int128-: xref:interfaces.adoc#IHookEvents-HookModifyLiquidity-bytes32-address-int128-int128-
 :xref-IHookEvents-HookBonus-bytes32-uint128-uint128-: xref:interfaces.adoc#IHookEvents-HookBonus-bytes32-uint128-uint128-
+:xref-AntiSandwichHook-CheckpointNotSet--: xref:general.adoc#AntiSandwichHook-CheckpointNotSet--
+:xref-AntiSandwichHook-TargetOutOfRange--: xref:general.adoc#AntiSandwichHook-TargetOutOfRange--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
+:BaseDynamicAfterFee-_afterSwap: pass:normal[xref:fee.adoc#BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`BaseDynamicAfterFee._afterSwap`]]
 :xref-LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-: xref:general.adoc#LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-
 :xref-LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:general.adoc#LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-LimitOrderHook-placeOrder-struct-PoolKey-int24-bool-uint128-: xref:general.adoc#LimitOrderHook-placeOrder-struct-PoolKey-int24-bool-uint128-
@@ -85,10 +87,12 @@
 :xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-: xref:general.adoc#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-
 :xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-: xref:general.adoc#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-
 :xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-: xref:general.adoc#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-
+:xref-LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-: xref:general.adoc#LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-
 :xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-
 :xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-: xref:general.adoc#LimitOrderHook-_getCrossedTicks-PoolId-int24-
 :xref-LimitOrderHook-_getTickLower-int24-int24-: xref:general.adoc#LimitOrderHook-_getTickLower-int24-int24-
-:xref-LimitOrderHook-_getTick-PoolId-: xref:general.adoc#LimitOrderHook-_getTick-PoolId-
+:xref-LimitOrderHook-_getCurrentTick-PoolId-: xref:general.adoc#LimitOrderHook-_getCurrentTick-PoolId-
+:xref-LimitOrderHook-_getPositionSalt-bool-: xref:general.adoc#LimitOrderHook-_getPositionSalt-bool-
 :xref-LimitOrderHook-getTickLowerLast-PoolId-: xref:general.adoc#LimitOrderHook-getTickLowerLast-PoolId-
 :xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-
 :xref-LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-: xref:general.adoc#LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-
@@ -123,22 +127,28 @@
 :xref-LimitOrderHook-CrossedRange--: xref:general.adoc#LimitOrderHook-CrossedRange--
 :xref-LimitOrderHook-Filled--: xref:general.adoc#LimitOrderHook-Filled--
 :xref-LimitOrderHook-NotFilled--: xref:general.adoc#LimitOrderHook-NotFilled--
+:xref-LimitOrderHook-NativeCurrencyUnsupported--: xref:general.adoc#LimitOrderHook-NativeCurrencyUnsupported--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-LimitOrderHook-ZERO_BYTES-bytes: xref:general.adoc#LimitOrderHook-ZERO_BYTES-bytes
 :xref-LimitOrderHook-ORDER_ID_DEFAULT-OrderIdLibrary-OrderId: xref:general.adoc#LimitOrderHook-ORDER_ID_DEFAULT-OrderIdLibrary-OrderId
 :xref-ReHypothecationHook-getPoolKey--: xref:general.adoc#ReHypothecationHook-getPoolKey--
 :xref-ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-: xref:general.adoc#ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-
+:xref-ReHypothecationHook-seedLiquidity-uint256-uint256-: xref:general.adoc#ReHypothecationHook-seedLiquidity-uint256-uint256-
 :xref-ReHypothecationHook-addReHypothecatedLiquidity-uint256-: xref:general.adoc#ReHypothecationHook-addReHypothecatedLiquidity-uint256-
 :xref-ReHypothecationHook-removeReHypothecatedLiquidity-uint256-: xref:general.adoc#ReHypothecationHook-removeReHypothecatedLiquidity-uint256-
 :xref-ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-: xref:general.adoc#ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-
 :xref-ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:general.adoc#ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-ReHypothecationHook-_resolveHookDelta-Currency-: xref:general.adoc#ReHypothecationHook-_resolveHookDelta-Currency-
+:xref-ReHypothecationHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:general.adoc#ReHypothecationHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
+:xref-ReHypothecationHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:general.adoc#ReHypothecationHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
 :xref-ReHypothecationHook-previewMint-uint256-: xref:general.adoc#ReHypothecationHook-previewMint-uint256-
 :xref-ReHypothecationHook-previewRedeem-uint256-: xref:general.adoc#ReHypothecationHook-previewRedeem-uint256-
 :xref-ReHypothecationHook-_sharesToAmounts-uint256-enum-Math-Rounding-: xref:general.adoc#ReHypothecationHook-_sharesToAmounts-uint256-enum-Math-Rounding-
 :xref-ReHypothecationHook-_shareToAmount-uint256-Currency-enum-Math-Rounding-: xref:general.adoc#ReHypothecationHook-_shareToAmount-uint256-Currency-enum-Math-Rounding-
-:xref-ReHypothecationHook-_getLiquidityToUse--: xref:general.adoc#ReHypothecationHook-_getLiquidityToUse--
+:xref-ReHypothecationHook-_decimalsOffset--: xref:general.adoc#ReHypothecationHook-_decimalsOffset--
+:xref-ReHypothecationHook-_getLiquidityToUse-int24-int24-: xref:general.adoc#ReHypothecationHook-_getLiquidityToUse-int24-int24-
 :xref-ReHypothecationHook-_getHookPositionLiquidity--: xref:general.adoc#ReHypothecationHook-_getHookPositionLiquidity--
 :xref-ReHypothecationHook-getTickLower--: xref:general.adoc#ReHypothecationHook-getTickLower--
 :xref-ReHypothecationHook-getTickUpper--: xref:general.adoc#ReHypothecationHook-getTickUpper--
@@ -149,6 +159,7 @@
 :xref-ReHypothecationHook-_depositToYieldSource-Currency-uint256-: xref:general.adoc#ReHypothecationHook-_depositToYieldSource-Currency-uint256-
 :xref-ReHypothecationHook-_withdrawFromYieldSource-Currency-uint256-: xref:general.adoc#ReHypothecationHook-_withdrawFromYieldSource-Currency-uint256-
 :xref-ReHypothecationHook-_getAmountInYieldSource-Currency-: xref:general.adoc#ReHypothecationHook-_getAmountInYieldSource-Currency-
+:xref-ReHypothecationHook-_getMaxWithdrawFromYieldSource-Currency-: xref:general.adoc#ReHypothecationHook-_getMaxWithdrawFromYieldSource-Currency-
 :xref-ReHypothecationHook-getHookPermissions--: xref:general.adoc#ReHypothecationHook-getHookPermissions--
 :xref-ReHypothecationHook-receive--: xref:general.adoc#ReHypothecationHook-receive--
 :xref-BaseHook-_validateHookAddress-contract-BaseHook-: xref:base.adoc#BaseHook-_validateHookAddress-contract-BaseHook-
@@ -156,9 +167,7 @@
 :xref-BaseHook-afterInitialize-address-struct-PoolKey-uint160-int24-: xref:base.adoc#BaseHook-afterInitialize-address-struct-PoolKey-uint160-int24-
 :xref-BaseHook-_afterInitialize-address-struct-PoolKey-uint160-int24-: xref:base.adoc#BaseHook-_afterInitialize-address-struct-PoolKey-uint160-int24-
 :xref-BaseHook-beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:base.adoc#BaseHook-beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
-:xref-BaseHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:base.adoc#BaseHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
 :xref-BaseHook-beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:base.adoc#BaseHook-beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
-:xref-BaseHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:base.adoc#BaseHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
 :xref-BaseHook-afterAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-: xref:base.adoc#BaseHook-afterAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-
 :xref-BaseHook-_afterAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-: xref:base.adoc#BaseHook-_afterAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-
 :xref-BaseHook-afterRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-: xref:base.adoc#BaseHook-afterRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-
@@ -177,8 +186,14 @@
 :xref-ReHypothecationHook-ZeroShares--: xref:general.adoc#ReHypothecationHook-ZeroShares--
 :xref-ReHypothecationHook-InvalidMsgValue--: xref:general.adoc#ReHypothecationHook-InvalidMsgValue--
 :xref-ReHypothecationHook-RefundFailed--: xref:general.adoc#ReHypothecationHook-RefundFailed--
+:xref-ReHypothecationHook-LiquidityNotAllowed--: xref:general.adoc#ReHypothecationHook-LiquidityNotAllowed--
+:xref-ReHypothecationHook-NotSeeded--: xref:general.adoc#ReHypothecationHook-NotSeeded--
+:xref-ReHypothecationHook-AlreadySeeded--: xref:general.adoc#ReHypothecationHook-AlreadySeeded--
+:xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-: xref:general.adoc#ReHypothecationHook-InsufficientSeed-uint256-uint256-
+:xref-ReHypothecationHook-JITLocked--: xref:general.adoc#ReHypothecationHook-JITLocked--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 = General
 
 [.readme-notice]
@@ -300,6 +315,7 @@ _Available since v0.1.1_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -426,10 +442,13 @@ The hook was attempted to be constructed with a `blockNumberOffset` lower than `
 
 A penalty was attempted to be applied and donated to LP's in range, but there aren't any.
 
+:CheckpointNotSet: pass:normal[xref:#AntiSandwichHook-CheckpointNotSet--[`++CheckpointNotSet++`]]
+:TargetOutOfRange: pass:normal[xref:#AntiSandwichHook-TargetOutOfRange--[`++TargetOutOfRange++`]]
 :Checkpoint: pass:normal[xref:#AntiSandwichHook-Checkpoint[`++Checkpoint++`]]
 :_beforeSwap: pass:normal[xref:#AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-[`++_beforeSwap++`]]
 :_getBlockNumber: pass:normal[xref:#AntiSandwichHook-_getBlockNumber--[`++_getBlockNumber++`]]
-:_getTargetUnspecified: pass:normal[xref:#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-[`++_getTargetUnspecified++`]]
+:getLastCheckpoint: pass:normal[xref:#AntiSandwichHook-getLastCheckpoint-PoolId-[`++getLastCheckpoint++`]]
+:_getTargetUnspecified: pass:normal[xref:#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`++_getTargetUnspecified++`]]
 :getHookPermissions: pass:normal[xref:#AntiSandwichHook-getHookPermissions--[`++getHookPermissions++`]]
 
 [.contract]
@@ -441,29 +460,46 @@ A penalty was attempted to be applied and donated to LP's in range, but there ar
 import "uniswap-hooks/src/general/AntiSandwichHook.sol";
 ```
 
-This hook implements the sandwich-resistant AMM design introduced
+This hook is inspired by the sandwich-resistant AMM design introduced
 https://www.umbraresearch.xyz/writings/sandwich-resistant-amm[here]. Specifically,
 this hook guarantees that no swaps get filled at a price better than the price at
-the beginning of the slot window (i.e. one block).
+the beginning of the slot window (i.e. one block), up to rounding.
 
-Within a slot window, swaps impact the pool asymmetrically for buys and sells.
-When a buy order is executed, the offer on the pool increases in accordance with
-the xy=k curve. However, the bid price remains constant, instead increasing the
-amount of liquidity on the bid. Subsequent sells eat into this liquidity, while
-decreasing the offer price according to xy=k.
+That price is recorded at the block's first swap, and any excess a later swap gains over it is taken as a
+hook fee. A sandwich therefore closes no better than the price its opening leg moved away from, so it cannot
+turn a profit.
 
-In order to use this hook, the inheriting contract must implement the {_handleCollectedFees} function
+In order to use this hook, the inheriting contract must implement the {_afterSwapHandler} function
 to determine how to handle the collected fees from the anti-sandwich mechanism.
 
-NOTE: The Anti-sandwich mechanism only protects swaps in the zeroForOne swap direction.
-Swaps in the !zeroForOne direction are not protected by this hook design.
+NOTE: The price is read at the block's first swap, which is the price the block opened with: in Uniswap v4
+only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
 
-WARNING: Since this hook makes MEV not profitable, there's not as much arbitrage in
-the pool, making prices at beginning of the block not necessarily close to market price.
+NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
+held to the opening price.
 
-WARNING: In `_beforeSwap`, the hook iterates over all ticks between last tick and current tick.
-Developers must be aware that for large price changes in pools with small tick spacing, the `for`
-loop will iterate over a large number of ticks, which could lead to `MemoryOOG` error.
+NOTE: The hook only takes, it never pays. A swap filled better than the recorded price has the
+difference taken as a fee, while a swap filled worse keeps that fill and receives nothing. A swapper whose
+fill was worsened, by liquidity withdrawn after the block's first swap for example, is not compensated:
+the mechanism removes an attacker's profit rather than restoring a victim's loss.
+
+NOTE: Only swaps are bounded, so an attacker can supply the liquidity a victim trades through and withdraw
+it in the same block. Consider combining with a JIT protection mechanism such as
+https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/general/LiquidityPenaltyHook.sol[LiquidityPenaltyHook].
+
+IMPORTANT: A sandwich split across two blocks is not protected against, and pays as if this hook were not
+there. The baseline resets every block, so the closing leg is measured against a price the opening leg
+itself set. What the design removes is atomicity: the position has to be carried from one block into the
+next, with the price risk that brings.
+
+IMPORTANT: {TargetOutOfRange} refuses a swap that would owe more than a `BalanceDelta` holds, rather than
+charge it nothing. Reaching it needs the price to cross most of the tick range inside one block, which
+needs liquidity thin enough for a single swap to do that. Consider how widely liquidity is provided before
+deploying.
+
+IMPORTANT: The fee is a sandwich's own gain, so {_afterSwapHandler} must not pay it to in-range liquidity.
+An attacker can supply that liquidity and collect the fee back, whether it is paid in the same block or a
+later one.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -474,18 +510,15 @@ _Available since v1.1.0_
 [.contract-index]
 .Functions
 --
-* {xref-AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_beforeSwap(sender, key, params, hookData)++`]
+* {xref-AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_beforeSwap(, key, , )++`]
 * {xref-AntiSandwichHook-_getBlockNumber--}[`++_getBlockNumber()++`]
-* {xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_getTargetUnspecified(, key, params, )++`]
+* {xref-AntiSandwichHook-getLastCheckpoint-PoolId-}[`++getLastCheckpoint(poolId)++`]
+* {xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_getTargetUnspecified(, key, params, delta, )++`]
 * {xref-AntiSandwichHook-getHookPermissions--}[`++getHookPermissions()++`]
 
 [.contract-subindex-inherited]
 .BaseDynamicAfterFee
-* {xref-BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--}[`++_transientTargetUnspecifiedAmount()++`]
-* {xref-BaseDynamicAfterFee-_transientApplyTarget--}[`++_transientApplyTarget()++`]
-* {xref-BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-}[`++_setTransientTargetUnspecifiedAmount(value)++`]
-* {xref-BaseDynamicAfterFee-_setTransientApplyTarget-bool-}[`++_setTransientApplyTarget(value)++`]
-* {xref-BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(sender, key, params, delta, )++`]
+* {xref-BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(sender, key, params, delta, hookData)++`]
 * {xref-BaseDynamicAfterFee-_afterSwapHandler-struct-PoolKey-struct-SwapParams-BalanceDelta-uint256-uint256-}[`++_afterSwapHandler(key, params, delta, targetUnspecifiedAmount, feeAmount)++`]
 
 [.contract-subindex-inherited]
@@ -544,6 +577,8 @@ _Available since v1.1.0_
 [.contract-index]
 .Errors
 --
+* {xref-AntiSandwichHook-CheckpointNotSet--}[`++CheckpointNotSet()++`]
+* {xref-AntiSandwichHook-TargetOutOfRange--}[`++TargetOutOfRange()++`]
 
 [.contract-subindex-inherited]
 .BaseDynamicAfterFee
@@ -555,6 +590,7 @@ _Available since v1.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -563,42 +599,60 @@ _Available since v1.1.0_
 
 [.contract-item]
 [[AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-]]
-==== `[.contract-item-name]#++_beforeSwap++#++(address sender, struct PoolKey key, struct SwapParams params, bytes hookData) → bytes4, BeforeSwapDelta, uint24++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_beforeSwap++#++(address, struct PoolKey key, struct SwapParams, bytes) → bytes4, BeforeSwapDelta, uint24++` [.item-kind]#internal#
 
-Handles the before swap hook.
-
-For the first swap in a block, it saves the current pool state as a checkpoint.
-
-For subsequent swaps in the same block, it calculates a target output based on the beginning-of-block state,
-and sets the inherited `_targetOutput` and `_applyTargetOutput` variables to enforce price limits in {_afterSwap}.
+Records the pool price at the block's first swap. Later swaps in the block leave it untouched.
 
 [.contract-item]
 [[AntiSandwichHook-_getBlockNumber--]]
 ==== `[.contract-item-name]#++_getBlockNumber++#++() → uint48++` [.item-kind]#internal#
 
-Returns the current block number.
+Returns the block a swap belongs to.
+
+IMPORTANT: An override must return one value per block and a different one in the next. A value that
+moves within a block re-records the price on every swap, which removes the protection. One that never
+moves anchors the pool to a single price. Both fail silently.
 
 [.contract-item]
-[[AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-]]
-==== `[.contract-item-name]#++_getTargetUnspecified++#++(address, struct PoolKey key, struct SwapParams params, bytes) → uint256 targetUnspecifiedAmount, bool applyTarget++` [.item-kind]#internal#
+[[AntiSandwichHook-getLastCheckpoint-PoolId-]]
+==== `[.contract-item-name]#++getLastCheckpoint++#++(PoolId poolId) → struct AntiSandwichHook.Checkpoint++` [.item-kind]#public#
 
-Calculates the unspecified amount based on the pool state at the beginning of the block.
-This prevents sandwich attacks by ensuring trades can't get better prices than what was available
-at the start of the block. Note that the calculated unspecified amount could either be input or output, depending
-if it's an exactInput or outputOutput swap. In cases of zeroForOne == true, the target unspecified amount is not
-applicable, and the max uint256 value is returned as a flag only.
+Returns the checkpoint `poolId` holds, which is zero for a pool never swapped in.
 
-The anti-sandwich mechanism works such as:
+[.contract-item]
+[[AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-]]
+==== `[.contract-item-name]#++_getTargetUnspecified++#++(address, struct PoolKey key, struct SwapParams params, BalanceDelta delta, bytes) → uint256 targetUnspecifiedAmount, bool applyTarget++` [.item-kind]#internal#
 
-- For currency0 to currency1 swaps (zeroForOne = true): The pool behaves normally with xy=k curve.
-- For currency1 to currency0 swaps (zeroForOne = false): The price is fixed at the beginning-of-block
-  price, which prevents attackers from manipulating the price within a block.
+Returns the target `delta` is held to, and whether it applies.
+
+The unspecified side carries the target, so an exact input reads it as a ceiling on what the swap keeps
+and an exact output as a floor on what it pays. {BaseDynamicAfterFee-_afterSwap} takes the difference
+either way.
+
+Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. In
+return the target is loose by the conversion's resolution, which grows with the price but never with a
+swap's size, while the slippage a sandwich pays to open does.
+
+NOTE: Where the target passes what a `BalanceDelta` carries, a ceiling is dropped and a floor
+reverts.
 
 [.contract-item]
 [[AntiSandwichHook-getHookPermissions--]]
 ==== `[.contract-item-name]#++getHookPermissions++#++() → struct Hooks.Permissions permissions++` [.item-kind]#public#
 
 Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwapReturnDelta`.
+
+[.contract-item]
+[[AntiSandwichHook-CheckpointNotSet--]]
+==== `[.contract-item-name]#++CheckpointNotSet++#++()++` [.item-kind]#error#
+
+A swap ran against a pool holding no beginning-of-block price to hold it to.
+
+[.contract-item]
+[[AntiSandwichHook-TargetOutOfRange--]]
+==== `[.contract-item-name]#++TargetOutOfRange++#++()++` [.item-kind]#error#
+
+The swap would owe more than a `BalanceDelta` holds, so the amount cannot be charged.
 
 :OrderInfo: pass:normal[xref:#LimitOrderHook-OrderInfo[`++OrderInfo++`]]
 :UserInfo: pass:normal[xref:#LimitOrderHook-UserInfo[`++UserInfo++`]]
@@ -614,6 +668,7 @@ Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwap
 :CrossedRange: pass:normal[xref:#LimitOrderHook-CrossedRange--[`++CrossedRange++`]]
 :Filled: pass:normal[xref:#LimitOrderHook-Filled--[`++Filled++`]]
 :NotFilled: pass:normal[xref:#LimitOrderHook-NotFilled--[`++NotFilled++`]]
+:NativeCurrencyUnsupported: pass:normal[xref:#LimitOrderHook-NativeCurrencyUnsupported--[`++NativeCurrencyUnsupported++`]]
 :Place: pass:normal[xref:#LimitOrderHook-Place-address-OrderIdLibrary-OrderId-struct-PoolKey-int24-bool-uint128-[`++Place++`]]
 :Fill: pass:normal[xref:#LimitOrderHook-Fill-OrderIdLibrary-OrderId-struct-PoolKey-int24-bool-[`++Fill++`]]
 :Cancel: pass:normal[xref:#LimitOrderHook-Cancel-address-OrderIdLibrary-OrderId-struct-PoolKey-int24-bool-uint128-[`++Cancel++`]]
@@ -627,10 +682,12 @@ Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwap
 :_handlePlaceCallback: pass:normal[xref:#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-[`++_handlePlaceCallback++`]]
 :_handleCancelCallback: pass:normal[xref:#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-[`++_handleCancelCallback++`]]
 :_handleWithdrawCallback: pass:normal[xref:#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-[`++_handleWithdrawCallback++`]]
+:_fillCrossedOrders: pass:normal[xref:#LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-[`++_fillCrossedOrders++`]]
 :_fillOrder: pass:normal[xref:#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-[`++_fillOrder++`]]
 :_getCrossedTicks: pass:normal[xref:#LimitOrderHook-_getCrossedTicks-PoolId-int24-[`++_getCrossedTicks++`]]
 :_getTickLower: pass:normal[xref:#LimitOrderHook-_getTickLower-int24-int24-[`++_getTickLower++`]]
-:_getTick: pass:normal[xref:#LimitOrderHook-_getTick-PoolId-[`++_getTick++`]]
+:_getCurrentTick: pass:normal[xref:#LimitOrderHook-_getCurrentTick-PoolId-[`++_getCurrentTick++`]]
+:_getPositionSalt: pass:normal[xref:#LimitOrderHook-_getPositionSalt-bool-[`++_getPositionSalt++`]]
 :getTickLowerLast: pass:normal[xref:#LimitOrderHook-getTickLowerLast-PoolId-[`++getTickLowerLast++`]]
 :getOrderId: pass:normal[xref:#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-[`++getOrderId++`]]
 :getOrderInfo: pass:normal[xref:#LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-[`++getOrderInfo++`]]
@@ -648,7 +705,7 @@ import "uniswap-hooks/src/general/LimitOrderHook.sol";
 
 Limit Order Mechanism hook.
 
-Allows users to place limit orders at specific ticks outside of the current price range,
+Allows users to place limit orders at specific ticks the price has not yet crossed,
 which will be filled if the pool's price crosses the order's tick.
 
 Note that given the way UniswapV4 pools works, when liquidity is added out of the current range,
@@ -657,9 +714,16 @@ a single currency will be provided, instead of both currencies as in in-range li
 Orders can be cancelled at any time until they are filled and their liquidity is removed from the pool.
 Once completely filled, the resulting liquidity can be withdrawn from the pool.
 
-IMPORTANT: Fees accrued by an order are credited per unit of liquidity, so each owner is entitled to the
+NOTE: Fees accrued by an order are credited per unit of liquidity, so each owner is entitled to the
 fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
 in the order's favour, so a negligible residual can remain in the hook.
+
+NOTE: Native currency orders are not supported.
+
+IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
+does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
+{_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next
+crossing is measured from it.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -679,10 +743,12 @@ _Available since v1.1.0_
 * {xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-}[`++_handlePlaceCallback(placeData)++`]
 * {xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-}[`++_handleCancelCallback(cancelData)++`]
 * {xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-}[`++_handleWithdrawCallback(withdrawData)++`]
+* {xref-LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-}[`++_fillCrossedOrders(key, swapZeroForOne)++`]
 * {xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-}[`++_fillOrder(key, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-}[`++_getCrossedTicks(poolId, tickSpacing)++`]
 * {xref-LimitOrderHook-_getTickLower-int24-int24-}[`++_getTickLower(tick, tickSpacing)++`]
-* {xref-LimitOrderHook-_getTick-PoolId-}[`++_getTick(poolId)++`]
+* {xref-LimitOrderHook-_getCurrentTick-PoolId-}[`++_getCurrentTick(poolId)++`]
+* {xref-LimitOrderHook-_getPositionSalt-bool-}[`++_getPositionSalt(zeroForOne)++`]
 * {xref-LimitOrderHook-getTickLowerLast-PoolId-}[`++getTickLowerLast(poolId)++`]
 * {xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-}[`++getOrderId(key, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-}[`++getOrderInfo(orderId)++`]
@@ -747,6 +813,7 @@ _Available since v1.1.0_
 * {xref-LimitOrderHook-CrossedRange--}[`++CrossedRange()++`]
 * {xref-LimitOrderHook-Filled--}[`++Filled()++`]
 * {xref-LimitOrderHook-NotFilled--}[`++NotFilled()++`]
+* {xref-LimitOrderHook-NativeCurrencyUnsupported--}[`++NativeCurrencyUnsupported()++`]
 
 [.contract-subindex-inherited]
 .IUnlockCallback
@@ -755,6 +822,7 @@ _Available since v1.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -788,7 +856,7 @@ Hooks into the `afterInitialize` hook to set the last tick lower for the pool.
 [[LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-]]
 ==== `[.contract-item-name]#++_afterSwap++#++(address, struct PoolKey key, struct SwapParams params, BalanceDelta, bytes) → bytes4, int128++` [.item-kind]#internal#
 
-Hooks into the `afterSwap` hook to get the ticks crossed by the swap and fill the orders that are crossed, filling them.
+Hooks into the `afterSwap` hook to fill the orders the swap crossed.
 
 [.contract-item]
 [[LimitOrderHook-placeOrder-struct-PoolKey-int24-bool-uint128-]]
@@ -799,6 +867,11 @@ pool price crosses the specified `tick`. Takes a `PoolKey` `key`, target `tick`,
 whether to buy currency0 or currency1, and amount of `liquidity` to place. The interaction with the `poolManager` is done
 via the `unlock` function, which will trigger the `{unlockCallback}` function.
 
+Requirements:
+
+- `key` must identify a pool configured with this hook, otherwise the order could never be filled.
+- The placement must require only the currency being sold, otherwise it reverts {InRange}.
+
 [.contract-item]
 [[LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-]]
 ==== `[.contract-item-name]#++cancelOrder++#++(struct PoolKey key, int24 tickLower, bool zeroForOne, address to)++` [.item-kind]#public#
@@ -808,6 +881,10 @@ direction `zeroForOne` indicating whether it was buying currency0 or currency1, 
 removed liquidity. Note that partial cancellation is not supported - the entire liquidity added by the msg.sender will be removed.
 Note also that cancelling an order will cancel the order placed by the msg.sender, not orders placed by other users in the same tick range.
 The interaction with the `poolManager` is done via the `unlock` function, which will trigger the `{unlockCallback}` function.
+
+Requirements:
+
+- `key` must identify a pool configured with this hook.
 
 [.contract-item]
 [[LimitOrderHook-withdraw-OrderIdLibrary-OrderId-address-]]
@@ -859,6 +936,16 @@ The order is filled, so its liquidity was already removed from the pool and the 
 the hook holds.
 
 [.contract-item]
+[[LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-]]
+==== `[.contract-item-name]#++_fillCrossedOrders++#++(struct PoolKey key, bool swapZeroForOne)++` [.item-kind]#internal#
+
+Fills the orders the price crossed since the tick last recorded for `key`, and records the tick
+it reached. `swapZeroForOne` is the swap's direction, not the filled orders'.
+
+IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
+pool does not report such a swap.
+
+[.contract-item]
 [[LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-]]
 ==== `[.contract-item-name]#++_fillOrder++#++(struct PoolKey key, int24 tickLower, bool zeroForOne)++` [.item-kind]#internal#
 
@@ -882,11 +969,21 @@ Get the tick lower. Takes a `tick` and `tickSpacing` and returns the nearest val
 at or below the input tick, accounting for negative tick handling.
 
 [.contract-item]
-[[LimitOrderHook-_getTick-PoolId-]]
-==== `[.contract-item-name]#++_getTick++#++(PoolId poolId) → int24 tick++` [.item-kind]#internal#
+[[LimitOrderHook-_getCurrentTick-PoolId-]]
+==== `[.contract-item-name]#++_getCurrentTick++#++(PoolId poolId) → int24 tick++` [.item-kind]#internal#
 
-Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick calculated
-from the pool's current sqrt price.
+Get the current tick for a given pool. Takes a `PoolId` `poolId` and returns the tick the pool
+stores, which is what marks whether a range is still active.
+
+[.contract-item]
+[[LimitOrderHook-_getPositionSalt-bool-]]
+==== `[.contract-item-name]#++_getPositionSalt++#++(bool zeroForOne) → bytes32++` [.item-kind]#internal#
+
+Returns the salt of the pool position backing an order in direction `zeroForOne`. Both
+directions at one tick span the same range, so the salt is what keeps them in separate positions.
+
+IMPORTANT: This value is part of a pool position's identity. Changing it on a deployed instance
+strands the liquidity of every live order placed under the previous value.
 
 [.contract-item]
 [[LimitOrderHook-getTickLowerLast-PoolId-]]
@@ -990,6 +1087,12 @@ Limit order was already filled.
 Limit order is not filled.
 
 [.contract-item]
+[[LimitOrderHook-NativeCurrencyUnsupported--]]
+==== `[.contract-item-name]#++NativeCurrencyUnsupported++#++()++` [.item-kind]#error#
+
+Limit order was placed in a pool holding the native currency.
+
+[.contract-item]
 [[LimitOrderHook-ZERO_BYTES-bytes]]
 ==== `bytes [.contract-item-name]#++ZERO_BYTES++#` [.item-kind]#internal constant#
 
@@ -1006,20 +1109,29 @@ The default order id, used to indicate that an order is not yet initialized.
 :ZeroShares: pass:normal[xref:#ReHypothecationHook-ZeroShares--[`++ZeroShares++`]]
 :InvalidMsgValue: pass:normal[xref:#ReHypothecationHook-InvalidMsgValue--[`++InvalidMsgValue++`]]
 :RefundFailed: pass:normal[xref:#ReHypothecationHook-RefundFailed--[`++RefundFailed++`]]
+:LiquidityNotAllowed: pass:normal[xref:#ReHypothecationHook-LiquidityNotAllowed--[`++LiquidityNotAllowed++`]]
+:NotSeeded: pass:normal[xref:#ReHypothecationHook-NotSeeded--[`++NotSeeded++`]]
+:AlreadySeeded: pass:normal[xref:#ReHypothecationHook-AlreadySeeded--[`++AlreadySeeded++`]]
+:InsufficientSeed: pass:normal[xref:#ReHypothecationHook-InsufficientSeed-uint256-uint256-[`++InsufficientSeed++`]]
+:JITLocked: pass:normal[xref:#ReHypothecationHook-JITLocked--[`++JITLocked++`]]
 :ReHypothecatedLiquidityAdded: pass:normal[xref:#ReHypothecationHook-ReHypothecatedLiquidityAdded-address-struct-PoolKey-uint256-uint256-uint256-[`++ReHypothecatedLiquidityAdded++`]]
 :ReHypothecatedLiquidityRemoved: pass:normal[xref:#ReHypothecationHook-ReHypothecatedLiquidityRemoved-address-struct-PoolKey-uint256-uint256-uint256-[`++ReHypothecatedLiquidityRemoved++`]]
 :getPoolKey: pass:normal[xref:#ReHypothecationHook-getPoolKey--[`++getPoolKey++`]]
 :_beforeInitialize: pass:normal[xref:#ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-[`++_beforeInitialize++`]]
+:seedLiquidity: pass:normal[xref:#ReHypothecationHook-seedLiquidity-uint256-uint256-[`++seedLiquidity++`]]
 :addReHypothecatedLiquidity: pass:normal[xref:#ReHypothecationHook-addReHypothecatedLiquidity-uint256-[`++addReHypothecatedLiquidity++`]]
 :removeReHypothecatedLiquidity: pass:normal[xref:#ReHypothecationHook-removeReHypothecatedLiquidity-uint256-[`++removeReHypothecatedLiquidity++`]]
 :_beforeSwap: pass:normal[xref:#ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-[`++_beforeSwap++`]]
 :_afterSwap: pass:normal[xref:#ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`++_afterSwap++`]]
 :_resolveHookDelta: pass:normal[xref:#ReHypothecationHook-_resolveHookDelta-Currency-[`++_resolveHookDelta++`]]
+:_beforeAddLiquidity: pass:normal[xref:#ReHypothecationHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-[`++_beforeAddLiquidity++`]]
+:_beforeRemoveLiquidity: pass:normal[xref:#ReHypothecationHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-[`++_beforeRemoveLiquidity++`]]
 :previewMint: pass:normal[xref:#ReHypothecationHook-previewMint-uint256-[`++previewMint++`]]
 :previewRedeem: pass:normal[xref:#ReHypothecationHook-previewRedeem-uint256-[`++previewRedeem++`]]
 :_sharesToAmounts: pass:normal[xref:#ReHypothecationHook-_sharesToAmounts-uint256-enum-Math-Rounding-[`++_sharesToAmounts++`]]
 :_shareToAmount: pass:normal[xref:#ReHypothecationHook-_shareToAmount-uint256-Currency-enum-Math-Rounding-[`++_shareToAmount++`]]
-:_getLiquidityToUse: pass:normal[xref:#ReHypothecationHook-_getLiquidityToUse--[`++_getLiquidityToUse++`]]
+:_decimalsOffset: pass:normal[xref:#ReHypothecationHook-_decimalsOffset--[`++_decimalsOffset++`]]
+:_getLiquidityToUse: pass:normal[xref:#ReHypothecationHook-_getLiquidityToUse-int24-int24-[`++_getLiquidityToUse++`]]
 :_getHookPositionLiquidity: pass:normal[xref:#ReHypothecationHook-_getHookPositionLiquidity--[`++_getHookPositionLiquidity++`]]
 :getTickLower: pass:normal[xref:#ReHypothecationHook-getTickLower--[`++getTickLower++`]]
 :getTickUpper: pass:normal[xref:#ReHypothecationHook-getTickUpper--[`++getTickUpper++`]]
@@ -1030,6 +1142,7 @@ The default order id, used to indicate that an order is not yet initialized.
 :_depositToYieldSource: pass:normal[xref:#ReHypothecationHook-_depositToYieldSource-Currency-uint256-[`++_depositToYieldSource++`]]
 :_withdrawFromYieldSource: pass:normal[xref:#ReHypothecationHook-_withdrawFromYieldSource-Currency-uint256-[`++_withdrawFromYieldSource++`]]
 :_getAmountInYieldSource: pass:normal[xref:#ReHypothecationHook-_getAmountInYieldSource-Currency-[`++_getAmountInYieldSource++`]]
+:_getMaxWithdrawFromYieldSource: pass:normal[xref:#ReHypothecationHook-_getMaxWithdrawFromYieldSource-Currency-[`++_getMaxWithdrawFromYieldSource++`]]
 :getHookPermissions: pass:normal[xref:#ReHypothecationHook-getHookPermissions--[`++getHookPermissions++`]]
 :receive: pass:normal[xref:#ReHypothecationHook-receive--[`++receive++`]]
 
@@ -1064,6 +1177,11 @@ balances in the yield sources.
 NOTE: Since the hook owns the single liquidity position, it is possible to perform "leveraged liquidity" strategies,
 which would give better pricing to swappers at the cost of the profitability of LP's and increased risks. See {_getLiquidityToUse}
 
+NOTE: A pool must be seeded via {seedLiquidity} before liquidity can be added through {addReHypothecatedLiquidity}.
+Seeding is allowed whenever the pool has no outstanding shares, i.e. at genesis or to revive the pool after a full
+withdrawal. The seed sets the ratio and mints shares as `sqrt(amount0 * amount1)`, in a UniswapV2 like fashion.
+From there, a share represents a proportional claim over the hook's balances in the yield sources.
+
 WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
 such as variations in the yield rates, rebalances, impermanent loss, and other risks associated.
 
@@ -1071,7 +1189,8 @@ WARNING: This hook relies on the PoolManager singleton token reserves for flash 
 During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
 As a consequence, the PoolManager singleton may lack sufficient reserves for illiquid tokens in the instants between the swap
 executed and the posterior payment from the user, preventing swaps from being executed until the PoolManager accumulates enough tokens.
-Altrough it is very unlikely to happen, it can be mitigated by maintaining some permanent pool liquidity alongside rehypothecated liquidity.
+Although it is very unlikely to happen, note that direct liquidity provision to the pool is disabled, so the hook is the sole
+liquidity provider for its pool.
 
 WARNING: Liquidity additions and removals may be affected by slippage. Users can protect against unexpected slippage
 in general by verifying the amount received is as expected, using a wrapper that performs these checks.
@@ -1086,16 +1205,20 @@ _Available since v1.2.0_
 --
 * {xref-ReHypothecationHook-getPoolKey--}[`++getPoolKey()++`]
 * {xref-ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-}[`++_beforeInitialize(, key, )++`]
+* {xref-ReHypothecationHook-seedLiquidity-uint256-uint256-}[`++seedLiquidity(amount0, amount1)++`]
 * {xref-ReHypothecationHook-addReHypothecatedLiquidity-uint256-}[`++addReHypothecatedLiquidity(shares)++`]
 * {xref-ReHypothecationHook-removeReHypothecatedLiquidity-uint256-}[`++removeReHypothecatedLiquidity(shares)++`]
 * {xref-ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_beforeSwap(, , , )++`]
 * {xref-ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(, key, , , )++`]
 * {xref-ReHypothecationHook-_resolveHookDelta-Currency-}[`++_resolveHookDelta(currency)++`]
+* {xref-ReHypothecationHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++_beforeAddLiquidity(, , , )++`]
+* {xref-ReHypothecationHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++_beforeRemoveLiquidity(, , , )++`]
 * {xref-ReHypothecationHook-previewMint-uint256-}[`++previewMint(shares)++`]
 * {xref-ReHypothecationHook-previewRedeem-uint256-}[`++previewRedeem(shares)++`]
 * {xref-ReHypothecationHook-_sharesToAmounts-uint256-enum-Math-Rounding-}[`++_sharesToAmounts(shares, rounding)++`]
 * {xref-ReHypothecationHook-_shareToAmount-uint256-Currency-enum-Math-Rounding-}[`++_shareToAmount(shares, currency, rounding)++`]
-* {xref-ReHypothecationHook-_getLiquidityToUse--}[`++_getLiquidityToUse()++`]
+* {xref-ReHypothecationHook-_decimalsOffset--}[`++_decimalsOffset()++`]
+* {xref-ReHypothecationHook-_getLiquidityToUse-int24-int24-}[`++_getLiquidityToUse(tickLower, tickUpper)++`]
 * {xref-ReHypothecationHook-_getHookPositionLiquidity--}[`++_getHookPositionLiquidity()++`]
 * {xref-ReHypothecationHook-getTickLower--}[`++getTickLower()++`]
 * {xref-ReHypothecationHook-getTickUpper--}[`++getTickUpper()++`]
@@ -1106,6 +1229,7 @@ _Available since v1.2.0_
 * {xref-ReHypothecationHook-_depositToYieldSource-Currency-uint256-}[`++_depositToYieldSource(currency, amount)++`]
 * {xref-ReHypothecationHook-_withdrawFromYieldSource-Currency-uint256-}[`++_withdrawFromYieldSource(currency, amount)++`]
 * {xref-ReHypothecationHook-_getAmountInYieldSource-Currency-}[`++_getAmountInYieldSource(currency)++`]
+* {xref-ReHypothecationHook-_getMaxWithdrawFromYieldSource-Currency-}[`++_getMaxWithdrawFromYieldSource(currency)++`]
 * {xref-ReHypothecationHook-getHookPermissions--}[`++getHookPermissions()++`]
 * {xref-ReHypothecationHook-receive--}[`++receive()++`]
 
@@ -1149,9 +1273,7 @@ _Available since v1.2.0_
 * {xref-BaseHook-afterInitialize-address-struct-PoolKey-uint160-int24-}[`++afterInitialize(sender, key, sqrtPriceX96, tick)++`]
 * {xref-BaseHook-_afterInitialize-address-struct-PoolKey-uint160-int24-}[`++_afterInitialize(, , , )++`]
 * {xref-BaseHook-beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++beforeAddLiquidity(sender, key, params, hookData)++`]
-* {xref-BaseHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++_beforeAddLiquidity(, , , )++`]
 * {xref-BaseHook-beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++beforeRemoveLiquidity(sender, key, params, hookData)++`]
-* {xref-BaseHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++_beforeRemoveLiquidity(, , , )++`]
 * {xref-BaseHook-afterAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-}[`++afterAddLiquidity(sender, key, params, delta0, delta1, hookData)++`]
 * {xref-BaseHook-_afterAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-}[`++_afterAddLiquidity(, , , , , )++`]
 * {xref-BaseHook-afterRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-BalanceDelta-BalanceDelta-bytes-}[`++afterRemoveLiquidity(sender, key, params, delta0, delta1, hookData)++`]
@@ -1208,6 +1330,11 @@ _Available since v1.2.0_
 * {xref-ReHypothecationHook-ZeroShares--}[`++ZeroShares()++`]
 * {xref-ReHypothecationHook-InvalidMsgValue--}[`++InvalidMsgValue()++`]
 * {xref-ReHypothecationHook-RefundFailed--}[`++RefundFailed()++`]
+* {xref-ReHypothecationHook-LiquidityNotAllowed--}[`++LiquidityNotAllowed()++`]
+* {xref-ReHypothecationHook-NotSeeded--}[`++NotSeeded()++`]
+* {xref-ReHypothecationHook-AlreadySeeded--}[`++AlreadySeeded()++`]
+* {xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-}[`++InsufficientSeed(shares, minShares)++`]
+* {xref-ReHypothecationHook-JITLocked--}[`++JITLocked()++`]
 
 [.contract-subindex-inherited]
 .ReentrancyGuardTransient
@@ -1235,6 +1362,7 @@ _Available since v1.2.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -1255,6 +1383,39 @@ Initialize the hook's `poolKey` pool. The key stored by the hook is unique and
 should not be modified so that it can safely be used across the hook's lifecycle.
 Note that the hook supports only one pool key.
 
+WARNING: Pool initialization is permissionless and permanently binds the hook to the first key it sees,
+so a third party can front-run it with an unintended pool. Initialize the pool atomically with the hook's
+deployment, or override this function to reject an unexpected key.
+
+[.contract-item]
+[[ReHypothecationHook-seedLiquidity-uint256-uint256-]]
+==== `[.contract-item-name]#++seedLiquidity++#++(uint256 amount0, uint256 amount1) → uint256 shares, BalanceDelta delta++` [.item-kind]#public#
+
+Seeds the pool with its first liquidity, depositing `amount0` of `currency0` and `amount1` of
+`currency1` into the yield sources and minting `sqrt(amount0 * amount1)` shares to the caller, in a
+UniswapV2 like fashion. The deposited amounts set the ratio at which {addReHypothecatedLiquidity}
+prices every later addition.
+
+Callable permissionlessly whenever the pool has no outstanding shares: at genesis, or to revive the pool
+after a full withdrawal. The minted shares must be at least `100 * 10 ** _decimalsOffset()`, so the supply
+dominates the virtual-shares offset used in {_shareToAmount} and the share price cannot be inflated.
+
+Returns the `shares` minted and a balance `delta` representing the assets deposited into the hook.
+
+NOTE: The amounts should be provided close to the pool's current price, otherwise part of the seeded
+liquidity may sit idle until swaps rebalance it. See {_getLiquidityToUse}.
+
+WARNING: A third party can front-run the intended seed with a heavily skewed ratio. Since
+{_getLiquidityToUse} is bounded by the scarcer side, the hook is then left with negligible usable liquidity
+and cannot serve swaps. Deposited assets stay redeemable, and seeding reopens once the supply returns to
+zero. Consider seeding atomically with pool initialization, or overriding this function to restrict the caller.
+
+Requirements:
+- Pool must be initialized
+- Pool must have no outstanding shares (`totalSupply() == 0`)
+- Resulting shares must be at least `100 * 10 ** _decimalsOffset()`
+- Sender must have approved the hook to spend the required tokens
+
 [.contract-item]
 [[ReHypothecationHook-addReHypothecatedLiquidity-uint256-]]
 ==== `[.contract-item-name]#++addReHypothecatedLiquidity++#++(uint256 shares) → BalanceDelta delta++` [.item-kind]#public#
@@ -1269,6 +1430,7 @@ Returns a balance `delta` representing the assets deposited into the hook.
 
 Requirements:
 - Pool must be initialized
+- Pool must have been seeded (see {seedLiquidity})
 - Sender must have sufficient token balances
 - Sender must have approved the hook to spend the required tokens
 
@@ -1319,6 +1481,23 @@ sources to the poolManager and vice versa, effectively neutralizing the Flash Ac
 able to lock the poolManager again.
 
 [.contract-item]
+[[ReHypothecationHook-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-]]
+==== `[.contract-item-name]#++_beforeAddLiquidity++#++(address, struct PoolKey, struct ModifyLiquidityParams, bytes) → bytes4++` [.item-kind]#internal#
+
+Blocks direct liquidity provision to the pool by third parties, so the hook remains the pool's sole
+liquidity provider. This prevents external positions from interfering with the hook's just-in-time liquidity,
+such as saturating the position's tick boundaries and reverting subsequent swaps.
+
+Note that the hook's own just-in-time liquidity provisioning is unaffected, since the `PoolManager` skips hook
+callbacks when the hook itself is modifying liquidity.
+
+[.contract-item]
+[[ReHypothecationHook-_beforeRemoveLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-]]
+==== `[.contract-item-name]#++_beforeRemoveLiquidity++#++(address, struct PoolKey, struct ModifyLiquidityParams, bytes) → bytes4++` [.item-kind]#internal#
+
+Blocks direct liquidity removal from the pool by third parties. See {_beforeAddLiquidity}.
+
+[.contract-item]
 [[ReHypothecationHook-previewMint-uint256-]]
 ==== `[.contract-item-name]#++previewMint++#++(uint256 shares) → uint256 amount0, uint256 amount1++` [.item-kind]#public#
 
@@ -1338,26 +1517,43 @@ NOTE: Rounds down, benefiting current liquidity providers.
 [[ReHypothecationHook-_sharesToAmounts-uint256-enum-Math-Rounding-]]
 ==== `[.contract-item-name]#++_sharesToAmounts++#++(uint256 shares, enum Math.Rounding rounding) → uint256 amount0, uint256 amount1++` [.item-kind]#internal#
 
-Calculates the amounts of currency0 and currency1 required for minting or redeeming a given amount of shares.
+Calculates the amounts of currency0 and currency1 equivalent to a given amount of `shares`, as a
+proportional claim over the hook's balances in the yield sources, using the given rounding direction.
 
-If the hook has not emitted shares yet, the initial mint/redeem ratio is determined by the internal pool price.
-Otherwise, it is determined by the ratio of the hook balances in the yield sources.
+Reverts with {NotSeeded} when no shares have been minted yet, since the pool has no defined ratio before
+{seedLiquidity}.
 
 [.contract-item]
 [[ReHypothecationHook-_shareToAmount-uint256-Currency-enum-Math-Rounding-]]
 ==== `[.contract-item-name]#++_shareToAmount++#++(uint256 shares, Currency currency, enum Math.Rounding rounding) → uint256 amount++` [.item-kind]#internal#
 
-Converts a given `shares` amount to the corresponding `currency` amount using
-the given rounding direction.
+Converts a given `shares` amount to the corresponding `currency` amount, as its proportional claim
+over the hook's balance of `currency` in the yield source, using the given rounding direction.
+
+Uses an EIP-4626 like virtual offset (see {_decimalsOffset}) to defend the share price against inflation,
+so a share is worth `(balance + 1) / (totalSupply + 10 ** _decimalsOffset())` of the `currency` balance.
+Reverts with {NotSeeded} before the pool is seeded.
 
 [.contract-item]
-[[ReHypothecationHook-_getLiquidityToUse--]]
-==== `[.contract-item-name]#++_getLiquidityToUse++#++() → uint256++` [.item-kind]#internal#
+[[ReHypothecationHook-_decimalsOffset--]]
+==== `[.contract-item-name]#++_decimalsOffset++#++() → uint8++` [.item-kind]#internal#
+
+Returns the decimal offset used for the EIP-4626 like virtual shares that defend the share price
+against inflation. The initial supply minted by {seedLiquidity} is required to be at least
+`100 * 10 ** _decimalsOffset()`, keeping the maximum share price drift around 1%.
+
+Defaults to `6`, which suits most token pairs. Can be overridden to strengthen the defense with a higher
+offset, at the cost of a larger minimum seed, for example for high-decimal pairs.
+
+[.contract-item]
+[[ReHypothecationHook-_getLiquidityToUse-int24-int24-]]
+==== `[.contract-item-name]#++_getLiquidityToUse++#++(int24 tickLower, int24 tickUpper) → uint256++` [.item-kind]#internal#
 
 Calculates the `liquidity` to be provided just-in-time for incoming swaps.
 
-By default, returns the maximum liquidity that can be provided given the current balances
-of the hook in the yield sources.
+By default, returns the maximum liquidity that can be provided given the balances the hook can
+currently withdraw from the yield sources (see {_getMaxWithdrawFromYieldSource}), so the position
+removed in `afterSwap` never exceeds what the yield sources can return in the same transaction.
 
 Since the internal pool price (ratio of currency0 to currency1) must be preserved for providing
 liquidity to the single hook-owned position range, not necessarily all the assets in the yield
@@ -1402,7 +1598,8 @@ Can be overridden to customize the tick boundary.
 [[ReHypothecationHook-_modifyLiquidity-int256-]]
 ==== `[.contract-item-name]#++_modifyLiquidity++#++(int256 liquidityDelta) → BalanceDelta delta++` [.item-kind]#internal#
 
-Modifies the hook's liquidity position in the pool.
+Modifies the hook's liquidity position in the pool, at the tick bounds snapshotted for the current
+swap (see {_snapshotActiveTicks}).
 
 Positive liquidityDelta adds liquidity, while negative removes it.
 
@@ -1451,6 +1648,19 @@ Gets the `amount` of `currency` deposited in its corresponding yield source.
 
 Note: Must be implemented and adapted for the desired type of yield sources, such as
  ERC-4626 Vaults, or any custom DeFi protocol interface, optionally handling native currency.
+
+[.contract-item]
+[[ReHypothecationHook-_getMaxWithdrawFromYieldSource-Currency-]]
+==== `[.contract-item-name]#++_getMaxWithdrawFromYieldSource++#++(Currency currency) → uint256++` [.item-kind]#internal#
+
+Returns the maximum `amount` of `currency` that can currently be withdrawn from its yield source.
+
+Used to size the just-in-time liquidity provided during swaps, so the hook never provisions more than it
+can withdraw back in the same transaction. Share pricing instead uses {_getAmountInYieldSource}, the full
+reported balance.
+
+Defaults to {_getAmountInYieldSource}. Override for yield sources whose immediately-withdrawable amount can
+be below the reported balance, such as ERC-4626 `maxWithdraw`, or capped, gated or fee-charging sources.
 
 [.contract-item]
 [[ReHypothecationHook-getHookPermissions--]]
@@ -1505,4 +1715,35 @@ Error thrown when the message value doesn't match the expected amount for native
 ==== `[.contract-item-name]#++RefundFailed++#++()++` [.item-kind]#error#
 
 Error thrown when the refund fails.
+
+[.contract-item]
+[[ReHypothecationHook-LiquidityNotAllowed--]]
+==== `[.contract-item-name]#++LiquidityNotAllowed++#++()++` [.item-kind]#error#
+
+Error thrown when a third party attempts to provide or remove liquidity directly on the pool.
+
+[.contract-item]
+[[ReHypothecationHook-NotSeeded--]]
+==== `[.contract-item-name]#++NotSeeded++#++()++` [.item-kind]#error#
+
+Error thrown when adding liquidity before the pool has been seeded.
+
+[.contract-item]
+[[ReHypothecationHook-AlreadySeeded--]]
+==== `[.contract-item-name]#++AlreadySeeded++#++()++` [.item-kind]#error#
+
+Error thrown when seeding a pool that still has outstanding shares.
+
+[.contract-item]
+[[ReHypothecationHook-InsufficientSeed-uint256-uint256-]]
+==== `[.contract-item-name]#++InsufficientSeed++#++(uint256 shares, uint256 minShares)++` [.item-kind]#error#
+
+Error thrown when a seed would mint fewer than the minimum safe initial `shares`, given `minShares`.
+
+[.contract-item]
+[[ReHypothecationHook-JITLocked--]]
+==== `[.contract-item-name]#++JITLocked++#++()++` [.item-kind]#error#
+
+Error thrown when a liquidity operation and the just-in-time settlement would overlap,
+to prevent reentrancy across the JIT lock.
 

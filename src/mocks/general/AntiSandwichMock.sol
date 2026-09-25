@@ -2,31 +2,43 @@
 pragma solidity ^0.8.26;
 
 // External imports
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {IERC6909Claims} from "@uniswap/v4-core/src/interfaces/external/IERC6909Claims.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
-import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 // Internal imports
 import {AntiSandwichHook} from "../../general/AntiSandwichHook.sol";
-import {CurrencySettler} from "../../utils/CurrencySettler.sol";
 import {BaseHook} from "../../base/BaseHook.sol";
 
+/**
+ * @dev Hands the anti-sandwich fee to a recipient fixed at deployment, as ERC-6909 claims.
+ *
+ * IMPORTANT: Do not pay the fee to in-range liquidity instead. `poolManager.donate` pays whoever supplies
+ * the book at that moment, and an attacker can supply almost all of it: add a dominant position, displace
+ * the price, let a victim trade, close against the bound, and take the fee back through the position.
+ * Delaying the donation does not help, since the position can be held across the block. Paying an address
+ * the attacker does not control is what closes it.
+ *
+ * TIP: To route the fee to liquidity providers, the recipient has to tell liquidity that predates the fee
+ * from liquidity supplied to collect it. Consider
+ * https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/general/LiquidityPenaltyHook.sol[LiquidityPenaltyHook].
+ */
 contract AntiSandwichMock is AntiSandwichHook {
-    using CurrencySettler for Currency;
+    /// @dev Receives every fee the bound collects, as ERC-6909 claims against the pool manager.
+    address public immutable feeRecipient;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    constructor(IPoolManager _poolManager, address feeRecipient_) BaseHook(_poolManager) {
+        feeRecipient = feeRecipient_;
+    }
 
     /**
-     * @dev Handles the excess tokens collected during the swap due to the anti-sandwich mechanism.
-     * When a swap executes at a worse price than what's currently available in the pool (due to
-     * enforcing the beginning-of-block price), the excess tokens are donated back to the pool
-     * to benefit all liquidity providers.
+     * @dev Forwards the fee {BaseDynamicAfterFee} has already taken as claims.
      *
-     * WARNING: This example handles the accumulated anti-sandwich fees by donating the excess tokens to in-range
-     * liquidity providers. Be aware that this type of donations may be vulnerable to JIT attacks. If this particular
-     * type of handling is desired, consider combining with a JIT protection mechanism such as
-     * https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/general/LiquidityPenaltyHook.sol[LiquidityPenaltyHook].
+     * NOTE: The transfer reads no pool state and calls no ERC-20, so it cannot reject a swap the pool
+     * accepted, and a token that charges a transfer fee, rebases or rejects a recipient has nothing to act
+     * on. Redeeming the claims is the recipient's own call, where the usual token caveats apply.
      */
     function _afterSwapHandler(
         PoolKey calldata key,
@@ -35,14 +47,9 @@ contract AntiSandwichMock is AntiSandwichHook {
         uint256,
         uint256 feeAmount
     ) internal override {
-        Currency unspecified = (params.amountSpecified < 0 == params.zeroForOne) ? (key.currency1) : (key.currency0);
-        (uint256 amount0, uint256 amount1) = unspecified == key.currency0
-            ? (uint256(uint128(feeAmount)), uint256(0))
-            : (uint256(0), uint256(uint128(feeAmount)));
+        Currency unspecified = (params.amountSpecified < 0 == params.zeroForOne) ? key.currency1 : key.currency0;
 
-        // settle and donate execess tokens to the pool
-        poolManager.donate(key, amount0, amount1, "");
-        unspecified.settle(poolManager, address(this), feeAmount, true);
+        IERC6909Claims(address(poolManager)).transfer(feeRecipient, unspecified.toId(), feeAmount);
     }
 
     // Exclude from coverage report

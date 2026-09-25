@@ -21,10 +21,13 @@ abstract contract BaseOracleHook is BaseHook {
     /// @dev The pool was not initialized with this hook, so it has no recorded observations
     error PoolNotInitialized();
 
+    /// @dev The maximum absolute tick delta is not positive
+    error InvalidMaxAbsTickDelta();
+
     /// @dev Emitted by the hook for increases to the number of observations that can be stored.
     ///
     /// NOTE: `observationCardinalityNext` is not the observation cardinality until an observation is written at the index
-    /// just before a mint/swap/burn.
+    /// just before a swap.
     ///
     /// @param observationCardinalityNextOld The previous value of the next observation cardinality
     /// @param observationCardinalityNextNew The updated value of the next observation cardinality
@@ -58,10 +61,11 @@ abstract contract BaseOracleHook is BaseHook {
     // solhint-disable-next-line
     mapping(PoolId poolId => ObservationState state) public stateById;
 
-    /// @dev Initializes a Uniswap V4 pool with this hook, stores baseline observation state, and optionally performs a cardinality increase.
+    /// @dev Sets the maximum absolute tick delta for the truncated oracle. Reverts with {InvalidMaxAbsTickDelta} if it is not positive.
     ///
     /// @param _maxAbsTickDelta The maximum absolute tick delta that can be observed for the truncated oracle
     constructor(int24 _maxAbsTickDelta) {
+        if (_maxAbsTickDelta <= 0) revert InvalidMaxAbsTickDelta();
         MAX_ABS_TICK_DELTA = _maxAbsTickDelta;
     }
 
@@ -112,8 +116,8 @@ abstract contract BaseOracleHook is BaseHook {
     /// WARNING: The recorded tick is the pool tick. If an inheriting hook's `BeforeSwapDelta` consumes part or all
     /// of the specified amount, the recorded price does not reflect the executed trade.
     ///
-    /// NOTE: The observation records the tick before the swap applies, so it never reflects a price moved within
-    /// the current transaction. A hook that swaps on its own skips this callback and moves the tick unrecorded.
+    /// NOTE: The observation records the tick before the swap applies. A hook that swaps on its own skips this
+    /// callback and moves the tick unrecorded.
     ///
     /// @param key The key for the pool
     /// @return bytes4 The function selector for the hook

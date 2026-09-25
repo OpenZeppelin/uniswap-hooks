@@ -17,6 +17,7 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 // Internal
 import {OracleHookWithV3Adapters} from "../../../src/oracles/panoptic/OracleHookWithV3Adapters.sol";
 import {BaseOracleHook} from "../../../src/oracles/panoptic/BaseOracleHook.sol";
+import {OracleHookWithV3AdaptersMock} from "../../../src/mocks/oracles/panoptic/OracleHookWithV3AdaptersMock.sol";
 import {V3OracleAdapter} from "../../../src/oracles/panoptic/adapters/V3OracleAdapter.sol";
 import {V3TruncatedOracleAdapter} from "../../../src/oracles/panoptic/adapters/V3TruncatedOracleAdapter.sol";
 import {HookTest} from "test/utils/HookTest.sol";
@@ -265,7 +266,7 @@ contract OracleLibTest is Test {
     }
 
     function test_fail_increaseObservationCardinalityNext_notInitialized() public {
-        vm.expectRevert(abi.encodeWithSelector(IPoolManager.PoolNotInitialized.selector));
+        vm.expectRevert(BaseOracleHook.PoolNotInitialized.selector);
         ORACLE_BASE.increaseObservationCardinalityNext(1, PoolId.wrap(bytes32("1")));
     }
 
@@ -1862,6 +1863,21 @@ contract OracleLibTest is Test {
 
         vm.expectRevert(BaseOracleHook.PoolNotInitialized.selector);
         ORACLE_BASE.observe(secondsAgos, unknownPool);
+    }
+
+    function test_fail_constructor_nonPositiveMaxAbsTickDelta() public {
+        int24[3] memory invalidDeltas = [int24(0), int24(-1), type(int24).min];
+        for (uint256 i = 0; i < invalidDeltas.length; i++) {
+            // Runs the constructor at a valid hook address, so the delta check is the one that reverts.
+            address hookAddress = address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_INITIALIZE_FLAG) + (1 << 20));
+            vm.etch(
+                hookAddress,
+                abi.encodePacked(type(OracleHookWithV3AdaptersMock).creationCode, abi.encode(manager, invalidDeltas[i]))
+            );
+            (bool success, bytes memory revertData) = hookAddress.call("");
+            assertFalse(success);
+            assertEq(revertData, abi.encodeWithSelector(BaseOracleHook.InvalidMaxAbsTickDelta.selector));
+        }
     }
 
     function test_observe_initializedPool_succeeds() public {

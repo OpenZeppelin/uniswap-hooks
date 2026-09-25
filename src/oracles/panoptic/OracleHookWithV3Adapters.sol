@@ -28,7 +28,7 @@ abstract contract OracleHookWithV3Adapters is BaseOracleHook {
     // solhint-disable-next-line
     mapping(PoolId poolId => address truncatedAdapter) public truncatedAdapter;
 
-    /// @dev Initializes a Uniswap V4 pool with this hook, stores baseline observation state, and optionally performs a cardinality increase.
+    /// @dev Sets the maximum absolute tick delta for the truncated oracle. See {BaseOracleHook-constructor}.
     ///
     /// @param _maxAbsTickDelta The maximum absolute tick delta that can be observed for the truncated oracle
     constructor(int24 _maxAbsTickDelta) BaseOracleHook(_maxAbsTickDelta) {}

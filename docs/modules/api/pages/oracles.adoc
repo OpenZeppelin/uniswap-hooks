@@ -242,6 +242,8 @@ you must call it with secondsAgos = [3600, 0].
 NOTE: The time weighted average tick represents the geometric time weighted average price of the pool, in
 log base sqrt(1.0001) of currency1 / currency0. The TickMath library can be used to go from a tick value to a ratio.
 
+NOTE: Reverts with {PoolNotInitialized} when `underlyingPoolId` was not initialized with this hook.
+
 [.contract-item]
 [[BaseOracleHook-increaseObservationCardinalityNext-uint16-PoolId-]]
 ==== `[.contract-item-name]#++increaseObservationCardinalityNext++#++(uint16 observationCardinalityNext, PoolId underlyingPoolId)++` [.item-kind]#public#
@@ -279,7 +281,7 @@ just before a mint/swap/burn.
 [[BaseOracleHook-PoolNotInitialized--]]
 ==== `[.contract-item-name]#++PoolNotInitialized++#++()++` [.item-kind]#error#
 
-Observation cardinality cannot be increased if the pool is not initialized
+The pool was not initialized with this hook, so it has no recorded observations
 
 :AdaptersDeployed: pass:normal[xref:#OracleHookWithV3Adapters-AdaptersDeployed-PoolId-address-address-[`++AdaptersDeployed++`]]
 :standardAdapter: pass:normal[xref:#OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-[`++standardAdapter++`]]

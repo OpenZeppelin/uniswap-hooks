@@ -42,7 +42,12 @@ abstract contract OracleHookWithV3Adapters is BaseOracleHook {
     ///
     /// @param key The key for the pool being initialized
     /// @return bytes4 The function selector for the hook
-    function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick) internal override returns (bytes4) {
+    function _afterInitialize(address sender, PoolKey calldata key, uint160 sqrtPriceX96, int24 tick)
+        internal
+        virtual
+        override
+        returns (bytes4)
+    {
         PoolId poolId = key.toId();
 
         // Deploy adapter contracts
@@ -56,6 +61,6 @@ abstract contract OracleHookWithV3Adapters is BaseOracleHook {
         // Emit event for adapter deployment
         emit AdaptersDeployed(poolId, address(_standardAdapter), address(_truncatedAdapter));
 
-        return super._afterInitialize(address(0), key, 0, tick);
+        return super._afterInitialize(sender, key, sqrtPriceX96, tick);
     }
 }

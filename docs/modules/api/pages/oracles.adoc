@@ -314,7 +314,7 @@ NOTE: The adapters serve tick data only. See {V3OracleAdapter} and {V3TruncatedO
 .Functions
 --
 * {xref-OracleHookWithV3Adapters-constructor-int24-}[`++constructor(_maxAbsTickDelta)++`]
-* {xref-OracleHookWithV3Adapters-_afterInitialize-address-struct-PoolKey-uint160-int24-}[`++_afterInitialize(, key, , tick)++`]
+* {xref-OracleHookWithV3Adapters-_afterInitialize-address-struct-PoolKey-uint160-int24-}[`++_afterInitialize(sender, key, sqrtPriceX96, tick)++`]
 * {xref-OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-}[`++standardAdapter()++`]
 * {xref-OracleHookWithV3Adapters-truncatedAdapter-mapping-PoolId----address-}[`++truncatedAdapter()++`]
 
@@ -400,7 +400,7 @@ Initializes a Uniswap V4 pool with this hook, stores baseline observation state,
 
 [.contract-item]
 [[OracleHookWithV3Adapters-_afterInitialize-address-struct-PoolKey-uint160-int24-]]
-==== `[.contract-item-name]#++_afterInitialize++#++(address, struct PoolKey key, uint160, int24 tick) → bytes4++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_afterInitialize++#++(address sender, struct PoolKey key, uint160 sqrtPriceX96, int24 tick) → bytes4++` [.item-kind]#internal#
 
 The hook called after the state of a pool is initialized
 

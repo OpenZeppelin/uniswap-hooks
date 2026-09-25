@@ -19,7 +19,7 @@ contract BaseCustomAccountingSharedPositionMock is BaseCustomAccountingMock {
         return bytes32(0);
     }
 
-    // Keep the fees of the shared position in the hook instead of paying them to the caller
+    // Keep the shared position's fees in the hook
     function _handleAccruedFees(CallbackData memory, BalanceDelta, BalanceDelta feesAccrued) internal override {
         PoolKey memory key = poolKey();
         key.currency0.take(poolManager, address(this), uint256(int256(feesAccrued.amount0())), false);

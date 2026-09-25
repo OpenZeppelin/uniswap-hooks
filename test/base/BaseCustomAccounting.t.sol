@@ -956,7 +956,7 @@ contract BaseCustomAccountingTest is HookTest {
             BaseCustomAccounting.RemoveLiquidityParams(shares, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
         );
 
-        // The recipient redeems the whole shared position the transferred shares represent
+        // The recipient redeems the whole shared position
         assertEq(sharedHook.balanceOf(recipient), 0);
         (uint128 positionLiquidity,,) = manager.getPositionInfo(id, address(sharedHook), MIN_TICK, MAX_TICK, bytes32(0));
         assertEq(positionLiquidity, 0);

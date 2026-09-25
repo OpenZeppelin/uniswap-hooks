@@ -11,6 +11,10 @@ import {BaseOracleHook} from "../BaseOracleHook.sol";
 /// @title V3TruncatedOracleAdapter
 /// @notice Adapter contract that provides a Uniswap V3-compatible oracle interface for BaseOracleHook.
 /// @dev This adapter exposes the truncated tickCumulative values from BaseOracleHook.
+///
+/// WARNING: This adapter serves tick data only. `secondsPerLiquidityCumulativeX128` is not recorded and is
+/// always returned as zero, so a V3 consumer that derives liquidity from it divides by a zero delta and
+/// reverts. Read tick values from `observe` and disregard the second return value.
 contract V3TruncatedOracleAdapter {
     using StateLibrary for IPoolManager;
 
@@ -37,13 +41,20 @@ contract V3TruncatedOracleAdapter {
     }
 
     /// @notice Emulates the behavior of the exposed zeroth slot of a Uniswap V3 pool.
+    ///
+    /// NOTE: `unlocked` is always `true` and must not gate a reentrancy check.
+    ///
+    /// NOTE: `tick` and `sqrtPriceX96` are the raw pool values, while `observe` returns truncated
+    /// cumulatives. For a truncated tick, read `prevTruncatedTick` from `observationsById` on the hook at
+    /// `observationIndex`, which holds its value as of the last written observation.
+    ///
     /// @return sqrtPriceX96 The current price of the oracle as a sqrt(currency1/currency0) Q64.96 value
     /// @return tick The current tick of the oracle
     /// @return observationIndex The index of the last oracle observation that was written
     /// @return observationCardinality The current maximum number of observations stored in the oracle
     /// @return observationCardinalityNext The next maximum number of observations that can be stored in the oracle
-    /// @return feeProtocol The protocol fee for this pool (not used in V4, always 0)
-    /// @return unlocked Whether the pool is currently unlocked (always true for V4)
+    /// @return feeProtocol The protocol fee for this pool (not forwarded, always 0)
+    /// @return unlocked Whether the pool is currently unlocked (no per-pool equivalent in V4, always true)
     function slot0()
         external
         view
@@ -69,7 +80,7 @@ contract V3TruncatedOracleAdapter {
     /// @param index The element of the observations array to fetch
     /// @return blockTimestamp The timestamp of the observation
     /// @return tickCumulativeTruncated The truncated tick multiplied by seconds elapsed for the life of the pool as of the observation timestamp.
-    /// @return secondsPerLiquidityCumulativeX128 The seconds per in range liquidity for the life of the pool (always 0 in V4)
+    /// @return secondsPerLiquidityCumulativeX128 The seconds per in range liquidity for the life of the pool (not recorded, always 0)
     /// @return initialized Whether the observation has been initialized and the values are safe to use
     function observations(uint256 index)
         external
@@ -94,7 +105,7 @@ contract V3TruncatedOracleAdapter {
     /// @notice Returns the truncated cumulative tick values as of each timestamp `secondsAgo` from the current block timestamp.
     /// @param secondsAgos From how long ago each cumulative tick and liquidity value should be returned
     /// @return tickCumulativesTruncated Truncated cumulative tick values as of each `secondsAgos` from the current block timestamp
-    /// @return secondsPerLiquidityCumulativeX128s Cumulative seconds per liquidity-in-range value (always empty in V4)
+    /// @return secondsPerLiquidityCumulativeX128s Cumulative seconds per liquidity-in-range value (not recorded, zero-filled)
     function observe(uint32[] calldata secondsAgos)
         external
         view

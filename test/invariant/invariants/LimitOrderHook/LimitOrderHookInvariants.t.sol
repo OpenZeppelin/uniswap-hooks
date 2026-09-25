@@ -39,7 +39,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
     /// call count, not the amounts.
     uint256 constant ACCUMULATED_ROUNDING_TOLERANCE = 1e4;
 
-    function setUp() public {
+    function setUp() public virtual {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
 
@@ -56,13 +56,33 @@ contract LimitOrderHookInvariantsTest is HookTest {
         actors[2] = carol;
         actors[3] = dave;
 
-        int24[] memory ticks = new int24[](4);
+        handler = _deployHandler(actors, _orderTicks());
+
+        for (uint256 i; i < actors.length; ++i) {
+            _fund(actors[i]);
+        }
+        _fund(address(handler));
+        // the hook pays for the swaps it makes itself
+        _fund(address(hook));
+
+        targetContract(address(handler));
+    }
+
+    /// @dev Ticks the handler places orders at and swaps toward.
+    function _orderTicks() internal view virtual returns (int24[] memory ticks) {
+        ticks = new int24[](4);
         ticks[0] = -2 * key.tickSpacing;
         ticks[1] = -key.tickSpacing;
         ticks[2] = key.tickSpacing;
         ticks[3] = 2 * key.tickSpacing;
+    }
 
-        handler = new LimitOrderHookHandler(
+    function _deployHandler(address[] memory actors, int24[] memory ticks)
+        internal
+        virtual
+        returns (LimitOrderHookHandler)
+    {
+        return new LimitOrderHookHandler(
             hook,
             manager,
             swapRouter,
@@ -74,15 +94,6 @@ contract LimitOrderHookInvariantsTest is HookTest {
             AMOUNT_MIN_BOUND,
             AMOUNT_MAX_BOUND
         );
-
-        for (uint256 i; i < actors.length; ++i) {
-            _fund(actors[i]);
-        }
-        _fund(address(handler));
-        // the hook pays for the swaps it makes itself
-        _fund(address(hook));
-
-        targetContract(address(handler));
     }
 
     function _fund(address who) private {
@@ -119,7 +130,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
     /// @dev INV-L-02: an order is filled as soon as the price crosses its tick. Measured against the
     /// tick the pool stores, not the one the hook derives from the price, so the two cannot agree by
     /// sharing a derivation.
-    function invariant_L02_noActiveOrderSurvivesThePriceCrossingIt() public view {
+    function invariant_L02_noActiveOrderSurvivesThePriceCrossingIt() public view virtual {
         int24 tickLowerNow = handler.storedTickLower();
         int24[] memory ticks = handler.ticks();
 
@@ -142,7 +153,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
 
     /// @dev INV-L-03: the recorded tick lower tracks the pool's stored tick. Drift leaves orders in the
     /// gap unfilled.
-    function invariant_L03_recordedTickLowerTracksThePoolTick() public view {
+    function invariant_L03_recordedTickLowerTracksThePoolTick() public view virtual {
         assertEq(
             hook.getTickLowerLast(key.toId()),
             handler.storedTickLower(),
@@ -180,6 +191,29 @@ contract LimitOrderHookInvariantsTest is HookTest {
         );
 
         assertEq(positionLiquidity, liquidityTotal, "INV-L-04: a live order does not hold its pool position alone");
+    }
+
+    /// @dev INV-L-05: a tick is recorded as holding an order exactly when one is live there.
+    function invariant_L05_recordedTickAgreesWithTheOrder() public view {
+        int24[] memory tickList = handler.ticks();
+
+        for (uint256 i; i < tickList.length; ++i) {
+            _assertRecordedTickAgrees(tickList[i], true);
+            _assertRecordedTickAgrees(tickList[i], false);
+        }
+    }
+
+    /// @dev The fill scan visits a tick only when it is recorded, so a tick holding a live order whose
+    /// bit is clear is never filled. Its liquidity converts while the order stays live, and its owner
+    /// can cancel after a round trip through the range and take back what they deposited.
+    function _assertRecordedTickAgrees(int24 tickLower, bool zeroForOne) private view {
+        bool live = OrderIdLibrary.OrderId.unwrap(hook.getOrderId(key, tickLower, zeroForOne)) != 0;
+
+        assertEq(
+            hook.hasOrderAtTick(key, tickLower, zeroForOne),
+            live,
+            "INV-L-05: a tick's record disagrees with whether an order is live there"
+        );
     }
 
     /// @dev INV-F-01: a fully withdrawn order holds no liquidity.
@@ -227,6 +261,24 @@ contract LimitOrderHookInvariantsTest is HookTest {
 
         (bool filled,,,,,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(id));
         assertFalse(filled, "INV-F-03: a live key resolves to a filled order");
+    }
+
+    /// @dev INV-F-04: a filled order's principal is only the currency it bought. The fill removes a range
+    /// the price has passed, which holds nothing of the currency sold.
+    function invariant_F04_filledOrderPrincipalIsTheBoughtCurrency() public view {
+        uint232[] memory ids = handler.orderIds();
+
+        for (uint256 i; i < ids.length; ++i) {
+            if (!handler.ghost_wasFilled(ids[i])) continue;
+
+            (,,, uint256 principal0, uint256 principal1,,,) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(ids[i]));
+
+            if (handler.orderKeyOf(ids[i]).zeroForOne) {
+                assertEq(principal0, 0, "INV-F-04: a filled zeroForOne order records currency0 principal");
+            } else {
+                assertEq(principal1, 0, "INV-F-04: a filled oneForZero order records currency1 principal");
+            }
+        }
     }
 
     /// @dev INV-S-01: the hook's claims cover every order's recorded principal plus the fees owed to its owners.
@@ -317,7 +369,7 @@ contract LimitOrderHookInvariantsTest is HookTest {
 
     /// @dev Per-sequence coverage report: actions that reached the hook and the states the
     /// invariants quantify over.
-    function afterInvariant() public view {
+    function afterInvariant() public view virtual {
         console.log("--- STATS ---");
         _reportActions();
         _reportOrders();
@@ -370,12 +422,15 @@ contract LimitOrderHookInvariantsTest is HookTest {
         console.log("multi canceller ratio", multiCancellerRatio, "%");
         console.log("boundary placements", handler.ghost_boundaryPlacements());
         console.log("in-range boundary placements", handler.ghost_inRangeBoundaryPlacements());
+        console.log("widest word span crossed by one swap", handler.ghost_maxWordSpanCrossed());
+        console.log("swaps crossing more than one word", handler.ghost_multiWordCrossings());
 
         assertGt(orderCount, 0, "no order was created");
         assertGt(fillCount, 0, "no order was filled");
         assertGt(fullyWithdrawnCount, 0, "no order was fully withdrawn");
         assertGt(fullyCancelledCount, 0, "no order was fully cancelled");
         assertGt(handler.ghost_boundaryPlacements(), 0, "no order was placed at the price boundary");
+        assertGt(handler.ghost_multiWordCrossings(), 0, "no swap crossed a word, so the scan never advanced");
     }
 
     /// @dev Orders whose exit was split across more than one actor.

@@ -8,6 +8,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {FixedPoint128} from "@uniswap/v4-core/src/libraries/FixedPoint128.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {TickBitmap} from "@uniswap/v4-core/src/libraries/TickBitmap.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
@@ -56,12 +57,17 @@ library OrderIdLibrary {
  * fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
  * in the order's favour, so a negligible residual can remain in the hook.
  *
+ * NOTE: Principal withdrawals are floor-rounded against the liquidity remaining at the time of withdrawal, so
+ * an early withdrawer can lose a negligible residual to whichever owner withdraws last.
+ *
  * NOTE: Native currency orders are not supported.
  *
  * IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
  * does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
  * {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next
- * crossing is measured from it.
+ * crossing is measured from it. For the same reason {_afterInitialize} does not run for a pool this hook
+ * initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
+ * tick-zero baseline and the first swap can leave the orders it crosses unfilled.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -150,6 +156,9 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /// @dev The default order id, used to indicate that an order is not yet initialized.
     OrderIdLibrary.OrderId internal constant ORDER_ID_DEFAULT = OrderIdLibrary.OrderId.wrap(0);
 
+    /// @dev The largest amount the `PoolManager` settles at once, since it accounts deltas as an `int128`.
+    uint256 private constant MAX_SETTLEMENT = uint256(uint128(type(int128).max));
+
     /// @dev The next order id to be used.
     OrderIdLibrary.OrderId private _orderIdNext = OrderIdLibrary.OrderId.wrap(1);
 
@@ -158,6 +167,15 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /// @dev Tracks each order id for a given `orderKey`, defined by `keccak256` of the `poolKey`, `tickLower`, and `zeroForOne`.
     mapping(bytes32 orderKey => OrderIdLibrary.OrderId orderId) private _orderIds;
+
+    /**
+     * @dev Tracks which ticks hold a live order, one bitmap per pool and direction.
+     *
+     * A tick whose bit is clear is never visited, so its order would never fill while its liquidity
+     * converted. Keying by direction lets each order own its bit outright, with no need to check the
+     * opposite direction before clearing.
+     */
+    mapping(PoolId poolId => mapping(bool zeroForOne => mapping(int16 wordPos => uint256 word))) private _orderTicks;
 
     /// @dev Tracks the order info for each order id.
     mapping(OrderIdLibrary.OrderId orderId => OrderInfo orderInfo) private _orderInfos;
@@ -221,25 +239,37 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     event Withdraw(address indexed owner, OrderIdLibrary.OrderId indexed orderId, uint128 liquidity);
 
     /// @dev Hooks into the `afterInitialize` hook to set the last tick lower for the pool.
-    function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick)
+    function _afterInitialize(address, PoolKey calldata key, uint160, int24)
         internal
         virtual
         override
         returns (bytes4)
     {
-        _tickLowerLasts[key.toId()] = _getTickLower(tick, key.tickSpacing);
+        _recordTickLowerLast(key);
 
         return this.afterInitialize.selector;
     }
 
+    /**
+     * @dev Records the tick `key` currently sits at as the baseline the next crossing is measured from,
+     * without filling anything.
+     *
+     * IMPORTANT: {_afterInitialize} calls this, but does not run for a pool this hook initializes itself.
+     * A subclass that does so must call it right after.
+     */
+    function _recordTickLowerLast(PoolKey memory key) internal virtual {
+        PoolId poolId = key.toId();
+        _tickLowerLasts[poolId] = _getTickLower(_getCurrentTick(poolId), key.tickSpacing);
+    }
+
     /// @dev Hooks into the `afterSwap` hook to fill the orders the swap crossed.
-    function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta, bytes calldata)
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         virtual
         override
         returns (bytes4, int128)
     {
-        _fillCrossedOrders(key, params.zeroForOne);
+        _fillCrossedOrders(key);
 
         return (this.afterSwap.selector, 0);
     }
@@ -255,6 +285,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * Requirements:
      *
      * - `key` must identify a pool configured with this hook, otherwise the order could never be filled.
+     * - `key` must not use the native currency, otherwise it reverts {NativeCurrencyUnsupported}.
      * - The placement must require only the currency being sold, otherwise it reverts {InRange}.
      */
     function placeOrder(PoolKey calldata key, int24 tick, bool zeroForOne, uint128 liquidity)
@@ -578,23 +609,37 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /**
      * @dev Fills the orders the price crossed since the tick last recorded for `key`, and records the tick
-     * it reached. `swapZeroForOne` is the swap's direction, not the filled orders'.
+     * it reached. The direction filled follows the price, not the swap.
      *
      * IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
      * pool does not report such a swap.
      */
-    function _fillCrossedOrders(PoolKey memory key, bool swapZeroForOne) internal virtual {
+    function _fillCrossedOrders(PoolKey memory key) internal virtual {
         PoolId poolId = key.toId();
         (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(poolId, key.tickSpacing);
 
         if (lower > upper) return;
 
+        bool zeroForOne = tickLower >= getTickLowerLast(poolId);
+
         // set the last tick lower for the pool
         _tickLowerLasts[poolId] = tickLower;
 
-        bool zeroForOne = !swapZeroForOne;
-        for (; lower <= upper; lower += key.tickSpacing) {
-            _fillOrder(key, lower, zeroForOne);
+        mapping(int16 => uint256) storage orderTicks = _orderTicks[poolId][zeroForOne];
+
+        // the scan looks strictly above the tick it is given, so the lower bound is filled first
+        _fillOrder(key, lower, zeroForOne);
+
+        int24 tick = lower;
+        while (tick < upper) {
+            // `next` is strictly above `tick`, whether or not it holds an order, so this terminates
+            (int24 next, bool initialized) =
+                TickBitmap.nextInitializedTickWithinOneWord(orderTicks, tick, key.tickSpacing, false);
+
+            if (next > upper) break;
+            if (initialized) _fillOrder(key, next, zeroForOne);
+
+            tick = next;
         }
     }
 
@@ -655,19 +700,24 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /**
      * @dev Collects `amount0` and `amount1` of fees owed by the pool into the hook and credits them to
      * `orderInfo`, dividing them over the liquidity currently in it.
+     *
+     * The accumulators wrap on overflow, as Uniswap's fee growth does, since only their difference
+     * against a checkpoint is read and that stays exact across a wrap.
      */
     function _collectFees(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
         uint128 liquidityTotal = orderInfo.liquidityTotal;
         if (liquidityTotal == 0) return;
 
         // note: if amount0 or amount1 are non-zero, liquidityTotal is not zero.
-        if (amount0 > 0) {
-            orderInfo.accFee0PerLiqX128 += FullMath.mulDiv(amount0, FixedPoint128.Q128, liquidityTotal);
-            _takeAsClaims(orderInfo.currency0, amount0);
-        }
-        if (amount1 > 0) {
-            orderInfo.accFee1PerLiqX128 += FullMath.mulDiv(amount1, FixedPoint128.Q128, liquidityTotal);
-            _takeAsClaims(orderInfo.currency1, amount1);
+        unchecked {
+            if (amount0 > 0) {
+                orderInfo.accFee0PerLiqX128 += FullMath.mulDiv(amount0, FixedPoint128.Q128, liquidityTotal);
+                _takeAsClaims(orderInfo.currency0, amount0);
+            }
+            if (amount1 > 0) {
+                orderInfo.accFee1PerLiqX128 += FullMath.mulDiv(amount1, FixedPoint128.Q128, liquidityTotal);
+                _takeAsClaims(orderInfo.currency1, amount1);
+            }
         }
     }
 
@@ -695,17 +745,28 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it. Returns early when
-     * `amount` is zero, since the transfer it would otherwise make reverts for tokens that reject zero-value
-     * transfers, and for recipients that cannot receive the native currency.
+     * @dev Sends `amount` of `currency` to `to`, redeeming the claims the hook holds for it.
+     *
+     * An owner's entitlement aggregates batches that each fit in an `int128`, so it can exceed
+     * `MAX_SETTLEMENT`. It is then redeemed over several settlements, each pass replacing a redemption
+     * that would otherwise revert.
+     *
+     * Nothing is sent when `amount` is zero, since the transfer it would otherwise make reverts for tokens
+     * that reject zero-value transfers, and for recipients that cannot receive the native currency.
      */
     function _sendFromClaims(Currency currency, address to, uint256 amount) private {
-        if (amount == 0) return;
+        uint256 id = currency.toId();
 
-        // burn the claims the hook holds for the currency
-        poolManager.burn(address(this), currency.toId(), amount);
-        // take the currency from the pool and send it to the `to` address
-        poolManager.take(currency, to, amount);
+        while (amount > 0) {
+            uint256 settlement = amount < MAX_SETTLEMENT ? amount : MAX_SETTLEMENT;
+
+            poolManager.burn(address(this), id, settlement);
+            poolManager.take(currency, to, settlement);
+
+            unchecked {
+                amount -= settlement;
+            }
+        }
     }
 
     /**
@@ -716,21 +777,22 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * by `owed` expressed per unit of that liquidity. An owner adding liquidity is therefore re-checkpointed
      * without forfeiting what it had already accrued over its previous, smaller liquidity.
      *
-     * The offset cannot exceed the accumulator, since those fees were owed over a liquidity no greater than
-     * `liquidity`. It is zero for an owner with nothing owed, leaving the checkpoint at the accumulator.
+     * The offset is zero for an owner with nothing owed, and is subtracted modulo `2**256` so the
+     * checkpoint can trail an accumulator that has wrapped.
      *
      * IMPORTANT: `liquidity` is the owner's resulting liquidity, not the amount being added, and must not be
      * zero.
      */
     function _feeCheckpoint(uint256 accFeePerLiqX128, uint256 owed, uint128 liquidity) private pure returns (uint256) {
-        return accFeePerLiqX128 - FullMath.mulDiv(owed, FixedPoint128.Q128, liquidity);
+        unchecked {
+            return accFeePerLiqX128 - FullMath.mulDiv(owed, FixedPoint128.Q128, liquidity);
+        }
     }
 
     /**
      * @dev Returns `liquidity`'s share of the principal credited to `orderInfo`, which is what a withdrawal
-     * of that liquidity pays out. The principal is credited once by the fill and never grows, so splitting it
-     * pro-rata while the total liquidity decreases alongside it is exact and independent of the order in
-     * which the owners withdraw.
+     * of that liquidity pays out. Each payout truncates and its remainder rolls forward to the owners still
+     * in the order, so the principal is paid out exactly and the last owner out carries every remainder.
      */
     function _principalOwed(OrderInfo storage orderInfo, uint128 liquidity)
         private
@@ -748,6 +810,8 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Returns the fees owed to `userInfo`, given by its liquidity's share of the accumulator growth
      * since its checkpoints. Fees are only paid out on cancellation or withdrawal, so an owner holding
      * liquidity is owed everything its checkpoints have accrued.
+     *
+     * The growth is taken modulo `2**256`, so it stays exact across a wrap.
      */
     function _feesOwed(OrderInfo storage orderInfo, UserInfo storage userInfo)
         private
@@ -756,10 +820,14 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     {
         uint128 liquidity = userInfo.liquidity;
 
-        amount0 =
-            FullMath.mulDiv(orderInfo.accFee0PerLiqX128 - userInfo.feeCheckpoint0X128, liquidity, FixedPoint128.Q128);
-        amount1 =
-            FullMath.mulDiv(orderInfo.accFee1PerLiqX128 - userInfo.feeCheckpoint1X128, liquidity, FixedPoint128.Q128);
+        unchecked {
+            amount0 = FullMath.mulDiv(
+                orderInfo.accFee0PerLiqX128 - userInfo.feeCheckpoint0X128, liquidity, FixedPoint128.Q128
+            );
+            amount1 = FullMath.mulDiv(
+                orderInfo.accFee1PerLiqX128 - userInfo.feeCheckpoint1X128, liquidity, FixedPoint128.Q128
+            );
+        }
     }
 
     /**
@@ -788,9 +856,21 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     /**
      * @dev Internal helper that updates the order ID mapping. Takes a `PoolKey` `key`, target `tickLower`, direction
      * `zeroForOne`, and `orderId` to store. Associates the given order id with the pool position's hash.
+     *
+     * The only writer of both the order id and its bit. The bit is flipped from the transition observed
+     * here, not from the caller's intent, so writing the same liveness twice leaves the bitmap alone.
      */
     function _setOrderId(PoolKey memory key, int24 tickLower, bool zeroForOne, OrderIdLibrary.OrderId orderId) private {
-        _orderIds[keccak256(abi.encode(key, tickLower, zeroForOne))] = orderId;
+        bytes32 orderKey = keccak256(abi.encode(key, tickLower, zeroForOne));
+
+        bool wasLive = !_orderIds[orderKey].equals(ORDER_ID_DEFAULT);
+        bool isLive = !orderId.equals(ORDER_ID_DEFAULT);
+
+        _orderIds[orderKey] = orderId;
+
+        if (wasLive != isLive) {
+            TickBitmap.flipTick(_orderTicks[key.toId()][zeroForOne], tickLower, key.tickSpacing);
+        }
     }
 
     /**
@@ -829,6 +909,16 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      */
     function getTickLowerLast(PoolId poolId) public view returns (int24) {
         return _tickLowerLasts[poolId];
+    }
+
+    /// @dev Returns whether `tickLower` is recorded as holding a live order in direction `zeroForOne`.
+    function _hasOrderAtTick(PoolId poolId, int24 tickSpacing, int24 tickLower, bool zeroForOne)
+        internal
+        view
+        returns (bool)
+    {
+        (int16 wordPos, uint8 bitPos) = TickBitmap.position(TickBitmap.compress(tickLower, tickSpacing));
+        return _orderTicks[poolId][zeroForOne][wordPos] & (uint256(1) << bitPos) != 0;
     }
 
     /**

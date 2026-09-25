@@ -34,6 +34,9 @@
 :xref-BaseOracleHook-PoolNotInitialized--: xref:oracles.adoc#BaseOracleHook-PoolNotInitialized--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
+:V3OracleAdapter: pass:normal[xref:oracles.adoc#V3OracleAdapter[`V3OracleAdapter`]]
+:V3TruncatedOracleAdapter: pass:normal[xref:oracles.adoc#V3TruncatedOracleAdapter[`V3TruncatedOracleAdapter`]]
 :xref-OracleHookWithV3Adapters-constructor-int24-: xref:oracles.adoc#OracleHookWithV3Adapters-constructor-int24-
 :xref-OracleHookWithV3Adapters-_afterInitialize-address-struct-PoolKey-uint160-int24-: xref:oracles.adoc#OracleHookWithV3Adapters-_afterInitialize-address-struct-PoolKey-uint160-int24-
 :xref-OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-: xref:oracles.adoc#OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-
@@ -70,6 +73,25 @@
 :xref-BaseOracleHook-PoolNotInitialized--: xref:oracles.adoc#BaseOracleHook-PoolNotInitialized--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
+:xref-V3OracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-: xref:oracles.adoc#V3OracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-
+:xref-V3OracleAdapter-slot0--: xref:oracles.adoc#V3OracleAdapter-slot0--
+:xref-V3OracleAdapter-observations-uint256-: xref:oracles.adoc#V3OracleAdapter-observations-uint256-
+:xref-V3OracleAdapter-observe-uint32---: xref:oracles.adoc#V3OracleAdapter-observe-uint32---
+:xref-V3OracleAdapter-increaseObservationCardinalityNext-uint16-: xref:oracles.adoc#V3OracleAdapter-increaseObservationCardinalityNext-uint16-
+:xref-V3OracleAdapter-baseOracleHook-contract-BaseOracleHook: xref:oracles.adoc#V3OracleAdapter-baseOracleHook-contract-BaseOracleHook
+:xref-V3OracleAdapter-manager-contract-IPoolManager: xref:oracles.adoc#V3OracleAdapter-manager-contract-IPoolManager
+:xref-V3OracleAdapter-poolId-PoolId: xref:oracles.adoc#V3OracleAdapter-poolId-PoolId
+:xref-V3OracleAdapter-V3OracleAdapterIndexOutOfRange--: xref:oracles.adoc#V3OracleAdapter-V3OracleAdapterIndexOutOfRange--
+:xref-V3TruncatedOracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-: xref:oracles.adoc#V3TruncatedOracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-
+:xref-V3TruncatedOracleAdapter-slot0--: xref:oracles.adoc#V3TruncatedOracleAdapter-slot0--
+:xref-V3TruncatedOracleAdapter-observations-uint256-: xref:oracles.adoc#V3TruncatedOracleAdapter-observations-uint256-
+:xref-V3TruncatedOracleAdapter-observe-uint32---: xref:oracles.adoc#V3TruncatedOracleAdapter-observe-uint32---
+:xref-V3TruncatedOracleAdapter-increaseObservationCardinalityNext-uint16-: xref:oracles.adoc#V3TruncatedOracleAdapter-increaseObservationCardinalityNext-uint16-
+:xref-V3TruncatedOracleAdapter-baseOracleHook-contract-BaseOracleHook: xref:oracles.adoc#V3TruncatedOracleAdapter-baseOracleHook-contract-BaseOracleHook
+:xref-V3TruncatedOracleAdapter-manager-contract-IPoolManager: xref:oracles.adoc#V3TruncatedOracleAdapter-manager-contract-IPoolManager
+:xref-V3TruncatedOracleAdapter-poolId-PoolId: xref:oracles.adoc#V3TruncatedOracleAdapter-poolId-PoolId
+:xref-V3TruncatedOracleAdapter-V3TruncatedOracleAdapterIndexOutOfRange--: xref:oracles.adoc#V3TruncatedOracleAdapter-V3TruncatedOracleAdapterIndexOutOfRange--
 = Oracles
 
 [.readme-notice]
@@ -78,7 +100,7 @@ NOTE: This document is better viewed on the docs page.
 Oracle hooks that enable Uniswap v4 pools to function as price oracles by recording price observations and exposing oracle interfaces.
 
  * {BaseOracleHook}: Enables a Uniswap V4 pool to record price observations and expose an oracle interface for TWAP queries.
- * {OracleHookWithV3Adapters}: Extends oracle functionality with V3-compatible adapter contracts for integration with existing V3 oracle consumers.
+ * {OracleHookWithV3Adapters}: Extends oracle functionality with adapter contracts that expose the Uniswap V3 oracle interface for tick data.
 
 == Panoptic Oracles
 
@@ -169,6 +191,7 @@ A hook that enables a Uniswap V4 pool to record price observations and expose an
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -203,6 +226,9 @@ The hook called before a swap.
 
 NOTE: Note that this hook does not return either a `BeforeSwapDelta` or lp fee override — this call is used exclusively for recording price observations.
 
+NOTE: The observation records the tick before the swap applies, so it never reflects a price moved within
+the current transaction. A hook that swaps on its own skips this callback and moves the tick unrecorded.
+
 [.contract-item]
 [[BaseOracleHook-observe-uint32---PoolId-]]
 ==== `[.contract-item-name]#++observe++#++(uint32[] secondsAgos, PoolId underlyingPoolId) → int56[], int56[]++` [.item-kind]#external#
@@ -216,11 +242,13 @@ you must call it with secondsAgos = [3600, 0].
 NOTE: The time weighted average tick represents the geometric time weighted average price of the pool, in
 log base sqrt(1.0001) of currency1 / currency0. The TickMath library can be used to go from a tick value to a ratio.
 
+NOTE: Reverts with {PoolNotInitialized} when `underlyingPoolId` was not initialized with this hook.
+
 [.contract-item]
 [[BaseOracleHook-increaseObservationCardinalityNext-uint16-PoolId-]]
 ==== `[.contract-item-name]#++increaseObservationCardinalityNext++#++(uint16 observationCardinalityNext, PoolId underlyingPoolId)++` [.item-kind]#public#
 
-Increase the maximum number of price and liquidity observations that the oracle of `underlyingPoolId`.
+Increase the maximum number of observations that the oracle of `underlyingPoolId` can store.
 
 [.contract-item]
 [[BaseOracleHook-MAX_ABS_TICK_DELTA-int24]]
@@ -253,7 +281,7 @@ just before a mint/swap/burn.
 [[BaseOracleHook-PoolNotInitialized--]]
 ==== `[.contract-item-name]#++PoolNotInitialized++#++()++` [.item-kind]#error#
 
-Observation cardinality cannot be increased if the pool is not initialized
+The pool was not initialized with this hook, so it has no recorded observations
 
 :AdaptersDeployed: pass:normal[xref:#OracleHookWithV3Adapters-AdaptersDeployed-PoolId-address-address-[`++AdaptersDeployed++`]]
 :standardAdapter: pass:normal[xref:#OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-[`++standardAdapter++`]]
@@ -271,6 +299,8 @@ import "uniswap-hooks/src/oracles/panoptic/OracleHookWithV3Adapters.sol";
 ```
 
 A hook that enables a Uniswap V4 pool to record price observations and expose an oracle interface with Uniswap V3-compatible adapters
+
+NOTE: The adapters serve tick data only. See {V3OracleAdapter} and {V3TruncatedOracleAdapter} for their limits.
 
 [.contract-index]
 .Functions
@@ -347,6 +377,7 @@ A hook that enables a Uniswap V4 pool to record price observations and expose an
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -382,4 +413,170 @@ Maps pool IDs to their truncated V3 oracle adapters
 ==== `[.contract-item-name]#++AdaptersDeployed++#++(PoolId indexed poolId, address standardAdapter, address truncatedAdapter)++` [.item-kind]#event#
 
 Emitted when adapter contracts are deployed for a pool.
+
+== V3 Adapters
+
+:V3OracleAdapterIndexOutOfRange: pass:normal[xref:#V3OracleAdapter-V3OracleAdapterIndexOutOfRange--[`++V3OracleAdapterIndexOutOfRange++`]]
+:baseOracleHook: pass:normal[xref:#V3OracleAdapter-baseOracleHook-contract-BaseOracleHook[`++baseOracleHook++`]]
+:manager: pass:normal[xref:#V3OracleAdapter-manager-contract-IPoolManager[`++manager++`]]
+:poolId: pass:normal[xref:#V3OracleAdapter-poolId-PoolId[`++poolId++`]]
+:constructor: pass:normal[xref:#V3OracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-[`++constructor++`]]
+:slot0: pass:normal[xref:#V3OracleAdapter-slot0--[`++slot0++`]]
+:observations: pass:normal[xref:#V3OracleAdapter-observations-uint256-[`++observations++`]]
+:observe: pass:normal[xref:#V3OracleAdapter-observe-uint32---[`++observe++`]]
+:increaseObservationCardinalityNext: pass:normal[xref:#V3OracleAdapter-increaseObservationCardinalityNext-uint16-[`++increaseObservationCardinalityNext++`]]
+
+[.contract]
+[[V3OracleAdapter]]
+=== `++V3OracleAdapter++` link:https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/oracles/panoptic/adapters/V3OracleAdapter.sol[{github-icon},role=heading-link]
+
+[.hljs-theme-light.nopadding]
+```solidity
+import "uniswap-hooks/src/oracles/panoptic/adapters/V3OracleAdapter.sol";
+```
+
+This adapter exposes the normal tickCumulative values from BaseOracleHook.
+
+WARNING: This adapter serves tick data only. `secondsPerLiquidityCumulativeX128` is not recorded and is
+always returned as zero, so a V3 consumer that derives liquidity from it divides by a zero delta and
+reverts. Read tick values from `observe` and disregard the second return value.
+
+[.contract-index]
+.Functions
+--
+* {xref-V3OracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-}[`++constructor(_manager, _baseOracleHook, _poolId)++`]
+* {xref-V3OracleAdapter-slot0--}[`++slot0()++`]
+* {xref-V3OracleAdapter-observations-uint256-}[`++observations(index)++`]
+* {xref-V3OracleAdapter-observe-uint32---}[`++observe(secondsAgos)++`]
+* {xref-V3OracleAdapter-increaseObservationCardinalityNext-uint16-}[`++increaseObservationCardinalityNext(observationCardinalityNext)++`]
+* {xref-V3OracleAdapter-baseOracleHook-contract-BaseOracleHook}[`++baseOracleHook()++`]
+* {xref-V3OracleAdapter-manager-contract-IPoolManager}[`++manager()++`]
+* {xref-V3OracleAdapter-poolId-PoolId}[`++poolId()++`]
+
+--
+
+[.contract-index]
+.Errors
+--
+* {xref-V3OracleAdapter-V3OracleAdapterIndexOutOfRange--}[`++V3OracleAdapterIndexOutOfRange()++`]
+
+--
+
+[.contract-item]
+[[V3OracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-]]
+==== `[.contract-item-name]#++constructor++#++(contract IPoolManager _manager, contract BaseOracleHook _baseOracleHook, PoolId _poolId)++` [.item-kind]#public#
+
+[.contract-item]
+[[V3OracleAdapter-slot0--]]
+==== `[.contract-item-name]#++slot0++#++() → uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked++` [.item-kind]#external#
+
+[.contract-item]
+[[V3OracleAdapter-observations-uint256-]]
+==== `[.contract-item-name]#++observations++#++(uint256 index) → uint32 blockTimestamp, int56 tickCumulative, uint160 secondsPerLiquidityCumulativeX128, bool initialized++` [.item-kind]#external#
+
+[.contract-item]
+[[V3OracleAdapter-observe-uint32---]]
+==== `[.contract-item-name]#++observe++#++(uint32[] secondsAgos) → int56[] tickCumulatives, uint160[] secondsPerLiquidityCumulativeX128s++` [.item-kind]#external#
+
+[.contract-item]
+[[V3OracleAdapter-increaseObservationCardinalityNext-uint16-]]
+==== `[.contract-item-name]#++increaseObservationCardinalityNext++#++(uint16 observationCardinalityNext)++` [.item-kind]#external#
+
+[.contract-item]
+[[V3OracleAdapter-baseOracleHook-contract-BaseOracleHook]]
+==== `[.contract-item-name]#++baseOracleHook++#++() → contract BaseOracleHook++` [.item-kind]#public#
+
+[.contract-item]
+[[V3OracleAdapter-manager-contract-IPoolManager]]
+==== `[.contract-item-name]#++manager++#++() → contract IPoolManager++` [.item-kind]#public#
+
+[.contract-item]
+[[V3OracleAdapter-poolId-PoolId]]
+==== `[.contract-item-name]#++poolId++#++() → PoolId++` [.item-kind]#public#
+
+[.contract-item]
+[[V3OracleAdapter-V3OracleAdapterIndexOutOfRange--]]
+==== `[.contract-item-name]#++V3OracleAdapterIndexOutOfRange++#++()++` [.item-kind]#error#
+
+:V3TruncatedOracleAdapterIndexOutOfRange: pass:normal[xref:#V3TruncatedOracleAdapter-V3TruncatedOracleAdapterIndexOutOfRange--[`++V3TruncatedOracleAdapterIndexOutOfRange++`]]
+:baseOracleHook: pass:normal[xref:#V3TruncatedOracleAdapter-baseOracleHook-contract-BaseOracleHook[`++baseOracleHook++`]]
+:manager: pass:normal[xref:#V3TruncatedOracleAdapter-manager-contract-IPoolManager[`++manager++`]]
+:poolId: pass:normal[xref:#V3TruncatedOracleAdapter-poolId-PoolId[`++poolId++`]]
+:constructor: pass:normal[xref:#V3TruncatedOracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-[`++constructor++`]]
+:slot0: pass:normal[xref:#V3TruncatedOracleAdapter-slot0--[`++slot0++`]]
+:observations: pass:normal[xref:#V3TruncatedOracleAdapter-observations-uint256-[`++observations++`]]
+:observe: pass:normal[xref:#V3TruncatedOracleAdapter-observe-uint32---[`++observe++`]]
+:increaseObservationCardinalityNext: pass:normal[xref:#V3TruncatedOracleAdapter-increaseObservationCardinalityNext-uint16-[`++increaseObservationCardinalityNext++`]]
+
+[.contract]
+[[V3TruncatedOracleAdapter]]
+=== `++V3TruncatedOracleAdapter++` link:https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/oracles/panoptic/adapters/V3TruncatedOracleAdapter.sol[{github-icon},role=heading-link]
+
+[.hljs-theme-light.nopadding]
+```solidity
+import "uniswap-hooks/src/oracles/panoptic/adapters/V3TruncatedOracleAdapter.sol";
+```
+
+This adapter exposes the truncated tickCumulative values from BaseOracleHook.
+
+WARNING: This adapter serves tick data only. `secondsPerLiquidityCumulativeX128` is not recorded and is
+always returned as zero, so a V3 consumer that derives liquidity from it divides by a zero delta and
+reverts. Read tick values from `observe` and disregard the second return value.
+
+[.contract-index]
+.Functions
+--
+* {xref-V3TruncatedOracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-}[`++constructor(_manager, _baseOracleHook, _poolId)++`]
+* {xref-V3TruncatedOracleAdapter-slot0--}[`++slot0()++`]
+* {xref-V3TruncatedOracleAdapter-observations-uint256-}[`++observations(index)++`]
+* {xref-V3TruncatedOracleAdapter-observe-uint32---}[`++observe(secondsAgos)++`]
+* {xref-V3TruncatedOracleAdapter-increaseObservationCardinalityNext-uint16-}[`++increaseObservationCardinalityNext(observationCardinalityNext)++`]
+* {xref-V3TruncatedOracleAdapter-baseOracleHook-contract-BaseOracleHook}[`++baseOracleHook()++`]
+* {xref-V3TruncatedOracleAdapter-manager-contract-IPoolManager}[`++manager()++`]
+* {xref-V3TruncatedOracleAdapter-poolId-PoolId}[`++poolId()++`]
+
+--
+
+[.contract-index]
+.Errors
+--
+* {xref-V3TruncatedOracleAdapter-V3TruncatedOracleAdapterIndexOutOfRange--}[`++V3TruncatedOracleAdapterIndexOutOfRange()++`]
+
+--
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-constructor-contract-IPoolManager-contract-BaseOracleHook-PoolId-]]
+==== `[.contract-item-name]#++constructor++#++(contract IPoolManager _manager, contract BaseOracleHook _baseOracleHook, PoolId _poolId)++` [.item-kind]#public#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-slot0--]]
+==== `[.contract-item-name]#++slot0++#++() → uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked++` [.item-kind]#external#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-observations-uint256-]]
+==== `[.contract-item-name]#++observations++#++(uint256 index) → uint32 blockTimestamp, int56 tickCumulativeTruncated, uint160 secondsPerLiquidityCumulativeX128, bool initialized++` [.item-kind]#external#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-observe-uint32---]]
+==== `[.contract-item-name]#++observe++#++(uint32[] secondsAgos) → int56[] tickCumulativesTruncated, uint160[] secondsPerLiquidityCumulativeX128s++` [.item-kind]#external#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-increaseObservationCardinalityNext-uint16-]]
+==== `[.contract-item-name]#++increaseObservationCardinalityNext++#++(uint16 observationCardinalityNext)++` [.item-kind]#external#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-baseOracleHook-contract-BaseOracleHook]]
+==== `[.contract-item-name]#++baseOracleHook++#++() → contract BaseOracleHook++` [.item-kind]#public#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-manager-contract-IPoolManager]]
+==== `[.contract-item-name]#++manager++#++() → contract IPoolManager++` [.item-kind]#public#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-poolId-PoolId]]
+==== `[.contract-item-name]#++poolId++#++() → PoolId++` [.item-kind]#public#
+
+[.contract-item]
+[[V3TruncatedOracleAdapter-V3TruncatedOracleAdapterIndexOutOfRange--]]
+==== `[.contract-item-name]#++V3TruncatedOracleAdapterIndexOutOfRange++#++()++` [.item-kind]#error#
 

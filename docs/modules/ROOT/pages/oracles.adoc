@@ -12,12 +12,15 @@ WARNING: Observations are recorded on swaps only, so the truncated series conver
 
 == Oracle Hook with V3 Adapters
 
-The xref:api:oracles.adoc#OracleHookWithV3Adapters[`OracleHookWithV3Adapters`] extends the base oracle functionality by automatically deploying Uniswap V3-compatible adapter contracts. These adapters provide familiar V3 oracle interfaces, making it easy for existing protocols to integrate with V4 pools as oracle sources.
+The xref:api:oracles.adoc#OracleHookWithV3Adapters[`OracleHookWithV3Adapters`] extends the base oracle functionality by automatically deploying adapter contracts that expose the Uniswap V3 oracle interface.
 
 The hook automatically deploys adapters that:
 
-* Expose V3-compatible oracle interfaces (`observe` function)
+* Expose `slot0`, `observations`, `observe` and `increaseObservationCardinalityNext` with V3 return shapes
 * Support both standard and truncated price observations
-* Provide seamless migration path from V3 oracles to V4
+
+WARNING: The adapters serve tick data only and implement no other V3 function. A V3 helper that reads liquidity, such as `OracleLibrary.consult`, or calls another function, such as `token0()`, reverts. See xref:api:oracles.adoc#V3OracleAdapter[`V3OracleAdapter`] for the placeholder fields.
+
+TIP: If your integration reads ticks only, consider calling xref:api:oracles.adoc#BaseOracleHook[`BaseOracleHook`] `observe` directly.
 
 These oracle hooks transform Uniswap v4 pools into reliable price oracles, enabling other protocols to query historical price data and calculate TWAPs directly from the pool's trading activity.

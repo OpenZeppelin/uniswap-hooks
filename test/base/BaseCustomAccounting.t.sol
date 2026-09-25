@@ -19,6 +19,7 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 // Internal imports
 import {BaseCustomAccountingFeeMock} from "../../src/mocks/base/BaseCustomAccountingFeeMock.sol";
 import {BaseCustomAccountingMock} from "../../src/mocks/base/BaseCustomAccountingMock.sol";
+import {BaseCustomAccountingSharedPositionMock} from "../../src/mocks/base/BaseCustomAccountingSharedPositionMock.sol";
 import {HookTest} from "../utils/HookTest.sol";
 
 contract BaseCustomAccountingTest is HookTest {
@@ -879,5 +880,87 @@ contract BaseCustomAccountingTest is HookTest {
         (int128 remAmount0, int128 remAmount1) = abi.decode(remData, (int128, int128));
         assertGt(remAmount0, int128(0), "remove: amount0 should be positive (caller receives)");
         assertGt(remAmount1, int128(0), "remove: amount1 should be positive (caller receives)");
+    }
+
+    function test_removeLiquidity_inactiveRange_succeeds() public {
+        int24 tickLower = -600;
+        int24 tickUpper = 600;
+
+        hook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 0, 0, MAX_DEADLINE, tickLower, tickUpper, bytes32(0)
+            )
+        );
+
+        uint256 liquidityTokenBal = hook.balanceOf(address(this));
+
+        // Swap the price above the range, so that none of the position's liquidity is active
+        SwapParams memory params =
+            SwapParams({zeroForOne: false, amountSpecified: -100 ether, sqrtPriceLimitX96: SQRT_PRICE_4_1});
+        PoolSwapTest.TestSettings memory settings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        swapRouter.swap(key, params, settings, ZERO_BYTES);
+
+        assertEq(manager.getLiquidity(id), 0);
+
+        // Above the range the position holds only currency1
+        uint256 prevBalance1 = key.currency1.balanceOf(address(this));
+
+        hook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(
+                liquidityTokenBal, 0, 1, MAX_DEADLINE, tickLower, tickUpper, bytes32(0)
+            )
+        );
+
+        // The position is fully redeemed even though no liquidity was active
+        assertEq(hook.balanceOf(address(this)), 0);
+        (uint128 positionLiquidity,,) = manager.getPositionInfo(
+            id, address(hook), tickLower, tickUpper, keccak256(abi.encode(address(this), bytes32(0)))
+        );
+        assertEq(positionLiquidity, 0);
+        assertGt(key.currency1.balanceOf(address(this)), prevBalance1);
+    }
+
+    function test_getPositionSalt_sharedPosition_redeemsTransferredShares() public {
+        BaseCustomAccountingSharedPositionMock sharedHook =
+            BaseCustomAccountingSharedPositionMock(payable(HOOK_DEPLOYMENT_ADDRESS));
+        deployCodeTo(
+            "src/mocks/base/BaseCustomAccountingSharedPositionMock.sol:BaseCustomAccountingSharedPositionMock",
+            abi.encode(address(manager)),
+            address(sharedHook)
+        );
+        (key, id) =
+            initPool(currency0, currency1, IHooks(address(sharedHook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1);
+
+        ERC20(Currency.unwrap(currency0)).approve(address(sharedHook), type(uint256).max);
+        ERC20(Currency.unwrap(currency1)).approve(address(sharedHook), type(uint256).max);
+
+        uint256 prevBalance0 = key.currency0.balanceOf(address(this));
+        uint256 prevBalance1 = key.currency1.balanceOf(address(this));
+
+        sharedHook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        uint256 deposited0 = prevBalance0 - key.currency0.balanceOf(address(this));
+        uint256 deposited1 = prevBalance1 - key.currency1.balanceOf(address(this));
+
+        uint256 shares = sharedHook.balanceOf(address(this));
+        address recipient = makeAddr("recipient");
+        sharedHook.transfer(recipient, shares);
+
+        vm.prank(recipient);
+        sharedHook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(shares, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0))
+        );
+
+        // The recipient redeems the whole shared position
+        assertEq(sharedHook.balanceOf(recipient), 0);
+        (uint128 positionLiquidity,,) = manager.getPositionInfo(id, address(sharedHook), MIN_TICK, MAX_TICK, bytes32(0));
+        assertEq(positionLiquidity, 0);
+        assertApproxEqAbs(key.currency0.balanceOf(recipient), deposited0, 1);
+        assertApproxEqAbs(key.currency1.balanceOf(recipient), deposited1, 1);
     }
 }

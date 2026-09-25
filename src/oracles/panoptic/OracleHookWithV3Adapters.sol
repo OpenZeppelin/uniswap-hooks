@@ -33,7 +33,15 @@ abstract contract OracleHookWithV3Adapters is BaseOracleHook {
     /// @param _maxAbsTickDelta The maximum absolute tick delta that can be observed for the truncated oracle
     constructor(int24 _maxAbsTickDelta) BaseOracleHook(_maxAbsTickDelta) {}
 
-    /// @inheritdoc BaseOracleHook
+    /// @dev The hook called after the state of a pool is initialized
+    ///
+    /// WARNING: Pool initialization is permissionless, so anyone can initialize a pool that references this hook and
+    /// force it to deploy a pair of adapters. The caller pays for the deployment, and each pair serves only its own
+    /// pool, so other pools are unaffected. To limit which pools this hook serves, set `beforeInitialize` in
+    /// `getHookPermissions` and override `_beforeInitialize` to reject unwanted keys.
+    ///
+    /// @param key The key for the pool being initialized
+    /// @return bytes4 The function selector for the hook
     function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick) internal override returns (bytes4) {
         PoolId poolId = key.toId();
 

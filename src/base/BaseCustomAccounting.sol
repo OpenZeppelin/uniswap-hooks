@@ -36,6 +36,9 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * once {unlockCallback} returns. Account for it wherever the shares enter a computation, in this hook or in a
  * contract that reads them.
  *
+ * WARNING: By default each position belongs to the caller that created it, so shares minted as a receipt must
+ * not be transferable. To make them transferable, override {_getPositionSalt} to share the position.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -257,9 +260,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
         CallbackData memory data = abi.decode(rawData, (CallbackData));
 
-        // Set the salt value of the liquidity position, which is the keccak256 hash of the sender and salt from the callback data
-        // This ensures that each liquidity position is unique and cannot be accessed by other users
-        data.params.salt = keccak256(abi.encode(data.sender, data.params.salt));
+        data.params.salt = _getPositionSalt(data.sender, data.params.salt);
 
         // Get liquidity modification deltas
         (BalanceDelta callerDelta, BalanceDelta feesAccrued) = poolManager.modifyLiquidity(key, data.params, "");
@@ -304,6 +305,17 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
         // Return both deltas so that slippage checks can be done on the principal delta
         return abi.encode(callerDelta, feesAccrued);
+    }
+
+    /**
+     * @dev Returns the salt of the position a liquidity modification applies to. Defaults to the hash of
+     * `sender` and `salt`, so each caller owns its positions.
+     *
+     * IMPORTANT: A salt independent of `sender` shares the position between callers. Such an implementation must
+     * fix the salt and tick range, and override {_handleAccruedFees}, which by default pays all fees to the caller.
+     */
+    function _getPositionSalt(address sender, bytes32 salt) internal view virtual returns (bytes32) {
+        return keccak256(abi.encode(sender, salt));
     }
 
     /**
@@ -378,11 +390,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
      * same encoding structure as in `_getRemoveLiquidity` and `_modifyLiquidity`.
      * @return shares The liquidity shares to mint.
      *
-     * IMPORTANT: The salt returned in `modify` indicates which position of the sender the liquidity
-     * modification is applied given that the `unlockCallback` function uses the keccak256 hash of
-     * the sender and the salt returned here to determine the liquidity position. By default, we
-     * recommend using the `userInputSalt` parameter from the `AddLiquidityParams` struct as the salt
-     * here.
+     * IMPORTANT: {_getPositionSalt} derives the position from the sender and the salt returned in `modify`.
+     * We recommend returning `params.userInputSalt`.
      */
     function _getAddLiquidity(uint160 sqrtPriceX96, AddLiquidityParams memory params)
         internal
@@ -398,11 +407,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
      * same encoding structure as in `_getAddLiquidity` and `_modifyLiquidity`.
      * @return shares The liquidity shares to burn.
      *
-     * IMPORTANT: The salt returned in `modify` indicates which position of the sender the liquidity
-     * modification is applied given that the `unlockCallback` function uses the keccak256 hash of
-     * the sender and the salt returned here to determine the liquidity position. By default, we
-     * recommend using the `userInputSalt` parameter from the `AddLiquidityParams` struct as the salt
-     * here.
+     * IMPORTANT: {_getPositionSalt} derives the position from the sender and the salt returned in `modify`.
+     * We recommend returning `params.userInputSalt`.
      */
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal

@@ -67,7 +67,7 @@ library OrderIdLibrary {
  * {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next
  * crossing is measured from it. For the same reason {_afterInitialize} does not run for a pool this hook
  * initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
- * tick-zero baseline and the first swap fills every order between tick zero and the price.
+ * tick-zero baseline and the first swap can leave the orders it crosses unfilled.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -263,13 +263,13 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
     }
 
     /// @dev Hooks into the `afterSwap` hook to fill the orders the swap crossed.
-    function _afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta, bytes calldata)
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         virtual
         override
         returns (bytes4, int128)
     {
-        _fillCrossedOrders(key, params.zeroForOne);
+        _fillCrossedOrders(key);
 
         return (this.afterSwap.selector, 0);
     }
@@ -609,21 +609,22 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
     /**
      * @dev Fills the orders the price crossed since the tick last recorded for `key`, and records the tick
-     * it reached. `swapZeroForOne` is the swap's direction, not the filled orders'.
+     * it reached. The direction filled follows the price, not the swap.
      *
      * IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
      * pool does not report such a swap.
      */
-    function _fillCrossedOrders(PoolKey memory key, bool swapZeroForOne) internal virtual {
+    function _fillCrossedOrders(PoolKey memory key) internal virtual {
         PoolId poolId = key.toId();
         (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(poolId, key.tickSpacing);
 
         if (lower > upper) return;
 
+        bool zeroForOne = tickLower >= getTickLowerLast(poolId);
+
         // set the last tick lower for the pool
         _tickLowerLasts[poolId] = tickLower;
 
-        bool zeroForOne = !swapZeroForOne;
         mapping(int16 => uint256) storage orderTicks = _orderTicks[poolId][zeroForOne];
 
         // the scan looks strictly above the tick it is given, so the lower bound is filled first

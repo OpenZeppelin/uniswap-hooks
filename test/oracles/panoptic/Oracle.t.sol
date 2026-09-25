@@ -1776,6 +1776,26 @@ contract OracleLibTest is Test {
         assertEq(truncatedTick, 0); // Should be back to 0 after moving -9116 from 9116
     }
 
+    function test_truncatedClampAdvancesPerObservationNotPerSecond() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
+        oracle.grow(5);
+
+        // One swap moves the pool far beyond the clamp and writes a single observation.
+        oracle.updateTruncated(OracleTestV4.UpdateParams({advanceTimeBy: 1, tick: 100000}));
+
+        // A full day passes with no further observations, so nothing is written.
+        oracle.advanceTime(86400);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 86400;
+        secondsAgos[1] = 0;
+        (int56[] memory truncatedCumulatives,) = oracle.observeTruncated(secondsAgos);
+
+        // The clamp advances once per observation, not per unit of time. The whole day contributes a single
+        // step of 9116 while the pool sits at tick 100000, and no amount of elapsed time closes the gap.
+        assertEq((truncatedCumulatives[1] - truncatedCumulatives[0]) / 86400, 9116);
+    }
+
     function test_secondsPerLiquidityIsZeroAndBreaksV3LiquidityMath() public {
         oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
         oracle.advanceTime(1800);

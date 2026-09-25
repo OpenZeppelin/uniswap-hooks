@@ -315,8 +315,9 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
      * the hash of `sender` and the salt returned by {_getAddLiquidity} or {_getRemoveLiquidity}, so a position
      * belongs to the caller that created it.
      *
-     * IMPORTANT: A salt that does not depend on `sender` shares the position between callers. Such an override
-     * must also override {_handleAccruedFees}, which by default pays every fee accrued in the position to
+     * IMPORTANT: A salt that does not depend on `sender` shares the position between callers. Such an implementation
+     * must fix the salt and the tick range, so that shares redeem only the position they were minted against,
+     * and must override {_handleAccruedFees}, which by default pays every fee accrued in the position to
      * whichever caller modifies it.
      */
     function _getPositionSalt(address sender, bytes32 salt) internal view virtual returns (bytes32) {

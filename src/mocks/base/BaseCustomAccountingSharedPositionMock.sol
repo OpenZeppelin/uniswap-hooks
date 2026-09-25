@@ -15,8 +15,8 @@ contract BaseCustomAccountingSharedPositionMock is BaseCustomAccountingMock {
 
     constructor(IPoolManager _poolManager) BaseCustomAccountingMock(_poolManager) {}
 
-    function _getPositionSalt(address, bytes32 salt) internal view override returns (bytes32) {
-        return salt;
+    function _getPositionSalt(address, bytes32) internal view override returns (bytes32) {
+        return bytes32(0);
     }
 
     // Keep the fees of the shared position in the hook instead of paying them to the caller

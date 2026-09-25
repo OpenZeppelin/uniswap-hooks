@@ -400,6 +400,11 @@ Initializes a Uniswap V4 pool with this hook, stores baseline observation state,
 
 The hook called after the state of a pool is initialized
 
+WARNING: Pool initialization is permissionless, so anyone can initialize a pool that references this hook and
+force it to deploy a pair of adapters. The caller pays for the deployment, and each pair serves only its own
+pool, so other pools are unaffected. To limit which pools this hook serves, set `beforeInitialize` in
+`getHookPermissions` and override `_beforeInitialize` to reject unwanted keys.
+
 [.contract-item]
 [[OracleHookWithV3Adapters-standardAdapter-mapping-PoolId----address-]]
 ==== `[.contract-item-name]#++standardAdapter++#++() → mapping(PoolId &#x3D;&gt; address)++` [.item-kind]#public#

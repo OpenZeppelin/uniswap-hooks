@@ -291,12 +291,15 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
 
         _burn(msg.sender, shares);
 
-        // Skip zero-amount withdrawals, which some yield sources reject (e.g. when one side is proportionally empty)
-        if (amount0 > 0) _withdrawFromYieldSource(_poolKey.currency0, amount0);
-        if (amount1 > 0) _withdrawFromYieldSource(_poolKey.currency1, amount1);
-
-        _transferFromHookToSender(_poolKey.currency0, amount0, msg.sender);
-        _transferFromHookToSender(_poolKey.currency1, amount1, msg.sender);
+        // Skip a leg's withdrawal and transfer when its amount is zero.
+        if (amount0 > 0) {
+            _withdrawFromYieldSource(_poolKey.currency0, amount0);
+            _transferFromHookToSender(_poolKey.currency0, amount0, msg.sender);
+        }
+        if (amount1 > 0) {
+            _withdrawFromYieldSource(_poolKey.currency1, amount1);
+            _transferFromHookToSender(_poolKey.currency1, amount1, msg.sender);
+        }
 
         emit ReHypothecatedLiquidityRemoved(msg.sender, _poolKey, shares, amount0, amount1);
 

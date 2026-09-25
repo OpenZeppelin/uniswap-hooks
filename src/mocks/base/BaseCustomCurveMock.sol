@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 // External imports
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
+import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -13,6 +13,8 @@ import {BaseCustomCurve} from "../../base/BaseCustomCurve.sol";
 import {BaseHook} from "../../base/BaseHook.sol";
 
 contract BaseCustomCurveMock is BaseCustomCurve, ERC20 {
+    using CurrencyLibrary for Currency;
+
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) ERC20("Mock", "MOCK") {}
 
     function _getUnspecifiedAmount(SwapParams calldata params)
@@ -62,26 +64,54 @@ contract BaseCustomCurveMock is BaseCustomCurve, ERC20 {
         amountIn = amountOut;
     }
 
+    /**
+     * @dev Returns the claim balance the hook holds for `currency`, which is the reserve backing the shares.
+     */
+    function _reserve(Currency currency) internal view returns (uint256) {
+        return poolManager.balanceOf(address(this), currency.toId());
+    }
+
+    /**
+     * @dev Quotes one share per unit of deposited value. Tokens trade 1:1 on a constant-sum curve, so the value of a
+     * deposit is `amount0 + amount1` and the value of the reserves is their sum.
+     */
     function _getAmountIn(AddLiquidityParams memory params)
         internal
-        pure
+        view
         override
         returns (uint256 amount0, uint256 amount1, uint256 liquidity)
     {
         amount0 = params.amount0Desired;
         amount1 = params.amount1Desired;
-        liquidity = (amount0 + amount1) / 2;
+
+        PoolKey memory key = poolKey();
+        uint256 supply = totalSupply();
+        uint256 value = amount0 + amount1;
+
+        liquidity = supply == 0 ? value : value * supply / (_reserve(key.currency0) + _reserve(key.currency1));
     }
 
+    /**
+     * @dev Returns each currency pro rata to the reserves, which makes this the inverse of {_getAmountIn} while the
+     * reserves are unchanged. Quoting against the reserves also keeps a redemption within what the hook holds, so a
+     * swap that depletes one currency cannot block it.
+     *
+     * NOTE: Both formulas round down, so a partial redemption can leave dust in the hook.
+     */
     function _getAmountOut(RemoveLiquidityParams memory params)
         internal
-        pure
+        view
         override
         returns (uint256 amount0, uint256 amount1, uint256 liquidity)
     {
-        amount0 = params.liquidity / 2;
-        amount1 = params.liquidity / 2;
         liquidity = params.liquidity;
+
+        uint256 supply = totalSupply();
+        if (supply == 0) return (0, 0, liquidity);
+
+        PoolKey memory key = poolKey();
+        amount0 = _reserve(key.currency0) * liquidity / supply;
+        amount1 = _reserve(key.currency1) * liquidity / supply;
     }
 
     function _mint(AddLiquidityParams memory params, BalanceDelta, BalanceDelta, uint256 liquidity) internal override {

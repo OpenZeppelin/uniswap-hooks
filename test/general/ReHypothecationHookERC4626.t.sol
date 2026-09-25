@@ -252,8 +252,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
                 address(hook),
                 IHooks.beforeInitialize.selector,
                 abi.encodeWithSelector(ReHypothecationERC4626Mock.UnsupportedCurrency.selector),
-                abi.encodeWithSelector(Hooks.HookCallFailed.selector),
-                hex"a9e35b2f"
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
             )
         );
         initPool(Currency.wrap(address(0)), currency1, IHooks(address(hook)), fee, SQRT_PRICE_1_1);

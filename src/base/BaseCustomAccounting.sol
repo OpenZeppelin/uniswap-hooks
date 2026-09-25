@@ -32,6 +32,13 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * accounting hook for multiple pools, you must have multiple storage instances of this contract and
  * initialize them via the `PoolManager` with their respective pool keys.
  *
+ * WARNING: The share supply is stale for the length of a liquidity modification, since {_mint} and {_burn} run
+ * once {unlockCallback} returns. Account for it wherever the shares enter a computation, in this hook or in a
+ * contract that reads them.
+ *
+ * WARNING: By default each position belongs to the caller that created it, so shares minted as a receipt must
+ * not be transferable. To make them transferable, override {_getPositionSalt} to share the position.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -253,9 +260,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
         CallbackData memory data = abi.decode(rawData, (CallbackData));
 
-        // Set the salt value of the liquidity position, which is the keccak256 hash of the sender and salt from the callback data
-        // This ensures that each liquidity position is unique and cannot be accessed by other users
-        data.params.salt = keccak256(abi.encode(data.sender, data.params.salt));
+        data.params.salt = _getPositionSalt(data.sender, data.params.salt);
 
         // Get liquidity modification deltas
         (BalanceDelta callerDelta, BalanceDelta feesAccrued) = poolManager.modifyLiquidity(key, data.params, "");
@@ -263,7 +268,7 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         // Calculate the principal delta
         BalanceDelta principalDelta = callerDelta - feesAccrued;
 
-        // Handle each currency amount based on its sign after applying the liquidity modification
+        // Settle both currencies before sending either one out, so untrusted code sees no one-sided state
         if (principalDelta.amount0() < 0) {
             // If amount0 is negative, send tokens from the sender to the pool. The native currency is paid
             // from this contract, which holds the sender's value for the length of the call
@@ -274,15 +279,19 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
                     uint256(int256(-principalDelta.amount0())),
                     false
                 );
-        } else {
-            // If amount0 is positive, send tokens from the pool to the sender
-            key.currency0.take(poolManager, data.sender, uint256(int256(principalDelta.amount0())), false);
         }
 
         if (principalDelta.amount1() < 0) {
             // If amount1 is negative, send tokens from the sender to the pool
             key.currency1.settle(poolManager, data.sender, uint256(int256(-principalDelta.amount1())), false);
-        } else {
+        }
+
+        if (principalDelta.amount0() > 0) {
+            // If amount0 is positive, send tokens from the pool to the sender
+            key.currency0.take(poolManager, data.sender, uint256(int256(principalDelta.amount0())), false);
+        }
+
+        if (principalDelta.amount1() > 0) {
             // If amount1 is positive, send tokens from the pool to the sender
             key.currency1.take(poolManager, data.sender, uint256(int256(principalDelta.amount1())), false);
         }
@@ -296,6 +305,17 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
 
         // Return both deltas so that slippage checks can be done on the principal delta
         return abi.encode(callerDelta, feesAccrued);
+    }
+
+    /**
+     * @dev Returns the salt of the position a liquidity modification applies to. Defaults to the hash of
+     * `sender` and `salt`, so each caller owns its positions.
+     *
+     * IMPORTANT: A salt independent of `sender` shares the position between callers. Such an implementation must
+     * fix the salt and tick range, and override {_handleAccruedFees}, which by default pays all fees to the caller.
+     */
+    function _getPositionSalt(address sender, bytes32 salt) internal view virtual returns (bytes32) {
+        return keccak256(abi.encode(sender, salt));
     }
 
     /**
@@ -321,6 +341,10 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
     /**
      * @dev Initialize the hook's pool key. The stored key should act immutably so that
      * it can safely be used across the hook's functions.
+     *
+     * WARNING: Pool initialization is permissionless and permanently binds the hook to the first key it sees,
+     * so a third party can front-run it with an unintended pool. Initialize the pool atomically with the hook's
+     * deployment, or override this function to reject an unexpected key.
      */
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal virtual override returns (bytes4) {
         // Check if the pool key is already initialized
@@ -366,11 +390,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
      * same encoding structure as in `_getRemoveLiquidity` and `_modifyLiquidity`.
      * @return shares The liquidity shares to mint.
      *
-     * IMPORTANT: The salt returned in `modify` indicates which position of the sender the liquidity
-     * modification is applied given that the `unlockCallback` function uses the keccak256 hash of
-     * the sender and the salt returned here to determine the liquidity position. By default, we
-     * recommend using the `userInputSalt` parameter from the `AddLiquidityParams` struct as the salt
-     * here.
+     * IMPORTANT: {_getPositionSalt} derives the position from the sender and the salt returned in `modify`.
+     * We recommend returning `params.userInputSalt`.
      */
     function _getAddLiquidity(uint160 sqrtPriceX96, AddLiquidityParams memory params)
         internal
@@ -386,11 +407,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
      * same encoding structure as in `_getAddLiquidity` and `_modifyLiquidity`.
      * @return shares The liquidity shares to burn.
      *
-     * IMPORTANT: The salt returned in `modify` indicates which position of the sender the liquidity
-     * modification is applied given that the `unlockCallback` function uses the keccak256 hash of
-     * the sender and the salt returned here to determine the liquidity position. By default, we
-     * recommend using the `userInputSalt` parameter from the `AddLiquidityParams` struct as the salt
-     * here.
+     * IMPORTANT: {_getPositionSalt} derives the position from the sender and the salt returned in `modify`.
+     * We recommend returning `params.userInputSalt`.
      */
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal

@@ -42,10 +42,7 @@ contract V3TruncatedOracleAdapter {
 
     /// @notice Emulates the behavior of the exposed zeroth slot of a Uniswap V3 pool.
     ///
-    /// NOTE: `feeProtocol` and `unlocked` are placeholders. V4 stores a protocol fee per pool that this
-    /// adapter does not forward. V4 locks the `PoolManager` globally and sets its flag while an `unlock`
-    /// callback runs, the inverse of V3, so `unlocked` reads as safe even mid-operation and must not gate
-    /// a reentrancy check.
+    /// NOTE: `unlocked` is always `true` and must not gate a reentrancy check.
     ///
     /// NOTE: `tick` and `sqrtPriceX96` are the raw pool values, while `observe` returns truncated
     /// cumulatives. For a truncated tick, read `prevTruncatedTick` from `observationsById` on the hook at

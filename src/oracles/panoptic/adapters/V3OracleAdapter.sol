@@ -42,10 +42,7 @@ contract V3OracleAdapter {
 
     /// @notice Emulates the behavior of the exposed zeroth slot of a Uniswap V3 pool.
     ///
-    /// NOTE: `feeProtocol` and `unlocked` are placeholders. V4 stores a protocol fee per pool that this
-    /// adapter does not forward. V4 locks the `PoolManager` globally and sets its flag while an `unlock`
-    /// callback runs, the inverse of V3, so `unlocked` reads as safe even mid-operation and must not gate
-    /// a reentrancy check.
+    /// NOTE: `unlocked` is always `true` and must not gate a reentrancy check.
     ///
     /// @return sqrtPriceX96 The current price of the oracle as a sqrt(currency1/currency0) Q64.96 value
     /// @return tick The current tick of the oracle

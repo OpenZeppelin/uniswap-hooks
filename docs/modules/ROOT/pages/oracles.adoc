@@ -15,10 +15,8 @@ The hook automatically deploys adapters that:
 * Expose `slot0`, `observations`, `observe` and `increaseObservationCardinalityNext` with V3 return shapes
 * Support both standard and truncated price observations
 
-WARNING: The adapters serve tick data only. They do not record `secondsPerLiquidityCumulativeX128`, so `OracleLibrary.consult` divides by a zero delta and reverts. They also implement only the four functions listed above, so a helper that calls anything else, such as `liquidity()` or `token0()`, reverts on an unknown selector. Confirm that your integration reads only ticks before you point it at an adapter.
+WARNING: The adapters serve tick data only and implement no other V3 function. A V3 helper that reads liquidity, such as `OracleLibrary.consult`, or calls another function, such as `token0()`, reverts. See xref:api:oracles.adoc#V3OracleAdapter[`V3OracleAdapter`] for the placeholder fields.
 
-NOTE: `slot0` returns placeholder values for `feeProtocol` and `unlocked`, and the truncated adapter reports the raw pool `tick` and `sqrtPriceX96` rather than truncated values.
-
-TIP: If your integration reads ticks only, call xref:api:oracles.adoc#BaseOracleHook[`BaseOracleHook`] `observe` directly. It returns the standard and truncated tick cumulatives with no placeholder fields, so there is nothing to disregard.
+TIP: If your integration reads ticks only, consider calling xref:api:oracles.adoc#BaseOracleHook[`BaseOracleHook`] `observe` directly.
 
 These oracle hooks transform Uniswap v4 pools into reliable price oracles, enabling other protocols to query historical price data and calculate TWAPs directly from the pool's trading activity.

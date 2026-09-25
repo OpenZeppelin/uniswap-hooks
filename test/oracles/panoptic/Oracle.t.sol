@@ -1809,7 +1809,7 @@ contract OracleLibTest is Test {
         this.harmonicMeanLiquidity(1800, secondsPerLiquidityCumulativeX128s);
     }
 
-    // @dev The harmonic mean liquidity computation from the canonical `OracleLibrary.consult`.
+    /// @dev The harmonic mean liquidity computation from the canonical `OracleLibrary.consult`.
     function harmonicMeanLiquidity(uint32 secondsAgo, uint160[] calldata secondsPerLiquidityCumulativeX128s)
         external
         pure

@@ -31,6 +31,10 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * NOTE: This hook by default does not include fee or salt mechanisms, which can be implemented by inheriting
  * contracts if needed.
  *
+ * WARNING: The share supply is stale for the length of a liquidity modification, since {_mint} and {_burn} run
+ * once {unlockCallback} returns. Account for it wherever the shares enter a computation, in this hook or in a
+ * contract that reads them.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -123,53 +127,29 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
             returnDelta = toBeforeSwapDelta(-specifiedAmount.toInt128(), unspecifiedAmount.toInt128());
         }
 
-        // Emit the swap event with the amounts ordered correctly and signed per the
-        // `IHookEvents.HookSwap` convention (positive for input, negative for output).
-        // NOTE: the fee is paid in the input currency.
+        // Emit the swap event with the amounts and the fee ordered by currency. The `returnDelta` components
+        // already follow the `IHookEvents.HookSwap` convention, which is positive for input and negative for output.
+        // NOTE: the fee is paid in the unspecified currency.
         if (specified == key.currency0) {
-            if (exactInput) {
-                // currency0 is input, currency1 is output
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    specifiedAmount.toInt128(),
-                    -unspecifiedAmount.toInt128(),
-                    swapFeeAmount.toUint128(),
-                    0
-                );
-            } else {
-                // currency0 is output, currency1 is input
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    -specifiedAmount.toInt128(),
-                    unspecifiedAmount.toInt128(),
-                    0,
-                    swapFeeAmount.toUint128()
-                );
-            }
+            // currency0 is specified, currency1 is unspecified
+            emit HookSwap(
+                PoolId.unwrap(key.toId()),
+                sender,
+                returnDelta.getSpecifiedDelta(),
+                returnDelta.getUnspecifiedDelta(),
+                0,
+                swapFeeAmount.toUint128()
+            );
         } else {
-            if (exactInput) {
-                // currency1 is input, currency0 is output
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    -unspecifiedAmount.toInt128(),
-                    specifiedAmount.toInt128(),
-                    0,
-                    swapFeeAmount.toUint128()
-                );
-            } else {
-                // currency1 is output, currency0 is input
-                emit HookSwap(
-                    PoolId.unwrap(key.toId()),
-                    sender,
-                    unspecifiedAmount.toInt128(),
-                    -specifiedAmount.toInt128(),
-                    swapFeeAmount.toUint128(),
-                    0
-                );
-            }
+            // currency1 is specified, currency0 is unspecified
+            emit HookSwap(
+                PoolId.unwrap(key.toId()),
+                sender,
+                returnDelta.getUnspecifiedDelta(),
+                returnDelta.getSpecifiedDelta(),
+                swapFeeAmount.toUint128(),
+                0
+            );
         }
 
         return (this.beforeSwap.selector, returnDelta, 0);
@@ -212,39 +192,22 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     {
         CallbackDataCustom memory data = abi.decode(rawData, (CallbackDataCustom));
 
-        // slither-disable-next-line uninitialized-local
-        int128 amount0;
-        // slither-disable-next-line uninitialized-local
-        int128 amount1;
-
         // This section handles liquidity modifications (adding/removing) for both tokens in the pool
         // The sign of data.amount0/1 determines if we're removing (-) or adding (+) liquidity
 
         PoolKey memory key = poolKey();
 
-        // Remove liquidity if amount0 is negative
+        // The delta owed to the hook is the opposite of the amounts moved for the user
+        int128 amount0 = -data.amount0;
+        int128 amount1 = -data.amount1;
+
+        // Settle both currencies before taking either one, so untrusted code sees no one-sided state
+
         if (data.amount0 < 0) {
             // Burns ERC-6909 tokens to receive tokens
             key.currency0.settle(poolManager, address(this), uint256(int256(-data.amount0)), true);
-            // Sends tokens from the pool to the user
-            key.currency0.take(poolManager, data.sender, uint256(int256(-data.amount0)), false);
-            // Record the amount so that it can be then encoded into the delta
-            amount0 = -data.amount0;
-        }
-
-        // Remove liquidity if amount1 is negative
-        if (data.amount1 < 0) {
-            // Burns ERC-6909 tokens to receive tokens
-            key.currency1.settle(poolManager, address(this), uint256(int256(-data.amount1)), true);
-            // Sends tokens from the pool to the user
-            key.currency1.take(poolManager, data.sender, uint256(int256(-data.amount1)), false);
-            // Record the amount so that it can be then encoded into the delta
-            amount1 = -data.amount1;
-        }
-
-        // Add liquidity if amount0 is positive
-        if (data.amount0 > 0) {
-            // First settle (send) tokens from user to pool. The native currency is paid from this
+        } else if (data.amount0 > 0) {
+            // Settle (send) tokens from user to pool. The native currency is paid from this
             // contract, which holds the sender's value for the length of the call
             key.currency0
                 .settle(
@@ -253,20 +216,30 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
                     uint256(int256(data.amount0)),
                     false
                 );
-            // Take (mint) ERC-6909 tokens to be received by this hook
-            key.currency0.take(poolManager, address(this), uint256(int256(data.amount0)), true);
-            // Record the amount so that it can be then encoded into the delta
-            amount0 = -data.amount0;
         }
 
-        // Add liquidity if amount1 is positive
-        if (data.amount1 > 0) {
-            // First settle (send) tokens from user to pool
+        if (data.amount1 < 0) {
+            // Burns ERC-6909 tokens to receive tokens
+            key.currency1.settle(poolManager, address(this), uint256(int256(-data.amount1)), true);
+        } else if (data.amount1 > 0) {
+            // Settle (send) tokens from user to pool
             key.currency1.settle(poolManager, data.sender, uint256(int256(data.amount1)), false);
+        }
+
+        if (data.amount0 < 0) {
+            // Sends tokens from the pool to the user
+            key.currency0.take(poolManager, data.sender, uint256(int256(-data.amount0)), false);
+        } else if (data.amount0 > 0) {
+            // Take (mint) ERC-6909 tokens to be received by this hook
+            key.currency0.take(poolManager, address(this), uint256(int256(data.amount0)), true);
+        }
+
+        if (data.amount1 < 0) {
+            // Sends tokens from the pool to the user
+            key.currency1.take(poolManager, data.sender, uint256(int256(-data.amount1)), false);
+        } else if (data.amount1 > 0) {
             // Take (mint) ERC-6909 tokens to be received by this hook
             key.currency1.take(poolManager, address(this), uint256(int256(data.amount1)), true);
-            // Record the amount so that it can be then encoded into the delta
-            amount1 = -data.amount1;
         }
 
         emit HookModifyLiquidity(PoolId.unwrap(key.toId()), data.sender, amount0, amount1);
@@ -287,9 +260,16 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
     /**
      * @dev Calculate the amount of fees to be paid to LPs in a swap.
      *
+     * The fee is denominated in the unspecified currency, which is the output currency on exact input swaps and the
+     * input currency on exact output swaps. On an exact input swap the hook takes the full specified input from the
+     * pool, so the fee can only be realized as output that the hook retains.
+     *
+     * NOTE: The returned amount is only reported in the `HookSwap` event and is not applied to the settlement.
+     * The amount returned by {_getUnspecifiedAmount} must therefore already account for the fee.
+     *
      * @param params The swap parameters.
      * @param unspecifiedAmount The amount of the unspecified currency to be taken or settled.
-     * @return swapFeeAmount The amount of fees to be paid to LPs in the swap (in currency0 and currency1).
+     * @return swapFeeAmount The amount of fees to be paid to LPs in the swap, denominated in the unspecified currency.
      */
     function _getSwapFeeAmount(SwapParams calldata params, uint256 unspecifiedAmount)
         internal

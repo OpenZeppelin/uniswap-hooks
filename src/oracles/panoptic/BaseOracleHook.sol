@@ -105,9 +105,8 @@ abstract contract BaseOracleHook is BaseHook {
     /// NOTE: This hook returns neither a `BeforeSwapDelta` nor an lp fee override. It records a price observation and
     /// nothing else.
     ///
-    /// WARNING: The recorded tick is the pool tick. An inheriting hook that returns a `BeforeSwapDelta` consuming the
-    /// whole specified amount makes the `PoolManager` skip the swap, so the tick holds still while observations keep
-    /// accumulating and the oracle reports a flat price that no trade paid.
+    /// WARNING: The recorded tick is the pool tick. If an inheriting hook's `BeforeSwapDelta` consumes part or all
+    /// of the specified amount, the recorded price does not reflect the executed trade.
     ///
     /// @param key The key for the pool
     /// @return bytes4 The function selector for the hook

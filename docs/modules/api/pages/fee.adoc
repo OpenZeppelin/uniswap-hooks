@@ -30,6 +30,7 @@
 :xref-BaseDynamicFee-NotDynamicFee--: xref:fee.adoc#BaseDynamicFee-NotDynamicFee--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-BaseOverrideFee-_afterInitialize-address-struct-PoolKey-uint160-int24-: xref:fee.adoc#BaseOverrideFee-_afterInitialize-address-struct-PoolKey-uint160-int24-
 :xref-BaseOverrideFee-_getFee-address-struct-PoolKey-struct-SwapParams-bytes-: xref:fee.adoc#BaseOverrideFee-_getFee-address-struct-PoolKey-struct-SwapParams-bytes-
 :xref-BaseOverrideFee-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-: xref:fee.adoc#BaseOverrideFee-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-
@@ -57,6 +58,7 @@
 :xref-BaseOverrideFee-NotDynamicFee--: xref:fee.adoc#BaseOverrideFee-NotDynamicFee--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--: xref:fee.adoc#BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--
 :xref-BaseDynamicAfterFee-_transientApplyTarget--: xref:fee.adoc#BaseDynamicAfterFee-_transientApplyTarget--
 :xref-BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-: xref:fee.adoc#BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-
@@ -92,6 +94,7 @@
 :xref-IHookEvents-HookBonus-bytes32-uint128-uint128-: xref:interfaces.adoc#IHookEvents-HookBonus-bytes32-uint128-uint128-
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
+:xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 = Fee
 
 [.readme-notice]
@@ -174,6 +177,7 @@ _Available since v0.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -283,6 +287,7 @@ _Available since v0.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks
@@ -427,6 +432,7 @@ _Available since v0.1.0_
 .BaseHook
 * {xref-BaseHook-HookNotImplemented--}[`++HookNotImplemented()++`]
 * {xref-BaseHook-NotPoolManager--}[`++NotPoolManager()++`]
+* {xref-BaseHook-InvalidPool--}[`++InvalidPool()++`]
 
 [.contract-subindex-inherited]
 .IHooks

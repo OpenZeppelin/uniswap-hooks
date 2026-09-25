@@ -59,6 +59,10 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
  * such as variations in the yield rates, rebalances, impermanent loss, and other risks associated.
  *
+ * WARNING: Yield sources are assumed not to charge fees on deposits or withdrawals. A fee-charging source breaks the
+ * assumption that a share is a proportional claim on the backing: a deposit credits less backing than supplied and a
+ * withdrawal burns more than requested, so liquidity providers absorb those fees on additions, removals, and swaps.
+ *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
  * As a consequence, the PoolManager singleton may lack sufficient reserves for illiquid tokens in the instants between the swap

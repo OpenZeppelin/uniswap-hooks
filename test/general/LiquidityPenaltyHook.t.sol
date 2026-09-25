@@ -70,6 +70,12 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
         );
     }
 
+    function test_getBlockNumberOffset_returnsConfiguredValue() public view {
+        // issue #75: the offset is now configured by overriding the virtual `getBlockNumberOffset()` getter
+        // (the mock returns its constructor-provided value, set to 1 in setUp) rather than via the base constructor.
+        assertEq(hook.getBlockNumberOffset(), 1);
+    }
+
     function test_noSwaps() public {
         // add liquidity
         modifyPoolLiquidity(key, TICK_LOWER, TICK_UPPER, LIQUIDITY_AMOUNT_1E18, 0);

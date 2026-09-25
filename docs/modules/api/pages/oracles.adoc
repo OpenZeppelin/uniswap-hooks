@@ -224,7 +224,11 @@ The hook called after the state of a pool is initialized
 
 The hook called before a swap.
 
-NOTE: Note that this hook does not return either a `BeforeSwapDelta` or lp fee override — this call is used exclusively for recording price observations.
+NOTE: This hook returns neither a `BeforeSwapDelta` nor an lp fee override. It records a price observation and
+nothing else.
+
+WARNING: The recorded tick is the pool tick. If an inheriting hook's `BeforeSwapDelta` consumes part or all
+of the specified amount, the recorded price does not reflect the executed trade.
 
 NOTE: The observation records the tick before the swap applies, so it never reflects a price moved within
 the current transaction. A hook that swaps on its own skips this callback and moves the tick unrecorded.

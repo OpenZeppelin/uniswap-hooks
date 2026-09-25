@@ -1780,7 +1780,7 @@ contract OracleLibTest is Test {
         oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
         oracle.grow(5);
 
-        // A single observation moves the pool far beyond the clamp.
+        // One swap moves the pool far beyond the clamp and writes a single observation.
         oracle.updateTruncated(OracleTestV4.UpdateParams({advanceTimeBy: 1, tick: 100000}));
 
         // A full day passes with no further observations, so nothing is written.

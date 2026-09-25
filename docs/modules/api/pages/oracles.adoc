@@ -256,6 +256,10 @@ Increase the maximum number of observations that the oracle of `underlyingPoolId
 
 The maximum absolute tick delta that can be observed for the truncated oracle
 
+NOTE: The bound applies per written observation, and observations are written on swaps only, at most
+once per block. An idle pool's truncated tick therefore stays within one clamp step of the last written
+value however much time passes, and converges toward the pool tick only while the pool trades.
+
 [.contract-item]
 [[BaseOracleHook-observationsById-mapping-PoolId----struct-Oracle-Observation-65535--]]
 ==== `[.contract-item-name]#++observationsById++#++() → mapping(PoolId &#x3D;&gt; struct Oracle.Observation[65535])++` [.item-kind]#public#

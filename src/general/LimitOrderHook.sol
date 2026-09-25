@@ -69,6 +69,9 @@ library OrderIdLibrary {
  * initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
  * tick-zero baseline and the first swap can leave the orders it crosses unfilled.
  *
+ * WARNING: A swap pays a liquidity removal for every order it crosses, however small the order. Anyone can
+ * place many tiny orders on consecutive ticks, so a swap that crosses them can run out of gas and must be split.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.

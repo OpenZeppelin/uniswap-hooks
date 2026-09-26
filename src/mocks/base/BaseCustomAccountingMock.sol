@@ -27,6 +27,7 @@ contract BaseCustomAccountingMock is BaseCustomAccounting, ERC20 {
     function _getAddLiquidity(uint160 sqrtPriceX96, AddLiquidityParams memory params)
         internal
         view
+        virtual
         override
         returns (bytes memory modify, uint256 liquidity)
     {
@@ -55,7 +56,8 @@ contract BaseCustomAccountingMock is BaseCustomAccounting, ERC20 {
 
     function _getRemoveLiquidity(RemoveLiquidityParams memory params)
         internal
-        pure
+        view
+        virtual
         override
         returns (bytes memory, uint256 liquidity)
     {

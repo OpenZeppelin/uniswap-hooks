@@ -72,7 +72,7 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
             // Mint ERC-6909 claim token for the specified currency and amount
             specified.take(poolManager, address(this), specifiedAmount, true);
 
-            // Calculate the fee amount for the swap, paid to LPs
+            // Calculate the LP fee to report, which the hook holds within the claim tokens
             uint256 feeAmount = _calculateSwapFee(key, specifiedAmount);
 
             // Emit the swap event with the specified amount signifying the amount taken by the hook
@@ -95,6 +95,9 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
 
     /**
      * @dev Calculate the fee amount for the swap.
+     *
+     * NOTE: The fee is denominated in the specified currency and is only reported in the {HookSwap} event. Inheriting
+     * contracts must reserve it for LPs out of the claim tokens the hook holds.
      *
      * @param key The pool key.
      * @param specifiedAmount The specified amount of the swap.

@@ -25,8 +25,8 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  *
  * This hook allows to implement a custom curve (or any logic) for swaps, which overrides the default v3-like
  * concentrated liquidity implementation of the `PoolManager`. During a swap, the hook calls the
- * {_getUnspecifiedAmount} function to get the amount of tokens to be sent to the receiver. The return delta
- * created from this calculation is then consumed and applied by the `PoolManager`.
+ * {_getUnspecifiedAmount} function to get the amount of the unspecified currency to take from or send to the
+ * swapper. The return delta created from this calculation is then consumed and applied by the `PoolManager`.
  *
  * NOTE: This hook by default does not include fee or salt mechanisms, which can be implemented by inheriting
  * contracts if needed.
@@ -82,7 +82,7 @@ abstract contract BaseCustomCurve is BaseCustomAccounting {
 
     /**
      * @dev Overrides the default swap logic of the `PoolManager` and calls the {_getUnspecifiedAmount}
-     * to get the amount of tokens to be sent to the receiver.
+     * to get the amount of the unspecified currency to take from or send to the swapper.
      *
      * NOTE: In order to take and settle tokens from the pool, the hook must hold the liquidity added
      * via the {addLiquidity} function.

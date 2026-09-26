@@ -58,6 +58,7 @@ contract BaseAsyncSwapTest is HookTest {
 
         assertEq(balance0Before - balance0After, 100);
         assertEq(balance1Before, balance1After);
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), 100);
     }
 
     function test_swap_exactOutput_succeeds() public {

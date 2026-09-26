@@ -21,6 +21,10 @@ import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/Pool
  * NOTE: Hook entry points must be overridden and implemented by the inheriting hook to be used. Their respective
  * flags must be set to true in the `getHookPermissions` function as well.
  *
+ * NOTE: Most hook implementations in this library return without calling `super`. When two inherited contracts
+ * implement the same hook function or {getHookPermissions}, the final contract must override it, call each parent
+ * by name, and merge their results.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.
@@ -28,7 +32,7 @@ import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/Pool
  * _Available since v0.1.0_
  */
 abstract contract BaseHook is IHooks {
-    /*
+    /**
      * @dev The pool manager singleton contract.
      */
     IPoolManager public immutable poolManager;
@@ -39,7 +43,7 @@ abstract contract BaseHook is IHooks {
     error HookNotImplemented();
 
     /**
-     * @notice Thrown when calling unlockCallback where the caller is not `PoolManager`.
+     * @dev The caller is not the {poolManager}.
      */
     error NotPoolManager();
 
@@ -57,7 +61,7 @@ abstract contract BaseHook is IHooks {
     }
 
     /**
-     * @notice Only allow calls from the `PoolManager` contract
+     * @dev Only allow calls from the {poolManager}.
      */
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -69,6 +73,9 @@ abstract contract BaseHook is IHooks {
      *
      * Functions that take a `PoolKey` from the caller should use this modifier, since the `poolManager` accepts any
      * initialized pool and a pool configured with a different hook never calls into this contract.
+     *
+     * NOTE: Every pool configured with this hook passes, whichever pool it is. Hooks that serve a single pool or keep
+     * per-pool state must check the pool id themselves.
      */
     modifier onlyValidPools(IHooks hooks) {
         if (hooks != this) revert InvalidPool();

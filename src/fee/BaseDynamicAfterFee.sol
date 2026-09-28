@@ -91,6 +91,10 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
      * @dev Sets the target unspecified amount and apply flag to be used in the `afterSwap` hook.
      *
      * NOTE: The target unspecified amount and the apply flag are reset in the `afterSwap` hook.
+     *
+     * WARNING: Both values live in transient storage shared by every swap. A nested swap through this hook
+     * between {_beforeSwap} and {_afterSwap}, such as one triggered by an external call in an override, resets
+     * them and skips the fee of the outer swap.
      */
     function _beforeSwap(address sender, PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
         internal

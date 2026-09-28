@@ -471,6 +471,10 @@ Sets the target unspecified amount and apply flag to be used in the `afterSwap` 
 
 NOTE: The target unspecified amount and the apply flag are reset in the `afterSwap` hook.
 
+WARNING: Both values live in transient storage shared by every swap. A nested swap through this hook
+between {_beforeSwap} and {_afterSwap}, such as one triggered by an external call in an override, resets
+them and skips the fee of the outer swap.
+
 [.contract-item]
 [[BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-]]
 ==== `[.contract-item-name]#++_afterSwap++#++(address sender, struct PoolKey key, struct SwapParams params, BalanceDelta delta, bytes) → bytes4, int128++` [.item-kind]#internal#

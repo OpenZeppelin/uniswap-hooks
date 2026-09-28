@@ -38,6 +38,10 @@ import {BaseHook} from "../base/BaseHook.sol";
  * accounting by `PoolId` to prevent draining of ERC-6909 tokens from one pool to another. To serve a single pool
  * instead, enable `beforeInitialize` in `getHookPermissions` and override `_beforeInitialize` to reject any other key.
  *
+ * IMPORTANT: The fee returned by {_calculateSwapFee} is only reported in the {HookSwap} event. The base contract
+ * holds the full input as claim tokens and charges no fee, so inheriting contracts must deduct it when they settle
+ * the swap.
+ *
  * NOTE: The hook only supports async exact-input swaps. Exact-output swaps will be processed normally
  * by the `PoolManager`.
  *
@@ -96,8 +100,8 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
     /**
      * @dev Calculate the fee amount for the swap.
      *
-     * NOTE: The fee is denominated in the specified currency and is only reported in the {HookSwap} event. Inheriting
-     * contracts must reserve it for LPs out of the claim tokens the hook holds.
+     * NOTE: The fee is denominated in the specified currency. It is reported in {HookSwap} but not charged, see the
+     * contract-level documentation.
      *
      * @param key The pool key.
      * @param specifiedAmount The specified amount of the swap.

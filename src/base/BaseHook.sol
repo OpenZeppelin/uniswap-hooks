@@ -21,9 +21,9 @@ import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/Pool
  * NOTE: Hook entry points must be overridden and implemented by the inheriting hook to be used. Their respective
  * flags must be set to true in the `getHookPermissions` function as well.
  *
- * NOTE: Most hook implementations in this library return without calling `super`. When two inherited contracts
- * implement the same hook function or {getHookPermissions}, the final contract must override it, call each parent
- * by name, and merge their results.
+ * NOTE: When two inherited contracts implement the same hook function or {getHookPermissions}, the final contract
+ * must override it, call each parent by name, and merge their results. A parent implementation may not call
+ * `super`, so relying on it can skip another parent's logic.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code

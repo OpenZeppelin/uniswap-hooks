@@ -711,6 +711,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * The accumulators wrap on overflow, as Uniswap's fee growth does, since only their difference
      * against a checkpoint is read and that stays exact across a wrap.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _collectFees(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
         uint128 liquidityTotal = orderInfo.liquidityTotal;
         if (liquidityTotal == 0) return;
@@ -719,31 +720,33 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         unchecked {
             if (amount0 > 0) {
                 orderInfo.accFee0PerLiqX128 += FullMath.mulDiv(amount0, FixedPoint128.Q128, liquidityTotal);
+                _takeAsClaims(orderInfo.currency0, amount0);
             }
             if (amount1 > 0) {
                 orderInfo.accFee1PerLiqX128 += FullMath.mulDiv(amount1, FixedPoint128.Q128, liquidityTotal);
+                _takeAsClaims(orderInfo.currency1, amount1);
             }
         }
-
-        _takeAsClaims(orderInfo.currency0, amount0);
-        _takeAsClaims(orderInfo.currency1, amount1);
     }
 
     /**
      * @dev Collects `amount0` and `amount1` of principal owed by the pool into the hook and credits them to
      * `orderInfo`, to be shared pro-rata by its owners. Only a fill credits principal.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _collectPrincipal(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
-        if (amount0 > 0) orderInfo.principalCredited0 += amount0;
-        if (amount1 > 0) orderInfo.principalCredited1 += amount1;
-
-        _takeAsClaims(orderInfo.currency0, amount0);
-        _takeAsClaims(orderInfo.currency1, amount1);
+        if (amount0 > 0) {
+            orderInfo.principalCredited0 += amount0;
+            _takeAsClaims(orderInfo.currency0, amount0);
+        }
+        if (amount1 > 0) {
+            orderInfo.principalCredited1 += amount1;
+            _takeAsClaims(orderInfo.currency1, amount1);
+        }
     }
 
     /**
-     * @dev Takes `amount` of `currency` owed by the pool as claims held by the hook. Nothing is taken when
-     * `amount` is zero.
+     * @dev Takes `amount` of `currency` owed by the pool as claims held by the hook.
      */
     function _takeAsClaims(Currency currency, uint256 amount) private {
         // take the currency from the pool as claims for the hook

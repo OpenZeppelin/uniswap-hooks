@@ -33,7 +33,7 @@ library Oracle {
     /// @param last The specified observation to be transformed
     /// @param blockTimestamp The timestamp of the new observation
     /// @param tick The active tick at the time of the new observation
-    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized in a single block
+    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized per written observation
     /// @return The newly populated observation
     function transform(Observation memory last, uint32 blockTimestamp, int24 tick, int24 maxAbsTickDelta)
         internal
@@ -89,7 +89,7 @@ library Oracle {
     /// @param tick The active tick at the time of the new observation
     /// @param cardinality The number of populated elements in the oracle array
     /// @param cardinalityNext The new length of the oracle array, independent of population
-    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized in a single block with respect to the truncated price
+    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized per written observation with respect to the truncated price
     /// @return indexUpdated The new index of the most recently written element in the oracle array
     /// @return cardinalityUpdated The new cardinality of the oracle array
     function write(
@@ -208,7 +208,7 @@ library Oracle {
     /// @param tick The active tick at the time of the returned or simulated observation
     /// @param index The index of the observation that was most recently written to the observations array
     /// @param cardinality The number of populated elements in the oracle array
-    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized in a single block with respect to the truncated price
+    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized per written observation with respect to the truncated price
     /// @return beforeOrAt The observation which occurred at, or before, the given timestamp
     /// @return atOrAfter The observation which occurred at, or after, the given timestamp
     function getSurroundingObservations(
@@ -260,7 +260,7 @@ library Oracle {
     /// @param tick The current tick
     /// @param index The index of the observation that was most recently written to the observations array
     /// @param cardinality The number of populated elements in the oracle array
-    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized in a single block
+    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized per written observation
     /// @return The tick * time elapsed since the pool was first initialized, as of `secondsAgo`
     /// @return The truncated tick * time elapsed since the pool was first initialized, as of `secondsAgo`
     function observeSingle(
@@ -316,7 +316,7 @@ library Oracle {
     /// @param tick The current tick
     /// @param index The index of the observation that was most recently written to the observations array
     /// @param cardinality The number of populated elements in the oracle array
-    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized in a single block with respect to the truncated price
+    /// @param maxAbsTickDelta The maximum absolute tick delta that can be realized per written observation with respect to the truncated price
     /// @return tickCumulatives The tick * time elapsed since the pool was first initialized, as of each `secondsAgo`
     /// @return tickCumulativeTruncated The truncated tick * time elapsed since the pool was first initialized, as of each `secondsAgo`
     function observe(

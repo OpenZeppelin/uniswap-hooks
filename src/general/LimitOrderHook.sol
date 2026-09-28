@@ -469,6 +469,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * The fees the position accrued before this placement are credited to the owners already in the order, so
      * that the placer is not entitled to them.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _handlePlaceCallback(PlaceCallbackData memory placeData) internal virtual {
         OrderInfo storage orderInfo = _orderInfos[placeData.orderId];
         UserInfo storage userInfo = orderInfo.userInfo[placeData.owner];
@@ -533,6 +534,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * The fees the position accrued up to the removal are credited over the liquidity that earned them, which
      * still includes the cancelling owner's, so that owner is paid its share of them and nothing is left behind.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _handleCancelCallback(CancelCallbackData memory cancelData) internal virtual {
         OrderInfo storage orderInfo = _orderInfos[cancelData.orderId];
 
@@ -618,6 +620,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
      * pool does not report such a swap.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _fillCrossedOrders(PoolKey memory key) internal virtual {
         PoolId poolId = key.toId();
         (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(poolId, key.tickSpacing);
@@ -716,13 +719,14 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
         unchecked {
             if (amount0 > 0) {
                 orderInfo.accFee0PerLiqX128 += FullMath.mulDiv(amount0, FixedPoint128.Q128, liquidityTotal);
-                _takeAsClaims(orderInfo.currency0, amount0);
             }
             if (amount1 > 0) {
                 orderInfo.accFee1PerLiqX128 += FullMath.mulDiv(amount1, FixedPoint128.Q128, liquidityTotal);
-                _takeAsClaims(orderInfo.currency1, amount1);
             }
         }
+
+        _takeAsClaims(orderInfo.currency0, amount0);
+        _takeAsClaims(orderInfo.currency1, amount1);
     }
 
     /**
@@ -730,18 +734,16 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * `orderInfo`, to be shared pro-rata by its owners. Only a fill credits principal.
      */
     function _collectPrincipal(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
-        if (amount0 > 0) {
-            orderInfo.principalCredited0 += amount0;
-            _takeAsClaims(orderInfo.currency0, amount0);
-        }
-        if (amount1 > 0) {
-            orderInfo.principalCredited1 += amount1;
-            _takeAsClaims(orderInfo.currency1, amount1);
-        }
+        if (amount0 > 0) orderInfo.principalCredited0 += amount0;
+        if (amount1 > 0) orderInfo.principalCredited1 += amount1;
+
+        _takeAsClaims(orderInfo.currency0, amount0);
+        _takeAsClaims(orderInfo.currency1, amount1);
     }
 
     /**
-     * @dev Takes `amount` of `currency` owed by the pool as claims held by the hook.
+     * @dev Takes `amount` of `currency` owed by the pool as claims held by the hook. Nothing is taken when
+     * `amount` is zero.
      */
     function _takeAsClaims(Currency currency, uint256 amount) private {
         // take the currency from the pool as claims for the hook
@@ -758,6 +760,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * Nothing is sent when `amount` is zero, since the transfer it would otherwise make reverts for tokens
      * that reject zero-value transfers, and for recipients that cannot receive the native currency.
      */
+    // slither-disable-next-line calls-loop
     function _sendFromClaims(Currency currency, address to, uint256 amount) private {
         uint256 id = currency.toId();
 

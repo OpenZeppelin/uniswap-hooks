@@ -296,6 +296,7 @@ library Oracle {
                 // we're in the middle
                 uint32 observationTimeDelta = atOrAfter.blockTimestamp - beforeOrAt.blockTimestamp;
                 uint32 targetDelta = target - beforeOrAt.blockTimestamp;
+                // slither-disable-next-line divide-before-multiply
                 return (
                     beforeOrAt.tickCumulative
                         + ((atOrAfter.tickCumulative - beforeOrAt.tickCumulative) / int56(uint56(observationTimeDelta)))

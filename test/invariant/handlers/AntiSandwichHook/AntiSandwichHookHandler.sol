@@ -437,21 +437,20 @@ contract AntiSandwichHookHandler is BaseHandler {
     /**
      * @dev How far a fill can sit from the bound recomputed here.
      *
-     * The hook converts one way and this assertion converts back, and a round trip loses more than either
-     * leg. Each `mulDiv` loses under a unit, the first loss of each leg is carried across by that leg's
-     * ratio, and the two ratios are the square root of the price and the price itself.
+     * The hook rounds once toward itself, except above a square root price of `2**128`, where it first drops
+     * 64 bits of the price and can leave one unit to the swapper.
      */
-    function _boundSlack(uint160 sqrtPriceX96) private pure returns (uint256) {
-        return
-            Math.mulDiv(1, sqrtPriceX96, FixedPoint96.Q96, Math.Rounding.Ceil) + _value0In1(1, sqrtPriceX96, true) + 2;
+    function _boundSlack(uint160) private pure returns (uint256) {
+        return 1;
     }
 
-    /// @dev `amount0` valued in currency1 at `sqrtPriceX96`.
+    /// @dev `amount0` valued in currency1 at `sqrtPriceX96`, rounded once.
     function _value0In1(uint256 amount0, uint160 sqrtPriceX96, bool roundUp) private pure returns (uint256) {
         Math.Rounding rounding = roundUp ? Math.Rounding.Ceil : Math.Rounding.Floor;
-        uint256 half = Math.mulDiv(amount0, sqrtPriceX96, FixedPoint96.Q96, rounding);
-
-        return Math.mulDiv(half, sqrtPriceX96, FixedPoint96.Q96, rounding);
+        if (sqrtPriceX96 <= type(uint128).max) {
+            return Math.mulDiv(amount0, uint256(sqrtPriceX96) * sqrtPriceX96, 1 << 192, rounding);
+        }
+        return Math.mulDiv(amount0, Math.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64, rounding), 1 << 128, rounding);
     }
 
     /// @dev The price this block's swaps are measured against. Before the block's first swap the checkpoint

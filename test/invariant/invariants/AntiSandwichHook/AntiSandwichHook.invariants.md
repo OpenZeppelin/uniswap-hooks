@@ -8,8 +8,8 @@ The hook records the pool price at each block's first swap and holds every later
 valued at that price, a swap may not receive more than it paid, and the difference is taken as a hook fee.
 "The bound" below is that limit, returned to {BaseDynamicAfterFee} as `targetUnspecifiedAmount`.
 
-Every rounding favors the swapper, so the bound is loose by `sqrt(price) + price + 2` in the units compared.
-`_boundSlack` derives that rather than fixing a constant, and INV-01 and INV-03 carry it.
+The hook rounds once toward itself, so the bound is exact except above a square root price of `2**128`,
+where it can leave one unit to the swapper. `_boundSlack` is that unit, and INV-01 and INV-03 carry it.
 
 All of the below hold at 80 runs by 500 depth, against the shipped `AntiSandwichMock`, on a pool with a zero
 LP fee so that a sandwich which loses money lost it to the mechanism rather than to the spread.

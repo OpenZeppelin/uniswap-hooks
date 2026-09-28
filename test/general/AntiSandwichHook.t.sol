@@ -461,6 +461,29 @@ contract AntiSandwichHookTest is HookTest {
         }
     }
 
+    /// @notice Rounding toward the hook never charges a swap that starts at the recorded price, across the
+    /// whole price range, both directions and both modes, on a pool with a zero LP fee.
+    function testFuzz_aSwapFromTheBlockStartPriceIsNeverCharged(
+        int24 tickSeed,
+        uint256 spacingSeed,
+        uint128 liquiditySeed,
+        uint128 amountSeed,
+        bool zeroForOne,
+        bool exactInput
+    ) public {
+        int24[4] memory spacings = [int24(1), 10, 60, 200];
+        int24 tickSpacing = spacings[spacingSeed % 4];
+        int24 tick = int24(bound(tickSeed, TickMath.MIN_TICK + 8000, TickMath.MAX_TICK - 8000));
+        uint128 liquidity = uint128(bound(liquiditySeed, 1e6, 1e18));
+        int256 amount = int256(bound(amountSeed, 1, 1e21));
+
+        PoolKey memory poolKey = _poolAt(tick, tickSpacing, liquidity, 40);
+        vm.roll(block.number + 1);
+
+        if (!_trySwap(poolKey, zeroForOne, exactInput ? -amount : amount)) return;
+        assertEq(hook.lastFee(), 0, "a swap that did not beat the block-start price was charged");
+    }
+
     /// @dev The revert the pool manager produces when the hook refuses a swap in `afterSwap`.
     function _refusalFromTheHook() internal view returns (bytes memory) {
         return abi.encodeWithSelector(
@@ -1277,9 +1300,9 @@ contract AntiSandwichHookAdversarialTest is HookTest {
                 emit log_named_int("  currency1 received", d.amount1());
                 emit log_named_uint("  the checkpoint allows", bound);
                 emit log_named_uint("  fee charged", keepHook.lastFee());
-                // The bound is two chained ceiling divisions, so it is loose by one unit of the inner term
-                // plus one. The inner term is scaled by the square root of the checkpoint price, which is
-                // why the slack is 482,263,073 here and two wei in a pool priced at one.
+                // `bound` is recomputed here in two floored steps, so it is loose by one unit of the inner
+                // term plus one. The inner term is scaled by the square root of the checkpoint price, which
+                // is why the slack is 482,263,073 here and two wei in a pool priced at one.
                 uint256 slack = 2 * checkpoint / (1 << 96) + 4;
                 emit log_named_uint("  rounding slack the bound allows", slack);
                 assertLe(uint256(int256(d.amount1())), bound + slack, "the sale kept more than the checkpoint allows");

@@ -4,7 +4,6 @@
 pragma solidity ^0.8.26;
 
 // External imports
-import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -130,12 +129,10 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
      * and an exact output as a floor on what it pays. {BaseDynamicAfterFee-_afterSwap} takes the difference
      * either way.
      *
-     * Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. In
-     * return the target is loose by the conversion's resolution, which grows with the price but never with a
-     * swap's size, while the slippage a sandwich pays to open does.
+     * The conversion rounds once, toward the hook. A swap that did not beat the recorded price is still never
+     * charged, since the pool rounds every step of it against the swapper.
      *
-     * NOTE: Where the target passes what a `BalanceDelta` carries, a ceiling is dropped and a floor
-     * reverts.
+     * NOTE: An exact output whose floor passes what a `BalanceDelta` carries reverts with {TargetOutOfRange}.
      */
     function _getTargetUnspecified(
         address,
@@ -153,29 +150,40 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
         // The specified amount as the swap executed it, which the target for the unspecified side is calculated from.
         uint256 specifiedAmount = SignedMath.abs(unspecifiedIsCurrency1 ? delta.amount0() : delta.amount1());
 
-        // The ratio that carries one currency into the other.
-        (uint256 multiplier, uint256 divisor) =
-            unspecifiedIsCurrency1 ? (sqrtPriceX96, FixedPoint96.Q96) : (FixedPoint96.Q96, sqrtPriceX96);
+        // An exact input rounds its ceiling down and an exact output rounds its floor up.
+        Math.Rounding rounding = exactInput ? Math.Rounding.Floor : Math.Rounding.Ceil;
+        targetUnspecifiedAmount = _convert(specifiedAmount, sqrtPriceX96, unspecifiedIsCurrency1, rounding);
 
-        // An exact input rounds its ceiling up and an exact output rounds its floor down, so the wei that
-        // rounding decides always goes to the swapper.
-        Math.Rounding rounding = exactInput ? Math.Rounding.Ceil : Math.Rounding.Floor;
+        // A ceiling past that limit never binds, since the amount it caps came out of a `BalanceDelta`.
+        if (!exactInput && targetUnspecifiedAmount > MAX_BALANCE_DELTA) revert TargetOutOfRange();
 
-        // Most either step may take while its result stays inside a `BalanceDelta`.
-        uint256 largest = Math.mulDiv(MAX_BALANCE_DELTA, divisor, multiplier);
+        return (targetUnspecifiedAmount, true);
+    }
 
-        if (specifiedAmount <= largest) {
-            // The first step applies the square root of the price, the second completes the conversion.
-            uint256 halfway = Math.mulDiv(specifiedAmount, multiplier, divisor, rounding);
-            if (halfway <= largest) return (Math.mulDiv(halfway, multiplier, divisor, rounding), true);
+    /**
+     * @dev Converts `amount` of currency0 into currency1 at `sqrtPriceX96` if `zeroToOne`, or the reverse
+     * otherwise, rounding the result once in `rounding`.
+     */
+    function _convert(uint256 amount, uint256 sqrtPriceX96, bool zeroToOne, Math.Rounding rounding)
+        private
+        pure
+        returns (uint256)
+    {
+        if (sqrtPriceX96 <= type(uint128).max) {
+            uint256 priceX192 = sqrtPriceX96 * sqrtPriceX96;
+            return zeroToOne
+                ? Math.mulDiv(amount, priceX192, 1 << 192, rounding)
+                : Math.mulDiv(amount, 1 << 192, priceX192, rounding);
         }
 
-        // Past that, a floor still binds and no expressible amount satisfies it, so the swap is refused.
-        if (!exactInput) revert TargetOutOfRange();
-
-        // A ceiling cannot bind, since the amount it caps came out of a `BalanceDelta` and is therefore
-        // smaller. Charging nothing is not a concession here, it is the same answer the ceiling would give.
-        return (type(uint256).max, false);
+        // Squaring would overflow, so the price drops 64 bits first. That step rounds toward the swapper, which
+        // leaves the result at most one unit in their favor.
+        bool roundPriceUp = zeroToOne == (rounding == Math.Rounding.Floor);
+        uint256 priceX128 =
+            Math.mulDiv(sqrtPriceX96, sqrtPriceX96, 1 << 64, roundPriceUp ? Math.Rounding.Ceil : Math.Rounding.Floor);
+        return zeroToOne
+            ? Math.mulDiv(amount, priceX128, 1 << 128, rounding)
+            : Math.mulDiv(amount, 1 << 128, priceX128, rounding);
     }
 
     /**

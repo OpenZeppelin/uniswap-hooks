@@ -13,6 +13,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 // Internal imports
 import {IHookEvents} from "../interfaces/IHookEvents.sol";
 import {BaseHook} from "../base/BaseHook.sol";
@@ -171,8 +172,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
         delta = callerDelta - feesAccrued;
 
         // Check for slippage on principal delta
-        uint128 amount0 = uint128(-delta.amount0());
-        if (amount0 < params.amount0Min || uint128(-delta.amount1()) < params.amount1Min) {
+        uint256 amount0 = SignedMath.abs(delta.amount0());
+        if (amount0 < params.amount0Min || SignedMath.abs(delta.amount1()) < params.amount1Min) {
             revert TooMuchSlippage();
         }
 
@@ -182,8 +183,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
             // It also allows users to provide more native value than the desired amount
             if (msg.value < amount0) revert InvalidNativeValue();
 
-            // Previous check prevents underflow revert
-            key.currency0.transfer(msg.sender, msg.value - amount0);
+            // Skipped when zero, since a native transfer to a contract without `receive` reverts
+            if (msg.value > amount0) key.currency0.transfer(msg.sender, msg.value - amount0);
         }
     }
 
@@ -276,14 +277,14 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
                 .settle(
                     poolManager,
                     key.currency0.isAddressZero() ? address(this) : data.sender,
-                    uint256(int256(-principalDelta.amount0())),
+                    SignedMath.abs(principalDelta.amount0()),
                     false
                 );
         }
 
         if (principalDelta.amount1() < 0) {
             // If amount1 is negative, send tokens from the sender to the pool
-            key.currency1.settle(poolManager, data.sender, uint256(int256(-principalDelta.amount1())), false);
+            key.currency1.settle(poolManager, data.sender, SignedMath.abs(principalDelta.amount1()), false);
         }
 
         if (principalDelta.amount0() > 0) {

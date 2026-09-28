@@ -43,12 +43,9 @@
 :xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :xref-AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-: xref:general.adoc#AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-
 :xref-AntiSandwichHook-_getBlockNumber--: xref:general.adoc#AntiSandwichHook-_getBlockNumber--
-:xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-: xref:general.adoc#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-
+:xref-AntiSandwichHook-getLastCheckpoint-PoolId-: xref:general.adoc#AntiSandwichHook-getLastCheckpoint-PoolId-
+:xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:general.adoc#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-AntiSandwichHook-getHookPermissions--: xref:general.adoc#AntiSandwichHook-getHookPermissions--
-:xref-BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--: xref:fee.adoc#BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--
-:xref-BaseDynamicAfterFee-_transientApplyTarget--: xref:fee.adoc#BaseDynamicAfterFee-_transientApplyTarget--
-:xref-BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-: xref:fee.adoc#BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-
-:xref-BaseDynamicAfterFee-_setTransientApplyTarget-bool-: xref:fee.adoc#BaseDynamicAfterFee-_setTransientApplyTarget-bool-
 :xref-BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:fee.adoc#BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-BaseDynamicAfterFee-_afterSwapHandler-struct-PoolKey-struct-SwapParams-BalanceDelta-uint256-uint256-: xref:fee.adoc#BaseDynamicAfterFee-_afterSwapHandler-struct-PoolKey-struct-SwapParams-BalanceDelta-uint256-uint256-
 :xref-BaseHook-_validateHookAddress-contract-BaseHook-: xref:base.adoc#BaseHook-_validateHookAddress-contract-BaseHook-
@@ -75,9 +72,12 @@
 :xref-IHookEvents-HookFee-bytes32-address-uint128-uint128-: xref:interfaces.adoc#IHookEvents-HookFee-bytes32-address-uint128-uint128-
 :xref-IHookEvents-HookModifyLiquidity-bytes32-address-int128-int128-: xref:interfaces.adoc#IHookEvents-HookModifyLiquidity-bytes32-address-int128-int128-
 :xref-IHookEvents-HookBonus-bytes32-uint128-uint128-: xref:interfaces.adoc#IHookEvents-HookBonus-bytes32-uint128-uint128-
+:xref-AntiSandwichHook-CheckpointNotSet--: xref:general.adoc#AntiSandwichHook-CheckpointNotSet--
+:xref-AntiSandwichHook-TargetOutOfRange--: xref:general.adoc#AntiSandwichHook-TargetOutOfRange--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
 :xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
+:BaseDynamicAfterFee-_afterSwap: pass:normal[xref:fee.adoc#BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`BaseDynamicAfterFee._afterSwap`]]
 :xref-LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-: xref:general.adoc#LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-
 :xref-LimitOrderHook-_recordTickLowerLast-struct-PoolKey-: xref:general.adoc#LimitOrderHook-_recordTickLowerLast-struct-PoolKey-
 :xref-LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:general.adoc#LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
@@ -193,6 +193,7 @@
 :xref-ReHypothecationHook-AlreadySeeded--: xref:general.adoc#ReHypothecationHook-AlreadySeeded--
 :xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-: xref:general.adoc#ReHypothecationHook-InsufficientSeed-uint256-uint256-
 :xref-ReHypothecationHook-JITLocked--: xref:general.adoc#ReHypothecationHook-JITLocked--
+:xref-ReHypothecationHook-NoUsableLiquidity--: xref:general.adoc#ReHypothecationHook-NoUsableLiquidity--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
 :xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
@@ -444,10 +445,13 @@ The hook was attempted to be constructed with a `blockNumberOffset` lower than `
 
 A penalty was attempted to be applied and donated to LP's in range, but there aren't any.
 
+:CheckpointNotSet: pass:normal[xref:#AntiSandwichHook-CheckpointNotSet--[`++CheckpointNotSet++`]]
+:TargetOutOfRange: pass:normal[xref:#AntiSandwichHook-TargetOutOfRange--[`++TargetOutOfRange++`]]
 :Checkpoint: pass:normal[xref:#AntiSandwichHook-Checkpoint[`++Checkpoint++`]]
 :_beforeSwap: pass:normal[xref:#AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-[`++_beforeSwap++`]]
 :_getBlockNumber: pass:normal[xref:#AntiSandwichHook-_getBlockNumber--[`++_getBlockNumber++`]]
-:_getTargetUnspecified: pass:normal[xref:#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-[`++_getTargetUnspecified++`]]
+:getLastCheckpoint: pass:normal[xref:#AntiSandwichHook-getLastCheckpoint-PoolId-[`++getLastCheckpoint++`]]
+:_getTargetUnspecified: pass:normal[xref:#AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`++_getTargetUnspecified++`]]
 :getHookPermissions: pass:normal[xref:#AntiSandwichHook-getHookPermissions--[`++getHookPermissions++`]]
 
 [.contract]
@@ -459,29 +463,46 @@ A penalty was attempted to be applied and donated to LP's in range, but there ar
 import "uniswap-hooks/src/general/AntiSandwichHook.sol";
 ```
 
-This hook implements the sandwich-resistant AMM design introduced
+This hook is inspired by the sandwich-resistant AMM design introduced
 https://www.umbraresearch.xyz/writings/sandwich-resistant-amm[here]. Specifically,
 this hook guarantees that no swaps get filled at a price better than the price at
-the beginning of the slot window (i.e. one block).
+the beginning of the slot window (i.e. one block), up to rounding.
 
-Within a slot window, swaps impact the pool asymmetrically for buys and sells.
-When a buy order is executed, the offer on the pool increases in accordance with
-the xy=k curve. However, the bid price remains constant, instead increasing the
-amount of liquidity on the bid. Subsequent sells eat into this liquidity, while
-decreasing the offer price according to xy=k.
+That price is recorded before the block's first swap, and any excess a later swap gains over it is taken as a
+hook fee. A sandwich therefore closes no better than the price its opening leg moved away from, so it cannot
+turn a profit.
 
-In order to use this hook, the inheriting contract must implement the {_handleCollectedFees} function
+In order to use this hook, the inheriting contract must implement the {_afterSwapHandler} function
 to determine how to handle the collected fees from the anti-sandwich mechanism.
 
-NOTE: The Anti-sandwich mechanism only protects swaps in the zeroForOne swap direction.
-Swaps in the !zeroForOne direction are not protected by this hook design.
+NOTE: The price is read before the block's first swap, which is the price the block opened with: in Uniswap v4
+only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
 
-WARNING: Since this hook makes MEV not profitable, there's not as much arbitrage in
-the pool, making prices at beginning of the block not necessarily close to market price.
+NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
+held to the opening price.
 
-WARNING: In `_beforeSwap`, the hook iterates over all ticks between last tick and current tick.
-Developers must be aware that for large price changes in pools with small tick spacing, the `for`
-loop will iterate over a large number of ticks, which could lead to `MemoryOOG` error.
+NOTE: The hook only takes, it never pays. A swap filled better than the recorded price has the
+difference taken as a fee, while a swap filled worse keeps that fill and receives nothing. A swapper whose
+fill was worsened, by liquidity withdrawn after the block's first swap for example, is not compensated:
+the mechanism removes an attacker's profit rather than restoring a victim's loss.
+
+NOTE: Only swaps are bounded, so an attacker can supply the liquidity a victim trades through and withdraw
+it in the same block. Consider combining with a JIT protection mechanism such as
+https://github.com/OpenZeppelin/uniswap-hooks/blob/master/src/general/LiquidityPenaltyHook.sol[LiquidityPenaltyHook].
+
+IMPORTANT: A sandwich split across two blocks is not protected against, and pays as if this hook were not
+there. The baseline resets every block, so the closing leg is measured against a price the opening leg
+itself set. What the design removes is atomicity: the position has to be carried from one block into the
+next, with the price risk that brings.
+
+IMPORTANT: {TargetOutOfRange} refuses a swap that would owe more than a `BalanceDelta` holds, rather than
+charge it nothing. Reaching it needs the price to cross most of the tick range inside one block, which
+needs liquidity thin enough for a single swap to do that. Consider how widely liquidity is provided before
+deploying.
+
+IMPORTANT: The fee is a sandwich's own gain, so {_afterSwapHandler} must not pay it to in-range liquidity.
+An attacker can supply that liquidity and collect the fee back, whether it is paid in the same block or a
+later one.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -492,18 +513,15 @@ _Available since v1.1.0_
 [.contract-index]
 .Functions
 --
-* {xref-AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_beforeSwap(sender, key, params, hookData)++`]
+* {xref-AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_beforeSwap(, key, , )++`]
 * {xref-AntiSandwichHook-_getBlockNumber--}[`++_getBlockNumber()++`]
-* {xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_getTargetUnspecified(, key, params, )++`]
+* {xref-AntiSandwichHook-getLastCheckpoint-PoolId-}[`++getLastCheckpoint(poolId)++`]
+* {xref-AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_getTargetUnspecified(, key, params, delta, )++`]
 * {xref-AntiSandwichHook-getHookPermissions--}[`++getHookPermissions()++`]
 
 [.contract-subindex-inherited]
 .BaseDynamicAfterFee
-* {xref-BaseDynamicAfterFee-_transientTargetUnspecifiedAmount--}[`++_transientTargetUnspecifiedAmount()++`]
-* {xref-BaseDynamicAfterFee-_transientApplyTarget--}[`++_transientApplyTarget()++`]
-* {xref-BaseDynamicAfterFee-_setTransientTargetUnspecifiedAmount-uint256-}[`++_setTransientTargetUnspecifiedAmount(value)++`]
-* {xref-BaseDynamicAfterFee-_setTransientApplyTarget-bool-}[`++_setTransientApplyTarget(value)++`]
-* {xref-BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(sender, key, params, delta, )++`]
+* {xref-BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(sender, key, params, delta, hookData)++`]
 * {xref-BaseDynamicAfterFee-_afterSwapHandler-struct-PoolKey-struct-SwapParams-BalanceDelta-uint256-uint256-}[`++_afterSwapHandler(key, params, delta, targetUnspecifiedAmount, feeAmount)++`]
 
 [.contract-subindex-inherited]
@@ -562,6 +580,8 @@ _Available since v1.1.0_
 [.contract-index]
 .Errors
 --
+* {xref-AntiSandwichHook-CheckpointNotSet--}[`++CheckpointNotSet()++`]
+* {xref-AntiSandwichHook-TargetOutOfRange--}[`++TargetOutOfRange()++`]
 
 [.contract-subindex-inherited]
 .BaseDynamicAfterFee
@@ -582,42 +602,58 @@ _Available since v1.1.0_
 
 [.contract-item]
 [[AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-]]
-==== `[.contract-item-name]#++_beforeSwap++#++(address sender, struct PoolKey key, struct SwapParams params, bytes hookData) → bytes4, BeforeSwapDelta, uint24++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_beforeSwap++#++(address, struct PoolKey key, struct SwapParams, bytes) → bytes4, BeforeSwapDelta, uint24++` [.item-kind]#internal#
 
-Handles the before swap hook.
-
-For the first swap in a block, it saves the current pool state as a checkpoint.
-
-For subsequent swaps in the same block, it calculates a target output based on the beginning-of-block state,
-and sets the inherited `_targetOutput` and `_applyTargetOutput` variables to enforce price limits in {_afterSwap}.
+Records the pool price before the block's first swap. Later swaps in the block leave it untouched.
 
 [.contract-item]
 [[AntiSandwichHook-_getBlockNumber--]]
 ==== `[.contract-item-name]#++_getBlockNumber++#++() → uint48++` [.item-kind]#internal#
 
-Returns the current block number.
+Returns the block a swap belongs to.
+
+IMPORTANT: An override must return one value per block and a different one in the next. A value that
+moves within a block re-records the price on every swap, which removes the protection. One that never
+moves anchors the pool to a single price. Both fail silently.
 
 [.contract-item]
-[[AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-bytes-]]
-==== `[.contract-item-name]#++_getTargetUnspecified++#++(address, struct PoolKey key, struct SwapParams params, bytes) → uint256 targetUnspecifiedAmount, bool applyTarget++` [.item-kind]#internal#
+[[AntiSandwichHook-getLastCheckpoint-PoolId-]]
+==== `[.contract-item-name]#++getLastCheckpoint++#++(PoolId poolId) → struct AntiSandwichHook.Checkpoint++` [.item-kind]#public#
 
-Calculates the unspecified amount based on the pool state at the beginning of the block.
-This prevents sandwich attacks by ensuring trades can't get better prices than what was available
-at the start of the block. Note that the calculated unspecified amount could either be input or output, depending
-if it's an exactInput or outputOutput swap. In cases of zeroForOne == true, the target unspecified amount is not
-applicable, and the max uint256 value is returned as a flag only.
+Returns the checkpoint `poolId` holds, which is zero for a pool never swapped in.
 
-The anti-sandwich mechanism works such as:
+[.contract-item]
+[[AntiSandwichHook-_getTargetUnspecified-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-]]
+==== `[.contract-item-name]#++_getTargetUnspecified++#++(address, struct PoolKey key, struct SwapParams params, BalanceDelta delta, bytes) → uint256 targetUnspecifiedAmount, bool applyTarget++` [.item-kind]#internal#
 
-- For currency0 to currency1 swaps (zeroForOne = true): The pool behaves normally with xy=k curve.
-- For currency1 to currency0 swaps (zeroForOne = false): The price is fixed at the beginning-of-block
-  price, which prevents attackers from manipulating the price within a block.
+Returns the target `delta` is held to, and whether it applies.
+
+The unspecified side carries the target, so an exact input reads it as a ceiling on what the swap keeps
+and an exact output as a floor on what it pays. {BaseDynamicAfterFee-_afterSwap} takes the difference
+either way.
+
+The conversion rounds once, toward the hook. A swap that did not beat the recorded price is still never
+charged, since the pool rounds every step of it against the swapper.
+
+NOTE: An exact output whose floor passes what a `BalanceDelta` carries reverts with {TargetOutOfRange}.
 
 [.contract-item]
 [[AntiSandwichHook-getHookPermissions--]]
 ==== `[.contract-item-name]#++getHookPermissions++#++() → struct Hooks.Permissions permissions++` [.item-kind]#public#
 
 Set the hook permissions, specifically `beforeSwap`, `afterSwap`, and `afterSwapReturnDelta`.
+
+[.contract-item]
+[[AntiSandwichHook-CheckpointNotSet--]]
+==== `[.contract-item-name]#++CheckpointNotSet++#++()++` [.item-kind]#error#
+
+A swap ran against a pool holding no beginning-of-block price to hold it to.
+
+[.contract-item]
+[[AntiSandwichHook-TargetOutOfRange--]]
+==== `[.contract-item-name]#++TargetOutOfRange++#++()++` [.item-kind]#error#
+
+The swap would owe more than a `BalanceDelta` holds, so the amount cannot be charged.
 
 :OrderInfo: pass:normal[xref:#LimitOrderHook-OrderInfo[`++OrderInfo++`]]
 :UserInfo: pass:normal[xref:#LimitOrderHook-UserInfo[`++UserInfo++`]]
@@ -696,6 +732,9 @@ does not run for a swap this hook makes itself. A subclass that swaps internally
 crossing is measured from it. For the same reason {_afterInitialize} does not run for a pool this hook
 initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
 tick-zero baseline and the first swap can leave the orders it crosses unfilled.
+
+NOTE: Filling the orders a swap crosses adds to the swap's gas cost, so a large swap may need to be split
+into smaller ones.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -998,7 +1037,7 @@ position, or the default order id if no order exists.
 Get the order info for a given order id. Takes an {OrderId} `orderId` and returns the order info.
 
 `accFee0PerLiqX128` and `accFee1PerLiqX128` are the fees credited to the order per unit of liquidity, as
-`X128` fixed point values. Both only ever increase, and an owner's checkpoints are never above them.
+`X128` fixed point values. Both wrap on overflow, so only their difference against a checkpoint is meaningful.
 
 [.contract-item]
 [[LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-]]
@@ -1105,6 +1144,7 @@ The default order id, used to indicate that an order is not yet initialized.
 :AlreadySeeded: pass:normal[xref:#ReHypothecationHook-AlreadySeeded--[`++AlreadySeeded++`]]
 :InsufficientSeed: pass:normal[xref:#ReHypothecationHook-InsufficientSeed-uint256-uint256-[`++InsufficientSeed++`]]
 :JITLocked: pass:normal[xref:#ReHypothecationHook-JITLocked--[`++JITLocked++`]]
+:NoUsableLiquidity: pass:normal[xref:#ReHypothecationHook-NoUsableLiquidity--[`++NoUsableLiquidity++`]]
 :ReHypothecatedLiquidityAdded: pass:normal[xref:#ReHypothecationHook-ReHypothecatedLiquidityAdded-address-struct-PoolKey-uint256-uint256-uint256-[`++ReHypothecatedLiquidityAdded++`]]
 :ReHypothecatedLiquidityRemoved: pass:normal[xref:#ReHypothecationHook-ReHypothecatedLiquidityRemoved-address-struct-PoolKey-uint256-uint256-uint256-[`++ReHypothecatedLiquidityRemoved++`]]
 :getPoolKey: pass:normal[xref:#ReHypothecationHook-getPoolKey--[`++getPoolKey++`]]
@@ -1326,6 +1366,7 @@ _Available since v1.2.0_
 * {xref-ReHypothecationHook-AlreadySeeded--}[`++AlreadySeeded()++`]
 * {xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-}[`++InsufficientSeed(shares, minShares)++`]
 * {xref-ReHypothecationHook-JITLocked--}[`++JITLocked()++`]
+* {xref-ReHypothecationHook-NoUsableLiquidity--}[`++NoUsableLiquidity()++`]
 
 [.contract-subindex-inherited]
 .ReentrancyGuardTransient
@@ -1737,4 +1778,11 @@ Error thrown when a seed would mint fewer than the minimum safe initial `shares`
 
 Error thrown when a liquidity operation and the just-in-time settlement would overlap,
 to prevent reentrancy across the JIT lock.
+
+[.contract-item]
+[[ReHypothecationHook-NoUsableLiquidity--]]
+==== `[.contract-item-name]#++NoUsableLiquidity++#++()++` [.item-kind]#error#
+
+Error thrown when a swap is attempted while the just-in-time position would size to zero,
+so the hook cannot back the swap.
 

@@ -15,6 +15,7 @@ import {BeforeSwapDelta} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {Slot0} from "@uniswap/v4-core/src/types/Slot0.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 // Internal imports
 import {BaseDynamicAfterFee} from "../fee/BaseDynamicAfterFee.sol";
 import {CurrencySettler} from "../utils/CurrencySettler.sol";
@@ -170,8 +171,8 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
         // Get the unspecified amount from the swap delta
         int128 target = (params.amountSpecified < 0 == params.zeroForOne) ? swapDelta.amount1() : swapDelta.amount0();
 
-        // Take the absolute value via int256 so the full int128 range is representable.
-        targetUnspecifiedAmount = target < 0 ? uint256(-int256(target)) : uint256(int256(target));
+        // Get the absolute unspecified amount
+        targetUnspecifiedAmount = SignedMath.abs(target);
         applyTarget = true;
     }
 

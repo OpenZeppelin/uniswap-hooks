@@ -14,6 +14,7 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
 import {IHookEvents} from "../interfaces/IHookEvents.sol";
@@ -144,9 +145,8 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
             ? (key.currency1, delta.amount1())
             : (key.currency0, delta.amount0());
 
-        // Take the absolute value via int256 so the full int128 range is representable.
-        uint256 absUnspecifiedAmount =
-            unspecifiedAmount < 0 ? uint256(-int256(unspecifiedAmount)) : uint256(int256(unspecifiedAmount));
+        // Get the absolute unspecified amount
+        uint256 absUnspecifiedAmount = SignedMath.abs(unspecifiedAmount);
 
         // Get the exact input flag
         bool exactInput = params.amountSpecified < 0;

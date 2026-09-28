@@ -134,6 +134,10 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// to prevent reentrancy across the JIT lock.
     error JITLocked();
 
+    /// @dev Error thrown when a swap is attempted while the just-in-time position would size to zero,
+    /// so the hook cannot back the swap.
+    error NoUsableLiquidity();
+
     /**
      * @dev Emitted when a `sender` adds rehypothecated `shares` to the `poolKey` pool,
      *  transferring `amount0` of `currency0` and `amount1` of `currency1` to the hook.
@@ -332,9 +336,11 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         // Snapshot the position's tick bounds so `afterSwap` removes exactly what is added here.
         _snapshotActiveTicks();
 
-        // Get the liquidity to be used from the amounts currently deposited in the yield sources
+        // Get the liquidity to be used from the amounts currently deposited in the yield sources. The hook
+        // is the pool's only liquidity, so a swap it cannot back must revert.
         uint256 liquidityToUse = _getLiquidityToUse(_activeTickLower(), _activeTickUpper());
-        if (liquidityToUse > 0) _modifyLiquidity(liquidityToUse.toInt256());
+        if (liquidityToUse == 0) revert NoUsableLiquidity();
+        _modifyLiquidity(liquidityToUse.toInt256());
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }

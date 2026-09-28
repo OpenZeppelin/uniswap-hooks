@@ -182,8 +182,8 @@ abstract contract BaseCustomAccounting is BaseHook, IHookEvents, IUnlockCallback
             // It also allows users to provide more native value than the desired amount
             if (msg.value < amount0) revert InvalidNativeValue();
 
-            // Previous check prevents underflow revert
-            key.currency0.transfer(msg.sender, msg.value - amount0);
+            // Skipped when zero, since a native transfer to a contract without `receive` reverts
+            if (msg.value > amount0) key.currency0.transfer(msg.sender, msg.value - amount0);
         }
     }
 

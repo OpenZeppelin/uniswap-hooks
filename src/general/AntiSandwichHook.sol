@@ -24,14 +24,14 @@ import {BaseDynamicAfterFee} from "../fee/BaseDynamicAfterFee.sol";
  * this hook guarantees that no swaps get filled at a price better than the price at
  * the beginning of the slot window (i.e. one block), up to rounding.
  *
- * That price is recorded at the block's first swap, and any excess a later swap gains over it is taken as a
+ * That price is recorded before the block's first swap, and any excess a later swap gains over it is taken as a
  * hook fee. A sandwich therefore closes no better than the price its opening leg moved away from, so it cannot
  * turn a profit.
  *
  * In order to use this hook, the inheriting contract must implement the {_afterSwapHandler} function
  * to determine how to handle the collected fees from the anti-sandwich mechanism.
  *
- * NOTE: The price is read at the block's first swap, which is the price the block opened with: in Uniswap v4
+ * NOTE: The price is read before the block's first swap, which is the price the block opened with: in Uniswap v4
  * only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
  *
  * NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
@@ -87,7 +87,7 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
     /// @dev Maps each pool to its last checkpoint.
     mapping(PoolId id => Checkpoint checkpoint) private _lastCheckpoints;
 
-    /// @dev Records the pool price at the block's first swap. Later swaps in the block leave it untouched.
+    /// @dev Records the pool price before the block's first swap. Later swaps in the block leave it untouched.
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
         internal
         virtual

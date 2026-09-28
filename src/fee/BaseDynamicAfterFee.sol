@@ -151,9 +151,6 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
     /**
      * @dev Set the hook permissions, specifically {afterSwap} and {afterSwapReturnDelta}.
      *
-     * NOTE: `beforeSwap` is not requested. A hook that needs it must enable it here and implement
-     * {BaseHook-_beforeSwap}, which reverts otherwise.
-     *
      * @return permissions The hook permissions.
      */
     function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {

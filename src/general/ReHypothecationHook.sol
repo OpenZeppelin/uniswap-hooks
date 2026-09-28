@@ -64,6 +64,10 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * moved, apart from rounding. Sources that charge fees or lose value on these calls are not supported, since liquidity
  * providers would bear that cost on every addition, removal and swap.
  *
+ * WARNING: Every swap deposits into and withdraws from the yield sources, so a source that rejects either call, for
+ * example because it is paused, capped or gated, reverts the swap. A permissionless deposit cap lets a third party
+ * block swaps by filling it.
+ *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
  * As a consequence, the PoolManager singleton may lack sufficient reserves for illiquid tokens in the instants between the swap
@@ -659,8 +663,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * Note: Must be implemented and adapted for the desired type of yield sources, such as
      *  ERC-4626 Vaults, or any custom DeFi protocol interface, optionally handling native currency.
      *
-     * NOTE: Must increase {_getAmountInYieldSource} by `amount`, so sources that charge fees on this call are not
-     * supported.
+     * NOTE: Must increase {_getAmountInYieldSource} by `amount` and must not revert, since a revert during a swap's
+     * settlement reverts the swap. Sources that charge fees on this call are not supported.
      */
     function _depositToYieldSource(Currency currency, uint256 amount) internal virtual;
 

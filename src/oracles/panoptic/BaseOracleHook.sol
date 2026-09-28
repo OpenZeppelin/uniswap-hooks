@@ -18,13 +18,16 @@ abstract contract BaseOracleHook is BaseHook {
     using Oracle for Oracle.Observation[65535];
     using StateLibrary for IPoolManager;
 
-    /// @dev Observation cardinality cannot be increased if the pool is not initialized
+    /// @dev The pool was not initialized with this hook, so it has no recorded observations
     error PoolNotInitialized();
+
+    /// @dev The maximum absolute tick delta is not positive
+    error InvalidMaxAbsTickDelta();
 
     /// @dev Emitted by the hook for increases to the number of observations that can be stored.
     ///
     /// NOTE: `observationCardinalityNext` is not the observation cardinality until an observation is written at the index
-    /// just before a mint/swap/burn.
+    /// just before a swap.
     ///
     /// @param observationCardinalityNextOld The previous value of the next observation cardinality
     /// @param observationCardinalityNextNew The updated value of the next observation cardinality
@@ -44,6 +47,10 @@ abstract contract BaseOracleHook is BaseHook {
     }
 
     /// @dev The maximum absolute tick delta that can be observed for the truncated oracle
+    ///
+    /// NOTE: The bound applies per written observation, and observations are written on swaps only, at most
+    /// once per block. An idle pool's truncated tick therefore stays within one clamp step of the last written
+    /// value however much time passes, and converges toward the pool tick only while the pool trades.
     int24 public immutable MAX_ABS_TICK_DELTA;
 
     /// @dev The list of observations for a given pool ID
@@ -54,10 +61,11 @@ abstract contract BaseOracleHook is BaseHook {
     // solhint-disable-next-line
     mapping(PoolId poolId => ObservationState state) public stateById;
 
-    /// @dev Initializes a Uniswap V4 pool with this hook, stores baseline observation state, and optionally performs a cardinality increase.
+    /// @dev Sets the maximum absolute tick delta for the truncated oracle. Reverts with {InvalidMaxAbsTickDelta} if it is not positive.
     ///
     /// @param _maxAbsTickDelta The maximum absolute tick delta that can be observed for the truncated oracle
     constructor(int24 _maxAbsTickDelta) {
+        if (_maxAbsTickDelta <= 0) revert InvalidMaxAbsTickDelta();
         MAX_ABS_TICK_DELTA = _maxAbsTickDelta;
     }
 
@@ -102,7 +110,14 @@ abstract contract BaseOracleHook is BaseHook {
 
     /// @dev The hook called before a swap.
     ///
-    /// NOTE: Note that this hook does not return either a `BeforeSwapDelta` or lp fee override — this call is used exclusively for recording price observations.
+    /// NOTE: This hook returns neither a `BeforeSwapDelta` nor an lp fee override. It records a price observation and
+    /// nothing else.
+    ///
+    /// WARNING: The recorded tick is the pool tick. If an inheriting hook's `BeforeSwapDelta` consumes part or all
+    /// of the specified amount, the recorded price does not reflect the executed trade.
+    ///
+    /// NOTE: The observation records the tick before the swap applies. A hook that swaps on its own skips this
+    /// callback and moves the tick unrecorded.
     ///
     /// @param key The key for the pool
     /// @return bytes4 The function selector for the hook
@@ -142,6 +157,8 @@ abstract contract BaseOracleHook is BaseHook {
     /// NOTE: The time weighted average tick represents the geometric time weighted average price of the pool, in
     /// log base sqrt(1.0001) of currency1 / currency0. The TickMath library can be used to go from a tick value to a ratio.
     ///
+    /// NOTE: Reverts with {PoolNotInitialized} when `underlyingPoolId` was not initialized with this hook.
+    ///
     /// @param secondsAgos From how long ago each cumulative tick and liquidity value should be returned
     /// @param underlyingPoolId The pool ID of the underlying V4 pool
     /// @return Cumulative tick values as of each `secondsAgos` from the current block timestamp
@@ -151,6 +168,8 @@ abstract contract BaseOracleHook is BaseHook {
         view
         returns (int56[] memory, int56[] memory)
     {
+        if (!observationsById[underlyingPoolId][0].initialized) revert PoolNotInitialized();
+
         ObservationState memory _observationState = stateById[underlyingPoolId];
 
         (, int24 tick,,) = poolManager.getSlot0(underlyingPoolId);
@@ -165,7 +184,7 @@ abstract contract BaseOracleHook is BaseHook {
         );
     }
 
-    /// @dev Increase the maximum number of price and liquidity observations that the oracle of `underlyingPoolId`.
+    /// @dev Increase the maximum number of observations that the oracle of `underlyingPoolId` can store.
     ///
     /// @param observationCardinalityNext The desired minimum number of observations for the oracle to store
     /// @param underlyingPoolId The pool ID of the underlying V4 pool

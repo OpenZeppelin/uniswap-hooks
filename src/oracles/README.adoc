@@ -6,11 +6,17 @@ NOTE: This document is better viewed on the docs page.
 Oracle hooks that enable Uniswap v4 pools to function as price oracles by recording price observations and exposing oracle interfaces.
 
  * {BaseOracleHook}: Enables a Uniswap V4 pool to record price observations and expose an oracle interface for TWAP queries.
- * {OracleHookWithV3Adapters}: Extends oracle functionality with V3-compatible adapter contracts for integration with existing V3 oracle consumers.
+ * {OracleHookWithV3Adapters}: Extends oracle functionality with adapter contracts that expose the Uniswap V3 oracle interface for tick data.
 
 == Panoptic Oracles
 
 {{BaseOracleHook}}
 {{OracleHookWithV3Adapters}}
+
+== V3 Adapters
+
+{{V3OracleAdapter}}
+
+{{V3TruncatedOracleAdapter}}
 
 

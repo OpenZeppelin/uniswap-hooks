@@ -81,7 +81,7 @@ contract BaseHookFeeTest is HookTest {
         swapRouter.swap(key, swapParams, testSettings, "");
         BalanceDelta deltaNoHook = swapRouter.swap(noHookKey, swapParams, testSettings, "");
 
-        // exactInput && zeroForOne == false => currency1 is specified, currency0 is unspecified
+        // exactOutput && zeroForOne == true => currency1 is specified, currency0 is unspecified
         uint256 hookCurrency0Claims = manager.balanceOf(address(hook), currency0.toId());
         uint256 hookCurrency1Claims = manager.balanceOf(address(hook), currency1.toId());
 
@@ -123,12 +123,12 @@ contract BaseHookFeeTest is HookTest {
         swapRouter.swap(key, swapParams, testSettings, "");
         BalanceDelta deltaNoHook = swapRouter.swap(noHookKey, swapParams, testSettings, "");
 
-        // exactInput && zeroForOne == true => currency0 is specified, currency1 is unspecified
+        // exactOutput && zeroForOne == false => currency0 is specified, currency1 is unspecified
         uint256 hookCurrency0Claims = manager.balanceOf(address(hook), currency0.toId());
         uint256 hookCurrency1Claims = manager.balanceOf(address(hook), currency1.toId());
 
-        uint256 deltaSpecifiedNoHook = (-deltaNoHook.amount1()).toUint256();
-        uint256 expectedFee = FullMath.mulDiv(deltaSpecifiedNoHook, hookFee, MAX_HOOK_FEE);
+        uint256 deltaUnspecifiedNoHook = (-deltaNoHook.amount1()).toUint256();
+        uint256 expectedFee = FullMath.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE);
 
         assertEq(hookCurrency0Claims, 0);
         assertEq(hookCurrency1Claims, expectedFee);

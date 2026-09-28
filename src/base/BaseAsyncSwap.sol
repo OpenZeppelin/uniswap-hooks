@@ -28,12 +28,19 @@ import {BaseHook} from "../base/BaseHook.sol";
  * asynchronous swaps and custom swap-ordering. However, given this flexibility, developers should ensure
  * that any logic implemented interacts safely with the `PoolManager` and works correctly.
  *
- * In order to handle async swaps, the hook mints ERC-6909 claim tokens for the specified currency and amount.
- * Inheriting contracts are free to handle these claim tokens as necessary, which can be redeemed for the
- * underlying currency by using the `settle` function from the `CurrencySettler` library.
+ * In order to handle async swaps, the hook mints ERC-6909 claim tokens to itself for the specified currency and
+ * amount. Inheriting contracts are free to handle these claim tokens as necessary. To redeem them for the
+ * underlying currency, burn them with the `settle` function from the `CurrencySettler` library, passing `burn`
+ * as true, and withdraw with `take`, passing `claims` as false, within the same unlock callback.
  *
- * IMPORTANT: If the hook is used for multiple pools, the ERC-6909 tokens must be separated and managed
- * independently for each pool in order to prevent draining of ERC-6909 tokens from one pool to another.
+ * WARNING: Pool initialization is permissionless, so any pool can be created with this hook. The claim tokens
+ * the hook holds are keyed by currency with no pool component, so a hook serving multiple pools must key its own
+ * accounting by `PoolId` to prevent draining of ERC-6909 tokens from one pool to another. To serve a single pool
+ * instead, enable `beforeInitialize` in `getHookPermissions` and override `_beforeInitialize` to reject any other key.
+ *
+ * IMPORTANT: The fee returned by {_calculateSwapFee} is only reported in the {HookSwap} event. The base contract
+ * holds the full input as claim tokens and charges no fee, so inheriting contracts must deduct it when they settle
+ * the swap.
  *
  * NOTE: The hook only supports async exact-input swaps. Exact-output swaps will be processed normally
  * by the `PoolManager`.
@@ -69,7 +76,7 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
             // Mint ERC-6909 claim token for the specified currency and amount
             specified.take(poolManager, address(this), specifiedAmount, true);
 
-            // Calculate the fee amount for the swap, paid to LPs
+            // Calculate the LP fee to report, which the hook holds within the claim tokens
             uint256 feeAmount = _calculateSwapFee(key, specifiedAmount);
 
             // Emit the swap event with the specified amount signifying the amount taken by the hook
@@ -92,6 +99,9 @@ abstract contract BaseAsyncSwap is BaseHook, IHookEvents {
 
     /**
      * @dev Calculate the fee amount for the swap.
+     *
+     * NOTE: The fee is denominated in the specified currency. It is reported in {HookSwap} but not charged, see the
+     * contract-level documentation.
      *
      * @param key The pool key.
      * @param specifiedAmount The specified amount of the swap.

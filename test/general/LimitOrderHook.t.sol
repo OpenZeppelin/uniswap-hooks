@@ -42,6 +42,16 @@ contract LimitOrderHookTest is HookTest {
     /// @dev Tolerance for the truncation dust of pro-rata splits.
     uint256 constant DUST = 2;
 
+    /**
+     * @dev Donation used to drive an order's fee accumulator. Credited over a single unit of liquidity it
+     * advances the accumulator by `2**254`, so four of them take it past `2**256`. It stays under
+     * `type(int128).max` so that realizing it does not overflow the pool's own fee accounting.
+     */
+    uint256 constant DONATION = 2 ** 126;
+
+    /// @dev Tolerance for the pool fees the donation cycle accrues alongside the donation itself.
+    uint256 constant SWAP_FEE_DUST = 1e6;
+
     function setUp() public {
         deployFreshManagerAndRouters();
         deployMintAndApprove2Currencies();
@@ -109,14 +119,19 @@ contract LimitOrderHookTest is HookTest {
         ) = hook.getOrderInfo(OrderIdLibrary.OrderId.wrap(rawOrderId));
     }
 
-    /// @dev Fees owed to `owner`, recomputed from the order accumulators and the owner's checkpoints.
+    /**
+     * @dev Fees owed to `owner`, recomputed from the order accumulators and the owner's checkpoints. The
+     * growth is taken modulo `2**256`, as the hook takes it, so it stays exact once an accumulator wraps.
+     */
     function feesOwedTo(uint232 rawOrderId, address owner) internal view returns (uint256, uint256) {
         LimitOrderHook.UserInfo memory info = hook.getUserInfo(OrderIdLibrary.OrderId.wrap(rawOrderId), owner);
         OrderInfoView memory order = getOrderInfoView(rawOrderId);
-        return (
-            FullMath.mulDiv(order.accFee0PerLiqX128 - info.feeCheckpoint0X128, info.liquidity, FixedPoint128.Q128),
-            FullMath.mulDiv(order.accFee1PerLiqX128 - info.feeCheckpoint1X128, info.liquidity, FixedPoint128.Q128)
-        );
+        unchecked {
+            return (
+                FullMath.mulDiv(order.accFee0PerLiqX128 - info.feeCheckpoint0X128, info.liquidity, FixedPoint128.Q128),
+                FullMath.mulDiv(order.accFee1PerLiqX128 - info.feeCheckpoint1X128, info.liquidity, FixedPoint128.Q128)
+            );
+        }
     }
 
     /// @dev Principal owed to `owner`, its liquidity's pro-rata share of the credited principal.
@@ -193,6 +208,47 @@ contract LimitOrderHookTest is HookTest {
         swapToLimit(key, true, -1e18, -tickSpacing / 2);
         swapToLimit(noHookKey, true, -1e18, -tickSpacing / 2);
         vm.stopPrank();
+    }
+
+    /**
+     * @dev Swaps into the order's range, donates `amount0` to it, and swaps back out so the tick stays
+     * placeable. The order's liquidity must be the pool's only liquidity for it to earn the whole donation.
+     */
+    function donateToOrder(int24 orderTick, uint256 amount0) internal {
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e6, orderTick + tickSpacing / 2);
+        assertGe(getCurrentTick(key), orderTick, "the donation needs the price inside the order's range");
+
+        donateRouter.donate(key, amount0, 0, ZERO_BYTES);
+
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e6, orderTick - tickSpacing / 2);
+        assertLt(getCurrentTick(key), orderTick, "the order should be out of range again");
+    }
+
+    /**
+     * @dev Recycles a donation through an order holding a single unit of liquidity. `joiner` adds a unit,
+     * which realizes the donation over the unit already there, and `leaver` cancels to take it back out.
+     * The order is left holding `joiner`'s single unit. Returns what `leaver` received in `currency0`.
+     */
+    function recycleDonation(int24 orderTick, address joiner, address leaver) internal returns (uint256 received) {
+        donateToOrder(orderTick, DONATION);
+
+        vm.prank(joiner);
+        hook.placeOrder(key, orderTick, true, 1);
+
+        uint256 balanceBefore = currency0.balanceOf(leaver);
+        vm.prank(leaver);
+        hook.cancelOrder(key, orderTick, true, leaver);
+        received = currency0.balanceOf(leaver) - balanceBefore;
+    }
+
+    /// @dev A key this hook can initialize itself, distinct from `key` through its tick spacing.
+    function selfInitKey() internal view returns (PoolKey memory) {
+        return
+            PoolKey({
+                currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 10, hooks: IHooks(address(hook))
+            });
     }
 
     function initRejectZeroTransferPool()
@@ -624,6 +680,39 @@ contract LimitOrderHookTest is HookTest {
         assertTrue(thisOwed0 > 0 || thisOwed1 > 0, "prior owner should keep its fees");
     }
 
+    /**
+     * @dev Fees reach the hook in batches that each fit in `int128`, but an owner's entitlement aggregates
+     * them, so it can exceed the amount a single `PoolManager` settlement accepts.
+     */
+    function test_cancelOrder_feesAboveTheSignedSettlementLimit() public {
+        int24 orderTick = tickSpacing;
+
+        // the sole owner of the pool's only liquidity earns every donation
+        hook.placeOrder(key, orderTick, true, 1);
+
+        // each donation is realized on its own over the single unit of liquidity
+        for (uint256 i = 0; i < 2; i++) {
+            donateToOrder(orderTick, DONATION);
+            vm.startPrank(user);
+            hook.placeOrder(key, orderTick, true, 1);
+            hook.cancelOrder(key, orderTick, true, user);
+            vm.stopPrank();
+        }
+
+        (uint256 owed0,) = feesOwedTo(1, address(this));
+        assertGt(owed0, uint256(uint128(type(int128).max)), "the fees owed should exceed one settlement");
+
+        uint256 balanceBefore = currency0.balanceOf(address(this));
+        hook.cancelOrder(key, orderTick, true, address(this));
+
+        assertApproxEqAbs(
+            currency0.balanceOf(address(this)) - balanceBefore,
+            owed0,
+            SWAP_FEE_DUST,
+            "the owner should receive the fees owed"
+        );
+    }
+
     // ------------------------------------- Fill ------------------------------------- //
 
     function test_fill_singleOwner() public {
@@ -813,6 +902,161 @@ contract LimitOrderHookTest is HookTest {
         assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
     }
 
+    /// @dev The scan searches strictly above the tick it holds, so the range's own upper bound is the
+    /// tick it can most easily miss. An order there is converted and must fill; one above it must not.
+    function test_fill_orderOnTheScannedRangesUpperBoundFills() public {
+        int24 onBound = 50 * tickSpacing;
+        int24 above = 51 * tickSpacing;
+
+        hook.placeOrder(key, onBound, true, 1e15);
+        hook.placeOrder(key, above, true, 1e15);
+
+        modifyPoolLiquidity(key, -600000, 600000, 1e21, SALT_THIS);
+
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, above);
+
+        assertEq(hook.getTickLowerLast(key.toId()) - tickSpacing, onBound, "the range's upper bound moved");
+        assertEq(rawOrderIdOf(key, onBound, true), 0, "the order on the upper bound was skipped");
+        assertEq(rawOrderIdOf(key, above, true), 2, "an order above the range was filled");
+    }
+
+    /// @dev The scan visits ticks holding an order, not every tick crossed, so a wide move stays cheap
+    /// even with no orders to fill. Reading one slot per tick made this exceed the block gas limit.
+    function test_fill_wideBandCostsFarLessThanABlock() public {
+        modifyPoolLiquidity(key, -600000, 600000, 1e21, SALT_THIS);
+
+        uint256 before = gasleft();
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e27, -300000);
+        uint256 used = before - gasleft();
+
+        assertLt(getCurrentTick(key), -200000, "the swap should cover a wide band");
+        assertLt(used, 3_000_000, "a 5000 spacing move should not cost a lookup per tick");
+    }
+
+    /// @dev A word of the bitmap spans 256 spaced ticks, so a scan that steps past one must not lose the
+    /// orders on either side of the seam.
+    function test_fill_scanCrossesAWordBoundary() public {
+        PoolKey memory wordKey = PoolKey({
+            currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 1, hooks: IHooks(address(hook))
+        });
+        manager.initialize(wordKey, TickMath.getSqrtPriceAtTick(0));
+
+        // at a spacing of one, ticks 255 and 256 sit in adjacent words
+        hook.placeOrder(wordKey, 255, true, 1e12);
+        hook.placeOrder(wordKey, 256, true, 1e12);
+        uint232 below = rawOrderIdOf(wordKey, 255, true);
+        uint232 above = rawOrderIdOf(wordKey, 256, true);
+
+        vm.prank(swapper);
+        swapToLimit(wordKey, false, -1e21, 300);
+
+        assertGt(getCurrentTick(wordKey), 256, "the price should be past both orders");
+        assertTrue(getOrderInfoView(below).filled, "the order below the seam should fill");
+        assertTrue(getOrderInfoView(above).filled, "the order above the seam should fill");
+    }
+
+    /// @dev Negative ticks compress to negative word positions, which the scan must index the same way.
+    function test_fill_scanOverNegativeTicks() public {
+        hook.placeOrder(key, -60, false, 1e15);
+        hook.placeOrder(key, -180, false, 1e15);
+        uint232 near = rawOrderIdOf(key, -60, false);
+        uint232 far = rawOrderIdOf(key, -180, false);
+
+        vm.prank(swapper);
+        swapToLimit(key, true, -1e21, -240);
+
+        assertLt(getCurrentTick(key), -180, "the price should be past both orders");
+        assertTrue(getOrderInfoView(near).filled, "the nearer negative order should fill");
+        assertTrue(getOrderInfoView(far).filled, "the further negative order should fill");
+    }
+
+    function test_fill_selfInitializeDoesNotRecordTheTick() public {
+        PoolKey memory selfKey = selfInitKey();
+
+        hook.selfInitialize(selfKey, TickMath.getSqrtPriceAtTick(6015), false);
+
+        assertEq(getCurrentTick(selfKey), 6015, "the pool should be initialized away from tick zero");
+        assertEq(hook.getTickLowerLast(selfKey.toId()), 0, "the hook should record nothing for it");
+    }
+
+    function test_fill_selfInitializeWithoutRecordMissesCrossedOrders() public {
+        PoolKey memory selfKey = selfInitKey();
+        hook.selfInitialize(selfKey, TickMath.getSqrtPriceAtTick(6015), false);
+
+        hook.placeOrder(selfKey, 3000, false, 1e12);
+        uint232 orderId = rawOrderIdOf(selfKey, 3000, false);
+
+        // the price falls through the order, but the tick-zero baseline makes the window rise from zero
+        vm.prank(swapper);
+        swapToLimit(selfKey, true, -1e18, 2000);
+
+        assertLt(getCurrentTick(selfKey), 3000, "the price should cross the order");
+        assertFalse(getOrderInfoView(orderId).filled, "the tick-zero baseline misses it");
+    }
+
+    function test_fill_selfInitializeWithRecordLeavesUncrossedOrders() public {
+        PoolKey memory selfKey = selfInitKey();
+        hook.selfInitialize(selfKey, TickMath.getSqrtPriceAtTick(6015), true);
+
+        assertEq(hook.getTickLowerLast(selfKey.toId()), 6010, "the baseline should be the initialization tick");
+
+        hook.placeOrder(selfKey, 3000, false, 1e12);
+        uint232 orderId = rawOrderIdOf(selfKey, 3000, false);
+
+        vm.prank(swapper);
+        swapToLimit(selfKey, true, -1e6, 6014);
+
+        assertFalse(getOrderInfoView(orderId).filled, "an order the price never crossed should stay unfilled");
+    }
+
+    /// @dev A swap the hook does not record leaves the window spanning orders the price converted moving
+    /// the other way. Filling the swap's direction credits them the currency their owners deposited.
+    function test_fill_unrecordedSwapDoesNotFillAgainstTheWindow() public {
+        fundHook();
+
+        // the hook moves the price down from inside its own unlock callback, which the pool does not
+        // report, so the recorded tick stays above the price
+        hook.internalSwap(key, -10 * tickSpacing, 1e18, false);
+        assertEq(hook.getTickLowerLast(key.toId()), 0, "the hook should record nothing for it");
+
+        int24 orderTick = -5 * tickSpacing;
+        uint128 liquidity = 1e15;
+        hook.placeOrder(key, orderTick, true, liquidity);
+
+        // an upward swap that stops below the order: the window reaches the order, the price does not
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, -8 * tickSpacing);
+        assertLt(currentTickLower(), orderTick, "the price should stop below the order");
+
+        OrderInfoView memory order = getOrderInfoView(1);
+        assertFalse(order.filled, "an order the price never reached should not fill");
+        assertEq(order.principalCredited0, 0, "the fill should not credit the deposited currency");
+        assertEq(getLiquidityInPosition(key, orderTick, true), liquidity, "liquidity should stay in the pool");
+    }
+
+    /// @dev The same window fills the orders the price converted, though the swap moved the other way.
+    function test_fill_unrecordedSwapFillsWithTheWindow() public {
+        fundHook();
+
+        int24 orderTick = -3 * tickSpacing;
+        hook.placeOrder(key, orderTick, false, 1e15);
+        uint232 orderId = rawOrderIdOf(key, orderTick, false);
+
+        // the hook moves the price down through the order without recording it
+        hook.internalSwap(key, -10 * tickSpacing, 1e18, false);
+
+        // an upward swap that stops below the order, which stays converted
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e24, -8 * tickSpacing);
+
+        OrderInfoView memory order = getOrderInfoView(orderId);
+        assertTrue(order.filled, "an order the price converted should fill");
+        assertGt(order.principalCredited0, 0, "the fill should credit the bought currency");
+        assertEq(order.principalCredited1, 0, "the fill should not credit the deposited currency");
+    }
+
     // ------------------------------------- Withdraw ------------------------------------- //
 
     function test_withdraw_notFilled_reverts() public {
@@ -987,6 +1231,114 @@ contract LimitOrderHookTest is HookTest {
 
         assertApproxEqAbs(ownerAmount0 - attackerAmount0, preJoin0, DUST, "attacker should not skim currency0 fees");
         assertApproxEqAbs(ownerAmount1 - attackerAmount1, preJoin1, DUST, "attacker should not skim currency1 fees");
+    }
+
+    /// @dev A filled order pays principal and fees together, which is subject to the same settlement limit.
+    function test_withdraw_feesAboveTheSignedSettlementLimit() public {
+        int24 orderTick = tickSpacing;
+
+        hook.placeOrder(key, orderTick, true, 1);
+
+        for (uint256 i = 0; i < 2; i++) {
+            donateToOrder(orderTick, DONATION);
+            vm.startPrank(user);
+            hook.placeOrder(key, orderTick, true, 1);
+            hook.cancelOrder(key, orderTick, true, user);
+            vm.stopPrank();
+        }
+
+        (uint256 owed0,) = feesOwedTo(1, address(this));
+        assertGt(owed0, uint256(uint128(type(int128).max)), "the fees owed should exceed one settlement");
+
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e18, orderTick + 2 * tickSpacing);
+        assertTrue(getOrderInfoView(1).filled, "the order should be filled");
+
+        uint256 balanceBefore = currency0.balanceOf(address(this));
+        (uint256 amount0,) = hook.withdraw(OrderIdLibrary.OrderId.wrap(1), address(this));
+
+        assertGt(amount0, uint256(uint128(type(int128).max)), "the payout should exceed one settlement");
+        assertEq(
+            currency0.balanceOf(address(this)) - balanceBefore, amount0, "the owner should receive the full payout"
+        );
+    }
+
+    // -------------------------------- Fee accumulator -------------------------------- //
+
+    /**
+     * @dev Fees are credited per unit of liquidity, so an order holding a single unit advances its
+     * accumulator by the fee scaled by `2**128`. Repeated donations therefore take it past `2**256`, which
+     * must wrap rather than block the order and the swaps that cross its tick.
+     */
+    function test_feeAccumulator_wrapDoesNotBlockTheOrder() public {
+        int24 orderTick = tickSpacing;
+
+        // a single unit, and the pool's only liquidity, so the order earns every donation
+        hook.placeOrder(key, orderTick, true, 1);
+
+        bool wrapped;
+        for (uint256 i = 0; i < 6; i++) {
+            uint256 accBefore = getOrderInfoView(1).accFee0PerLiqX128;
+
+            (address joiner, address leaver) = i % 2 == 0 ? (user, address(this)) : (address(this), user);
+            uint256 received = recycleDonation(orderTick, joiner, leaver);
+
+            if (getOrderInfoView(1).accFee0PerLiqX128 < accBefore) wrapped = true;
+
+            assertApproxEqAbs(
+                received, DONATION, SWAP_FEE_DUST, "the leaving owner should recover the donation it earned"
+            );
+            assertEq(getOrderInfoView(1).liquidityTotal, 1, "the order should be back to a single unit");
+        }
+
+        assertTrue(wrapped, "the accumulator should have wrapped");
+
+        // the tick is still usable, so a swap crossing it fills the order
+        vm.prank(swapper);
+        swapToLimit(key, false, -1e18, orderTick + 2 * tickSpacing);
+        assertTrue(getOrderInfoView(1).filled, "a crossing swap should still fill the order");
+    }
+
+    /**
+     * @dev An owner adding liquidity is re-checkpointed behind the accumulator by what it is already owed.
+     * When the accumulator has just wrapped, that offset exceeds it and the checkpoint has to wrap too.
+     */
+    function test_feeAccumulator_wrapKeepsFeesOwedOnPlacement() public {
+        int24 orderTick = tickSpacing;
+
+        hook.placeOrder(key, orderTick, true, 1);
+
+        // three donations leave the accumulator one donation short of `2**256`
+        recycleDonation(orderTick, user, address(this));
+        recycleDonation(orderTick, address(this), user);
+        recycleDonation(orderTick, user, address(this));
+
+        // the fourth wraps it, and credits the donation to `user`, the sole owner at the time
+        uint256 accBefore = getOrderInfoView(1).accFee0PerLiqX128;
+        donateToOrder(orderTick, DONATION);
+        hook.placeOrder(key, orderTick, true, 1);
+        assertLt(getOrderInfoView(1).accFee0PerLiqX128, accBefore, "the accumulator should have wrapped");
+
+        (uint256 owedBefore,) = feesOwedTo(1, user);
+        assertApproxEqAbs(owedBefore, DONATION, SWAP_FEE_DUST, "the donation should be owed to the sole owner");
+
+        // the offset this placement checkpoints `user` by is larger than the wrapped accumulator
+        vm.prank(user);
+        hook.placeOrder(key, orderTick, true, 1);
+
+        (uint256 owedAfter,) = feesOwedTo(1, user);
+        assertApproxEqAbs(owedAfter, owedBefore, DUST, "adding liquidity should not change the fees owed");
+
+        // and the owner can still take them out
+        uint256 balanceBefore = currency0.balanceOf(user);
+        vm.prank(user);
+        hook.cancelOrder(key, orderTick, true, user);
+        assertApproxEqAbs(
+            currency0.balanceOf(user) - balanceBefore,
+            owedAfter,
+            SWAP_FEE_DUST,
+            "the owner should recover the fees owed across the wrap"
+        );
     }
 
     // ------------------------------------- Getters ------------------------------------- //

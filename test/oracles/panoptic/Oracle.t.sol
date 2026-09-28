@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 // External
-import {Test, Vm, stdMath} from "forge-std/Test.sol";
+import {Test, Vm, stdMath, stdError} from "forge-std/Test.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -16,6 +16,8 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 
 // Internal
 import {OracleHookWithV3Adapters} from "../../../src/oracles/panoptic/OracleHookWithV3Adapters.sol";
+import {BaseOracleHook} from "../../../src/oracles/panoptic/BaseOracleHook.sol";
+import {OracleHookWithV3AdaptersMock} from "../../../src/mocks/oracles/panoptic/OracleHookWithV3AdaptersMock.sol";
 import {V3OracleAdapter} from "../../../src/oracles/panoptic/adapters/V3OracleAdapter.sol";
 import {V3TruncatedOracleAdapter} from "../../../src/oracles/panoptic/adapters/V3TruncatedOracleAdapter.sol";
 import {HookTest} from "test/utils/HookTest.sol";
@@ -264,7 +266,7 @@ contract OracleLibTest is Test {
     }
 
     function test_fail_increaseObservationCardinalityNext_notInitialized() public {
-        vm.expectRevert(abi.encodeWithSelector(IPoolManager.PoolNotInitialized.selector));
+        vm.expectRevert(BaseOracleHook.PoolNotInitialized.selector);
         ORACLE_BASE.increaseObservationCardinalityNext(1, PoolId.wrap(bytes32("1")));
     }
 
@@ -1773,6 +1775,121 @@ contract OracleLibTest is Test {
         int24 truncatedTick = oracle.truncatedOracleTick();
         assertEq(tick, -10000);
         assertEq(truncatedTick, 0); // Should be back to 0 after moving -9116 from 9116
+    }
+
+    function test_truncatedClampAdvancesPerObservationNotPerSecond() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
+        oracle.grow(5);
+
+        // One swap moves the pool far beyond the clamp and writes a single observation.
+        oracle.updateTruncated(OracleTestV4.UpdateParams({advanceTimeBy: 1, tick: 100000}));
+
+        // A full day passes with no further observations, so nothing is written.
+        oracle.advanceTime(86400);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 86400;
+        secondsAgos[1] = 0;
+        (int56[] memory truncatedCumulatives,) = oracle.observeTruncated(secondsAgos);
+
+        // The clamp advances once per observation, not per unit of time. The whole day contributes a single
+        // step of 9116 while the pool sits at tick 100000, and no amount of elapsed time closes the gap.
+        assertEq((truncatedCumulatives[1] - truncatedCumulatives[0]) / 86400, 9116);
+    }
+
+    function test_secondsPerLiquidityIsZeroAndBreaksV3LiquidityMath() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
+        oracle.advanceTime(1800);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1800;
+        secondsAgos[1] = 0;
+        (, uint160[] memory secondsPerLiquidityCumulativeX128s) = oracle.observe(secondsAgos);
+
+        // The adapters do not record seconds per liquidity, so both endpoints, and the delta a V3 consumer
+        // divides by, are zero.
+        assertEq(secondsPerLiquidityCumulativeX128s[0], 0);
+        assertEq(secondsPerLiquidityCumulativeX128s[1], 0);
+
+        vm.expectRevert(stdError.divisionError);
+        this.harmonicMeanLiquidity(1800, secondsPerLiquidityCumulativeX128s);
+    }
+
+    function test_truncated_secondsPerLiquidityIsZeroAndBreaksV3LiquidityMath() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 0}));
+        oracle.advanceTime(1800);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1800;
+        secondsAgos[1] = 0;
+        (, uint160[] memory secondsPerLiquidityCumulativeX128s) = oracle.observeTruncated(secondsAgos);
+
+        assertEq(secondsPerLiquidityCumulativeX128s[0], 0);
+        assertEq(secondsPerLiquidityCumulativeX128s[1], 0);
+
+        vm.expectRevert(stdError.divisionError);
+        this.harmonicMeanLiquidity(1800, secondsPerLiquidityCumulativeX128s);
+    }
+
+    /// @dev The harmonic mean liquidity computation from the canonical `OracleLibrary.consult`.
+    function harmonicMeanLiquidity(uint32 secondsAgo, uint160[] calldata secondsPerLiquidityCumulativeX128s)
+        external
+        pure
+        returns (uint128)
+    {
+        uint160 delta = secondsPerLiquidityCumulativeX128s[1] - secondsPerLiquidityCumulativeX128s[0];
+        return uint128((uint192(secondsAgo) * type(uint160).max) / (uint192(delta) << 32));
+    }
+
+    function test_fail_observe_uninitializedPool() public {
+        vm.warp(TEST_POOL_START_TIME);
+        PoolId unknownPool = PoolId.wrap(bytes32("unknown"));
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 3600;
+        secondsAgos[1] = 0;
+
+        vm.expectRevert(BaseOracleHook.PoolNotInitialized.selector);
+        ORACLE_BASE.observe(secondsAgos, unknownPool);
+    }
+
+    function test_fail_observe_uninitializedPool_wrappingSecondsAgo() public {
+        // Same guard also covers the `cardinality == 0` modulo path, which a wrapping `secondsAgo`
+        // reaches. Before the guard this panicked with a division by zero.
+        PoolId unknownPool = PoolId.wrap(bytes32("unknown"));
+
+        uint32[] memory secondsAgos = new uint32[](1);
+        secondsAgos[0] = type(uint32).max;
+
+        vm.expectRevert(BaseOracleHook.PoolNotInitialized.selector);
+        ORACLE_BASE.observe(secondsAgos, unknownPool);
+    }
+
+    function test_fail_constructor_nonPositiveMaxAbsTickDelta() public {
+        int24[3] memory invalidDeltas = [int24(0), int24(-1), type(int24).min];
+        for (uint256 i = 0; i < invalidDeltas.length; i++) {
+            // Runs the constructor at a valid hook address, so the delta check is the one that reverts.
+            address hookAddress = address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_INITIALIZE_FLAG) + (1 << 20));
+            vm.etch(
+                hookAddress,
+                abi.encodePacked(type(OracleHookWithV3AdaptersMock).creationCode, abi.encode(manager, invalidDeltas[i]))
+            );
+            (bool success, bytes memory revertData) = hookAddress.call("");
+            assertFalse(success);
+            assertEq(revertData, abi.encodeWithSelector(BaseOracleHook.InvalidMaxAbsTickDelta.selector));
+        }
+    }
+
+    function test_observe_initializedPool_succeeds() public {
+        oracle.initialize(OracleTestV4.InitializeParams({time: 1, tick: 5}));
+        oracle.advanceTime(1800);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 1800;
+        secondsAgos[1] = 0;
+
+        (int56[] memory tickCumulatives,) = ORACLE_BASE.observe(secondsAgos, oracle.poolId());
+        assertEq((tickCumulatives[1] - tickCumulatives[0]) / 1800, 5);
     }
 
     function min(uint256 a, uint256 b) internal pure returns (uint256) {

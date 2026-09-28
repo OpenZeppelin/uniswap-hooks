@@ -193,6 +193,7 @@
 :xref-ReHypothecationHook-AlreadySeeded--: xref:general.adoc#ReHypothecationHook-AlreadySeeded--
 :xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-: xref:general.adoc#ReHypothecationHook-InsufficientSeed-uint256-uint256-
 :xref-ReHypothecationHook-JITLocked--: xref:general.adoc#ReHypothecationHook-JITLocked--
+:xref-ReHypothecationHook-NoUsableLiquidity--: xref:general.adoc#ReHypothecationHook-NoUsableLiquidity--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
 :xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
@@ -1143,6 +1144,7 @@ The default order id, used to indicate that an order is not yet initialized.
 :AlreadySeeded: pass:normal[xref:#ReHypothecationHook-AlreadySeeded--[`++AlreadySeeded++`]]
 :InsufficientSeed: pass:normal[xref:#ReHypothecationHook-InsufficientSeed-uint256-uint256-[`++InsufficientSeed++`]]
 :JITLocked: pass:normal[xref:#ReHypothecationHook-JITLocked--[`++JITLocked++`]]
+:NoUsableLiquidity: pass:normal[xref:#ReHypothecationHook-NoUsableLiquidity--[`++NoUsableLiquidity++`]]
 :ReHypothecatedLiquidityAdded: pass:normal[xref:#ReHypothecationHook-ReHypothecatedLiquidityAdded-address-struct-PoolKey-uint256-uint256-uint256-[`++ReHypothecatedLiquidityAdded++`]]
 :ReHypothecatedLiquidityRemoved: pass:normal[xref:#ReHypothecationHook-ReHypothecatedLiquidityRemoved-address-struct-PoolKey-uint256-uint256-uint256-[`++ReHypothecatedLiquidityRemoved++`]]
 :getPoolKey: pass:normal[xref:#ReHypothecationHook-getPoolKey--[`++getPoolKey++`]]
@@ -1364,6 +1366,7 @@ _Available since v1.2.0_
 * {xref-ReHypothecationHook-AlreadySeeded--}[`++AlreadySeeded()++`]
 * {xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-}[`++InsufficientSeed(shares, minShares)++`]
 * {xref-ReHypothecationHook-JITLocked--}[`++JITLocked()++`]
+* {xref-ReHypothecationHook-NoUsableLiquidity--}[`++NoUsableLiquidity()++`]
 
 [.contract-subindex-inherited]
 .ReentrancyGuardTransient
@@ -1775,4 +1778,11 @@ Error thrown when a seed would mint fewer than the minimum safe initial `shares`
 
 Error thrown when a liquidity operation and the just-in-time settlement would overlap,
 to prevent reentrancy across the JIT lock.
+
+[.contract-item]
+[[ReHypothecationHook-NoUsableLiquidity--]]
+==== `[.contract-item-name]#++NoUsableLiquidity++#++()++` [.item-kind]#error#
+
+Error thrown when a swap is attempted while the just-in-time position would size to zero,
+so the hook cannot back the swap.
 

@@ -1502,7 +1502,8 @@ NOTE: Rounds up, benefiting current liquidity providers.
 
 Preview the amounts of currency0 and currency1 to be received for redeeming a specific amount of shares.
 
-NOTE: Rounds down, benefiting current liquidity providers.
+NOTE: Rounds down, benefiting current liquidity providers. Redeeming every outstanding share returns the
+full backing.
 
 [.contract-item]
 [[ReHypothecationHook-_sharesToAmounts-uint256-enum-Math-Rounding-]]

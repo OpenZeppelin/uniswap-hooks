@@ -774,10 +774,14 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertEq(hook.getAmountInYieldSource(currency0), 0, "no residual currency0 backing should remain");
         assertEq(hook.getAmountInYieldSource(currency1), 0, "no residual currency1 backing should remain");
         assertEq(
-            IERC20(Currency.unwrap(currency0)).balanceOf(address(this)) - before0, backing0, "should receive all currency0"
+            IERC20(Currency.unwrap(currency0)).balanceOf(address(this)) - before0,
+            backing0,
+            "should receive all currency0"
         );
         assertEq(
-            IERC20(Currency.unwrap(currency1)).balanceOf(address(this)) - before1, backing1, "should receive all currency1"
+            IERC20(Currency.unwrap(currency1)).balanceOf(address(this)) - before1,
+            backing1,
+            "should receive all currency1"
         );
     }
 

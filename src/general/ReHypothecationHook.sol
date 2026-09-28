@@ -278,9 +278,6 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Returns a balance `delta` representing the assets withdrawn from the hook.
      *
-     * NOTE: The payout amounts are sourced from {previewRedeem}, which prices both a partial redemption and a
-     * full redemption of every outstanding share. An override must keep sourcing them there to stay consistent.
-     *
      * Requirements:
      * - Pool must be initialized
      * - Sender must have sufficient shares for the desired liquidity withdrawal
@@ -434,7 +431,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /**
      * @dev Preview the amounts of currency0 and currency1 to be received for redeeming a specific amount of shares.
      *
-     * NOTE: Rounds down, benefiting current liquidity providers.
+     * NOTE: Rounds down, benefiting current liquidity providers. Redeeming every outstanding share returns the
+     * full backing.
      */
     function previewRedeem(uint256 shares) public view virtual returns (uint256 amount0, uint256 amount1) {
         // A redemption of all shares pays out the full backing to the sole remaining holder.

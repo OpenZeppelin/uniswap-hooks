@@ -16,9 +16,11 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 // Internal imports
 import {ReHypothecationNativeMock, NativeYieldSourceMock} from "../../src/mocks/general/ReHypothecationNativeMock.sol";
 import {ERC4626YieldSourceMock} from "../../src/mocks/general/ReHypothecationERC4626Mock.sol";
+import {ReHypothecationHook} from "../../src/general/ReHypothecationHook.sol";
 import {CappedERC4626Mock} from "./ReHypothecationHookERC4626.t.sol";
 import {HookTest} from "../utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
@@ -201,28 +203,57 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
         ys.withdraw(100, attacker);
     }
 
-    function test_native_sizesErc4626SideByMaxWithdraw() public {
+    /// @dev Deploys a native hook whose ERC-4626 (currency1) side is capped, seeded with 1e18 of each currency.
+    function _deployCappedNativeHook() internal returns (ReHypothecationNativeMock h, CappedERC4626Mock ys1) {
         NativeYieldSourceMock ys0 = new NativeYieldSourceMock();
-        CappedERC4626Mock ys1 = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
+        ys1 = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
         uint160 flags = uint160(
             Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
                 | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
         );
-        ReHypothecationNativeMock h =
-            ReHypothecationNativeMock(payable(address(flags + 0x20000000000000000000000000000000)));
+        h = ReHypothecationNativeMock(payable(address(flags + 0x20000000000000000000000000000000)));
         deployCodeTo(
             "src/mocks/general/ReHypothecationNativeMock.sol:ReHypothecationNativeMock",
             abi.encode(address(manager), address(ys0), address(ys1)),
             address(h)
         );
-        initPool(Currency.wrap(address(0)), currency1, IHooks(address(h)), fee, SQRT_PRICE_1_1);
+        (key,) = initPool(Currency.wrap(address(0)), currency1, IHooks(address(h)), fee, SQRT_PRICE_1_1);
 
         IERC20(Currency.unwrap(currency1)).approve(address(h), type(uint256).max);
         h.seedLiquidity{value: 1e18}(1e18, 1e18);
+    }
 
-        // cap the ERC-4626 (currency1) side below its reported backing
+    function test_native_partialMaxWithdraw_swapSucceeds() public {
+        (ReHypothecationNativeMock h, CappedERC4626Mock ys1) = _deployCappedNativeHook();
+
+        // Cap the ERC-4626 side well below its backing. Sized by the full backing, this swap would owe more
+        // currency1 than the vault lets the hook withdraw.
         uint256 cap = 1e15;
         ys1.setCap(cap);
         assertEq(h.getMaxWithdrawFromYieldSource(currency1), cap, "erc4626 side should be sized by maxWithdraw");
+
+        uint256 balanceBefore = currency1.balanceOf(address(this));
+        swapNativeInput(key, true, -1e17, ZERO_BYTES, 1e17);
+        uint256 received = currency1.balanceOf(address(this)) - balanceBefore;
+        assertGt(received, 0, "swap should deliver currency1");
+        assertLe(received, cap, "swap should not take more than the vault can return");
+    }
+
+    function test_native_zeroMaxWithdraw_swapReverts() public {
+        (ReHypothecationNativeMock h, CappedERC4626Mock ys1) = _deployCappedNativeHook();
+
+        ys1.setCap(0);
+        assertEq(h.getMaxWithdrawFromYieldSource(currency1), 0, "erc4626 side should report no withdrawable amount");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(h),
+                IHooks.beforeSwap.selector,
+                abi.encodeWithSelector(ReHypothecationHook.NoUsableLiquidity.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        swapNativeInput(key, true, -1e17, ZERO_BYTES, 1e17);
     }
 }

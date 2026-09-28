@@ -35,15 +35,6 @@ contract NativeYieldSourceMock is ERC20 {
         return _convertToAssets(shares);
     }
 
-    function convertToShares(uint256 assets) public view virtual returns (uint256) {
-        return _convertToShares(assets);
-    }
-
-    function _convertToShares(uint256 assets) internal view virtual returns (uint256) {
-        uint256 supply = totalSupply();
-        return supply == 0 ? assets : assets.mulDiv(supply, totalAssets());
-    }
-
     function _convertToAssets(uint256 shares) internal view virtual returns (uint256) {
         uint256 supply = totalSupply();
         return supply == 0 ? 0 : shares.mulDiv(totalAssets(), supply);

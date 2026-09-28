@@ -854,4 +854,73 @@ contract BaseCustomCurveTest is HookTest {
         assertEq(remAmount0, int128(1 ether), "remove: amount0 should equal +removedAmount0");
         assertEq(remAmount1, int128(1 ether), "remove: amount1 should equal +removedAmount1");
     }
+
+    function test_removeLiquidity_native_settlesBothCurrenciesBeforePayout() public {
+        BaseCustomCurveMock nativeHook = BaseCustomCurveMock(payable(0x1000000000000000000000000000000000002A88));
+        deployCodeTo(
+            "src/mocks/base/BaseCustomCurveMock.sol:BaseCustomCurveMock",
+            abi.encode(address(manager)),
+            address(nativeHook)
+        );
+        (key, id) = initPool(
+            CurrencyLibrary.ADDRESS_ZERO,
+            currency1,
+            IHooks(address(nativeHook)),
+            LPFeeLibrary.DYNAMIC_FEE_FLAG,
+            SQRT_PRICE_1_1
+        );
+
+        ClaimRecordingLiquidityProvider provider = new ClaimRecordingLiquidityProvider(manager, nativeHook);
+        deal(address(provider), 10 ether);
+        key.currency1.transfer(address(provider), 10 ether);
+
+        provider.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            ),
+            10 ether
+        );
+        provider.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(
+                nativeHook.balanceOf(address(provider)) / 2, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            )
+        );
+
+        // The native payout runs first, and by then both claims are already burned
+        assertTrue(provider.recorded());
+        assertEq(provider.claims0DuringPayout(), manager.balanceOf(address(nativeHook), key.currency0.toId()));
+        assertEq(provider.claims1DuringPayout(), manager.balanceOf(address(nativeHook), key.currency1.toId()));
+    }
+}
+
+contract ClaimRecordingLiquidityProvider {
+    IPoolManager private immutable _manager;
+    BaseCustomCurveMock private immutable _hook;
+
+    bool public recorded;
+    uint256 public claims0DuringPayout;
+    uint256 public claims1DuringPayout;
+
+    constructor(IPoolManager manager_, BaseCustomCurveMock hook_) {
+        _manager = manager_;
+        _hook = hook_;
+    }
+
+    function addLiquidity(BaseCustomAccounting.AddLiquidityParams memory params, uint256 value) external {
+        Currency currency1 = _hook.poolKey().currency1;
+        ERC20(Currency.unwrap(currency1)).approve(address(_hook), type(uint256).max);
+        _hook.addLiquidity{value: value}(params);
+    }
+
+    function removeLiquidity(BaseCustomAccounting.RemoveLiquidityParams memory params) external {
+        _hook.removeLiquidity(params);
+    }
+
+    receive() external payable {
+        if (msg.sender != address(_manager)) return;
+        PoolKey memory key = _hook.poolKey();
+        recorded = true;
+        claims0DuringPayout = _manager.balanceOf(address(_hook), key.currency0.toId());
+        claims1DuringPayout = _manager.balanceOf(address(_hook), key.currency1.toId());
+    }
 }

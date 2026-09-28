@@ -16,6 +16,7 @@ import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 // Internal imports
 import {CurrencySettler} from "../utils/CurrencySettler.sol";
 import {BaseHook} from "../base/BaseHook.sol";
@@ -511,7 +512,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
             // settle the currency0 from the placer to the pool
             placeData.key.currency0
-                .settle(poolManager, placeData.owner, uint256(uint128(-principalDelta.amount0())), false);
+                .settle(poolManager, placeData.owner, SignedMath.abs(principalDelta.amount0()), false);
         } else {
             // if the amount of currency0 is not 0, the limit order is in range
             if (principalDelta.amount0() != 0) revert InRange();
@@ -520,7 +521,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
 
             // settle the currency1 from the placer to the pool
             placeData.key.currency1
-                .settle(poolManager, placeData.owner, uint256(uint128(-principalDelta.amount1())), false);
+                .settle(poolManager, placeData.owner, SignedMath.abs(principalDelta.amount1()), false);
         }
     }
 

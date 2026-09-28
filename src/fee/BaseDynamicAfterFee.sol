@@ -14,6 +14,7 @@ import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
 import {IHookEvents} from "../interfaces/IHookEvents.sol";
@@ -145,7 +146,7 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
             : (key.currency0, delta.amount0());
 
         // Get the absolute unspecified amount
-        if (unspecifiedAmount < 0) unspecifiedAmount = -unspecifiedAmount;
+        uint256 absUnspecifiedAmount = SignedMath.abs(unspecifiedAmount);
 
         // Get the exact input flag
         bool exactInput = params.amountSpecified < 0;
@@ -156,16 +157,16 @@ abstract contract BaseDynamicAfterFee is BaseHook, IHookEvents {
         // If the swap is exactInput, any fee should be decreased from the swap output
         if (exactInput) {
             // If the swap output exceeds the target, decrease it by the difference as a hook fee
-            if (unspecifiedAmount.toUint256() > targetUnspecifiedAmount) {
-                feeAmount = unspecifiedAmount.toUint256() - targetUnspecifiedAmount;
+            if (absUnspecifiedAmount > targetUnspecifiedAmount) {
+                feeAmount = absUnspecifiedAmount - targetUnspecifiedAmount;
             }
             // If the swap output is less or equal than the target, behave as a no-op
         }
         // If the swap is exactOutput, any fee should be increased to the swap input
         else {
             // If the swap input is less than the target, increase it by the difference as a hook fee
-            if (unspecifiedAmount.toUint256() < targetUnspecifiedAmount) {
-                feeAmount = targetUnspecifiedAmount - unspecifiedAmount.toUint256();
+            if (absUnspecifiedAmount < targetUnspecifiedAmount) {
+                feeAmount = targetUnspecifiedAmount - absUnspecifiedAmount;
             }
             // If the swap input is greater or equal than the target, behave as a no-op
         }

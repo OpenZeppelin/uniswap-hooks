@@ -59,9 +59,9 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
  * such as variations in the yield rates, rebalances, impermanent loss, and other risks associated.
  *
- * WARNING: Yield sources are assumed not to charge fees on deposits or withdrawals. A fee-charging source breaks the
- * assumption that a share is a proportional claim on the backing: a deposit credits less backing than supplied and a
- * withdrawal burns more than requested, so liquidity providers absorb those fees on additions, removals, and swaps.
+ * WARNING: Every deposit to and withdrawal from a yield source must change {_getAmountInYieldSource} by the amount
+ * moved, apart from rounding. Sources that charge fees or lose value on these calls are not supported, since liquidity
+ * providers would bear that cost on every addition, removal and swap.
  *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
@@ -638,6 +638,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Note: Must be implemented and adapted for the desired type of yield sources, such as
      *  ERC-4626 Vaults, or any custom DeFi protocol interface, optionally handling native currency.
+     *
+     * NOTE: Must increase {_getAmountInYieldSource} by `amount`, so sources that charge fees on this call are not
+     * supported.
      */
     function _depositToYieldSource(Currency currency, uint256 amount) internal virtual;
 
@@ -646,6 +649,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Note: Must be implemented and adapted for the desired type of yield sources, such as
      *  ERC-4626 Vaults, or any custom DeFi protocol interface, optionally handling native currency.
+     *
+     * NOTE: Must decrease {_getAmountInYieldSource} by `amount`, so sources that charge fees on this call are not
+     * supported.
      */
     function _withdrawFromYieldSource(Currency currency, uint256 amount) internal virtual;
 
@@ -665,7 +671,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * reported balance.
      *
      * Defaults to {_getAmountInYieldSource}. Override for yield sources whose immediately-withdrawable amount can
-     * be below the reported balance, such as ERC-4626 `maxWithdraw`, or capped, gated or fee-charging sources.
+     * be below the reported balance, such as ERC-4626 `maxWithdraw`, or capped or gated sources.
      */
     function _getMaxWithdrawFromYieldSource(Currency currency) internal view virtual returns (uint256) {
         return _getAmountInYieldSource(currency);

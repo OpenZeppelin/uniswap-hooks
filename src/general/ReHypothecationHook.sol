@@ -64,9 +64,9 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * moved, apart from rounding. Sources that charge fees or lose value on these calls are not supported, since liquidity
  * providers would bear that cost on every addition, removal and swap.
  *
- * WARNING: After a swap, the hook deposits the full amount it received into the yield source, so a source that rejects
- * the deposit, such as one paused or at its deposit cap, reverts the swap. Anyone can fill a permissionless cap to block
- * swaps. Supporting such sources requires an override that keeps the undepositable amount as accounted idle backing.
+ * WARNING: Every swap deposits into and withdraws from the yield sources, so a source that rejects either call, for
+ * example because it is paused, capped or gated, reverts the swap. A permissionless deposit cap lets a third party
+ * block swaps by filling it.
  *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.

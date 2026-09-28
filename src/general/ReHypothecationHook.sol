@@ -445,9 +445,14 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /**
      * @dev Preview the amounts of currency0 and currency1 to be received for redeeming a specific amount of shares.
      *
-     * NOTE: Rounds down, benefiting current liquidity providers.
+     * NOTE: Rounds down, benefiting current liquidity providers. Redeeming every outstanding share returns the
+     * full backing.
      */
     function previewRedeem(uint256 shares) public view virtual returns (uint256 amount0, uint256 amount1) {
+        // A redemption of all shares pays out the full backing to the sole remaining holder.
+        if (shares != 0 && shares == totalSupply()) {
+            return (_getAmountInYieldSource(_poolKey.currency0), _getAmountInYieldSource(_poolKey.currency1));
+        }
         return _sharesToAmounts(shares, Math.Rounding.Floor);
     }
 

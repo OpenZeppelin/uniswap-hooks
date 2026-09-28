@@ -14,6 +14,7 @@ import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
+import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
@@ -58,6 +59,14 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  *
  * WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
  * such as variations in the yield rates, rebalances, impermanent loss, and other risks associated.
+ *
+ * WARNING: Every deposit to and withdrawal from a yield source must change {_getAmountInYieldSource} by the amount
+ * moved, apart from rounding. Sources that charge fees or lose value on these calls are not supported, since liquidity
+ * providers would bear that cost on every addition, removal and swap.
+ *
+ * WARNING: Every swap deposits into and withdraws from the yield sources, so a source that rejects either call, for
+ * example because it is paused, capped or gated, reverts the swap. A permissionless deposit cap lets a third party
+ * block swaps by filling it.
  *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
@@ -133,6 +142,10 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /// @dev Error thrown when a liquidity operation and the just-in-time settlement would overlap,
     /// to prevent reentrancy across the JIT lock.
     error JITLocked();
+
+    /// @dev Error thrown when a swap is attempted while the just-in-time position would size to zero,
+    /// so the hook cannot back the swap.
+    error NoUsableLiquidity();
 
     /**
      * @dev Emitted when a `sender` adds rehypothecated `shares` to the `poolKey` pool,
@@ -291,12 +304,15 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
 
         _burn(msg.sender, shares);
 
-        // Skip zero-amount withdrawals, which some yield sources reject (e.g. when one side is proportionally empty)
-        if (amount0 > 0) _withdrawFromYieldSource(_poolKey.currency0, amount0);
-        if (amount1 > 0) _withdrawFromYieldSource(_poolKey.currency1, amount1);
-
-        _transferFromHookToSender(_poolKey.currency0, amount0, msg.sender);
-        _transferFromHookToSender(_poolKey.currency1, amount1, msg.sender);
+        // Skip a zero leg, since some yield sources and tokens reject zero amounts.
+        if (amount0 > 0) {
+            _withdrawFromYieldSource(_poolKey.currency0, amount0);
+            _transferFromHookToSender(_poolKey.currency0, amount0, msg.sender);
+        }
+        if (amount1 > 0) {
+            _withdrawFromYieldSource(_poolKey.currency1, amount1);
+            _transferFromHookToSender(_poolKey.currency1, amount1, msg.sender);
+        }
 
         emit ReHypothecatedLiquidityRemoved(msg.sender, _poolKey, shares, amount0, amount1);
 
@@ -332,9 +348,11 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         // Snapshot the position's tick bounds so `afterSwap` removes exactly what is added here.
         _snapshotActiveTicks();
 
-        // Get the liquidity to be used from the amounts currently deposited in the yield sources
+        // Get the liquidity to be used from the amounts currently deposited in the yield sources. The hook
+        // is the pool's only liquidity, so a swap it cannot back must revert.
         uint256 liquidityToUse = _getLiquidityToUse(_activeTickLower(), _activeTickUpper());
-        if (liquidityToUse > 0) _modifyLiquidity(liquidityToUse.toInt256());
+        if (liquidityToUse == 0) revert NoUsableLiquidity();
+        _modifyLiquidity(liquidityToUse.toInt256());
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
@@ -431,9 +449,14 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /**
      * @dev Preview the amounts of currency0 and currency1 to be received for redeeming a specific amount of shares.
      *
-     * NOTE: Rounds down, benefiting current liquidity providers.
+     * NOTE: Rounds down, benefiting current liquidity providers. Redeeming every outstanding share returns the
+     * full backing.
      */
     function previewRedeem(uint256 shares) public view virtual returns (uint256 amount0, uint256 amount1) {
+        // A redemption of all shares pays out the full backing to the sole remaining holder.
+        if (shares != 0 && shares == totalSupply()) {
+            return (_getAmountInYieldSource(_poolKey.currency0), _getAmountInYieldSource(_poolKey.currency1));
+        }
         return _sharesToAmounts(shares, Math.Rounding.Floor);
     }
 
@@ -509,13 +532,18 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      */
     function _getLiquidityToUse(int24 tickLower, int24 tickUpper) internal view virtual returns (uint256) {
         (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
-        return LiquidityAmounts.getLiquidityForAmounts(
+        uint256 liquidity = LiquidityAmounts.getLiquidityForAmounts(
             currentSqrtPriceX96,
             TickMath.getSqrtPriceAtTick(tickLower),
             TickMath.getSqrtPriceAtTick(tickUpper),
             _getMaxWithdrawFromYieldSource(_poolKey.currency0),
             _getMaxWithdrawFromYieldSource(_poolKey.currency1)
         );
+
+        // A position cannot take either boundary tick past the pool's per-tick gross-liquidity limit, so cap
+        // the liquidity there and leave any excess backing idle.
+        uint256 maxLiquidityPerTick = Pool.tickSpacingToMaxLiquidityPerTick(_poolKey.tickSpacing);
+        return liquidity < maxLiquidityPerTick ? liquidity : maxLiquidityPerTick;
     }
 
     /**
@@ -634,6 +662,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Note: Must be implemented and adapted for the desired type of yield sources, such as
      *  ERC-4626 Vaults, or any custom DeFi protocol interface, optionally handling native currency.
+     *
+     * NOTE: Must increase {_getAmountInYieldSource} by `amount` and must not revert, since a revert during a swap's
+     * settlement reverts the swap. Sources that charge fees on this call are not supported.
      */
     function _depositToYieldSource(Currency currency, uint256 amount) internal virtual;
 
@@ -642,6 +673,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Note: Must be implemented and adapted for the desired type of yield sources, such as
      *  ERC-4626 Vaults, or any custom DeFi protocol interface, optionally handling native currency.
+     *
+     * NOTE: Must decrease {_getAmountInYieldSource} by `amount`, so sources that charge fees on this call are not
+     * supported.
      */
     function _withdrawFromYieldSource(Currency currency, uint256 amount) internal virtual;
 
@@ -661,7 +695,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * reported balance.
      *
      * Defaults to {_getAmountInYieldSource}. Override for yield sources whose immediately-withdrawable amount can
-     * be below the reported balance, such as ERC-4626 `maxWithdraw`, or capped, gated or fee-charging sources.
+     * be below the reported balance, such as ERC-4626 `maxWithdraw`, or capped or gated sources.
      */
     function _getMaxWithdrawFromYieldSource(Currency currency) internal view virtual returns (uint256) {
         return _getAmountInYieldSource(currency);

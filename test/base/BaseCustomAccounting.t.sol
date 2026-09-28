@@ -963,4 +963,75 @@ contract BaseCustomAccountingTest is HookTest {
         assertApproxEqAbs(key.currency0.balanceOf(recipient), deposited0, 1);
         assertApproxEqAbs(key.currency1.balanceOf(recipient), deposited1, 1);
     }
+
+    function test_addLiquidity_nativeExactValue_callerWithoutReceive_succeeds() public {
+        BaseCustomAccountingMock nativeHook = BaseCustomAccountingMock(payable(HOOK_DEPLOYMENT_ADDRESS));
+        deployCodeTo(
+            "src/mocks/base/BaseCustomAccountingMock.sol:BaseCustomAccountingMock",
+            abi.encode(address(manager)),
+            address(nativeHook)
+        );
+        (key, id) = initPool(
+            CurrencyLibrary.ADDRESS_ZERO,
+            currency1,
+            IHooks(address(nativeHook)),
+            LPFeeLibrary.DYNAMIC_FEE_FLAG,
+            SQRT_PRICE_1_1
+        );
+
+        NoReceiveLiquidityProvider provider = new NoReceiveLiquidityProvider();
+        deal(address(provider), 10 ether);
+        key.currency1.transfer(address(provider), 10 ether);
+
+        // The deposit uses the whole value, so there is nothing to refund
+        provider.addLiquidity(
+            nativeHook,
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK, bytes32(0)
+            ),
+            10 ether
+        );
+
+        assertEq(nativeHook.balanceOf(address(provider)), 10 ether);
+        assertEq(address(provider).balance, 0);
+    }
+
+    function test_getPositionSalt_sharedPosition_revertsOnOtherRange() public {
+        BaseCustomAccountingSharedPositionMock sharedHook =
+            BaseCustomAccountingSharedPositionMock(payable(HOOK_DEPLOYMENT_ADDRESS));
+        deployCodeTo(
+            "src/mocks/base/BaseCustomAccountingSharedPositionMock.sol:BaseCustomAccountingSharedPositionMock",
+            abi.encode(address(manager)),
+            address(sharedHook)
+        );
+        (key, id) =
+            initPool(currency0, currency1, IHooks(address(sharedHook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, SQRT_PRICE_1_1);
+
+        ERC20(Currency.unwrap(currency0)).approve(address(sharedHook), type(uint256).max);
+        ERC20(Currency.unwrap(currency1)).approve(address(sharedHook), type(uint256).max);
+
+        vm.expectRevert(BaseCustomAccountingSharedPositionMock.InvalidTickRange.selector);
+        sharedHook.addLiquidity(
+            BaseCustomAccounting.AddLiquidityParams(
+                10 ether, 10 ether, 0, 0, MAX_DEADLINE, MIN_TICK + 60, MAX_TICK, bytes32(0)
+            )
+        );
+
+        vm.expectRevert(BaseCustomAccountingSharedPositionMock.InvalidTickRange.selector);
+        sharedHook.removeLiquidity(
+            BaseCustomAccounting.RemoveLiquidityParams(1, 0, 0, MAX_DEADLINE, MIN_TICK, MAX_TICK - 60, bytes32(0))
+        );
+    }
+}
+
+contract NoReceiveLiquidityProvider {
+    function addLiquidity(
+        BaseCustomAccountingMock hook,
+        BaseCustomAccounting.AddLiquidityParams memory params,
+        uint256 value
+    ) external {
+        Currency currency1 = hook.poolKey().currency1;
+        ERC20(Currency.unwrap(currency1)).approve(address(hook), type(uint256).max);
+        hook.addLiquidity{value: value}(params);
+    }
 }

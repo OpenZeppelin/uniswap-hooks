@@ -6,6 +6,10 @@ Oracle hooks enable Uniswap v4 pools to function as price oracles by recording p
 
 The xref:api:oracles.adoc#BaseOracleHook[`BaseOracleHook`] enables a Uniswap v4 pool to record price observations and expose an oracle interface. It transforms the pool into a price oracle by storing historical price data that can be queried by external contracts for time-weighted average price (TWAP) calculations and other oracle functionality.
 
+It records two series: a standard tick accumulator, and a truncated one that caps how far its tick moves per recorded observation.
+
+WARNING: Observations are recorded on swaps only, so the truncated series converges toward the pool tick only while the pool trades. A pool that sits idle reports a truncated value within one clamp step of the last recorded one, however much time passes. Treat it as one input among several rather than as a standalone price.
+
 == Oracle Hook with V3 Adapters
 
 The xref:api:oracles.adoc#OracleHookWithV3Adapters[`OracleHookWithV3Adapters`] extends the base oracle functionality by automatically deploying adapter contracts that expose the Uniswap V3 oracle interface.

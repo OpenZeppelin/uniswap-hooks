@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 // External imports
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
@@ -15,9 +16,12 @@ import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 // Internal imports
 import {ReHypothecationNativeMock, NativeYieldSourceMock} from "../../src/mocks/general/ReHypothecationNativeMock.sol";
 import {ERC4626YieldSourceMock} from "../../src/mocks/general/ReHypothecationERC4626Mock.sol";
+import {ReHypothecationHook} from "../../src/general/ReHypothecationHook.sol";
+import {CappedERC4626Mock} from "./ReHypothecationHookERC4626.t.sol";
 import {HookTest} from "../utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
 
@@ -166,5 +170,90 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
             modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(liquidity), 0);
         BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares);
         assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 1e9, "hookedRemoveDelta !~= noHookRemoveDelta");
+    }
+
+    // -- NATIVE YIELD SOURCE -- //
+
+    function test_nativeSource_emptyConvertToAssetsReturnsZero() public {
+        NativeYieldSourceMock ys = new NativeYieldSourceMock();
+        assertEq(ys.convertToAssets(0), 0, "an empty source should convert to zero assets");
+    }
+
+    function test_nativeSource_depositUsesExistingRate() public {
+        NativeYieldSourceMock ys = new NativeYieldSourceMock();
+        ys.deposit{value: 100}(100, address(this));
+        vm.deal(address(ys), 200); // 200 now backs 100 shares (a 2:1 rate)
+
+        address depositor = makeAddr("depositor");
+        vm.deal(depositor, 100);
+        vm.prank(depositor);
+        ys.deposit{value: 100}(100, depositor);
+
+        assertEq(ys.balanceOf(depositor), 50, "shares should be priced at the pre-deposit rate");
+    }
+
+    function test_nativeSource_withdrawRejectsSharelessCaller() public {
+        NativeYieldSourceMock ys = new NativeYieldSourceMock();
+        ys.deposit{value: 1}(1, address(this));
+        vm.deal(address(ys), 101); // 101 now backs 1 share
+
+        address attacker = makeAddr("attacker");
+        vm.prank(attacker);
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, attacker, 0, 1));
+        ys.withdraw(100, attacker);
+    }
+
+    /// @dev Deploys a native hook whose ERC-4626 (currency1) side is capped, seeded with 1e18 of each currency.
+    function _deployCappedNativeHook() internal returns (ReHypothecationNativeMock h, CappedERC4626Mock ys1) {
+        NativeYieldSourceMock ys0 = new NativeYieldSourceMock();
+        ys1 = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
+        uint160 flags = uint160(
+            Hooks.BEFORE_INITIALIZE_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG
+                | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+        );
+        h = ReHypothecationNativeMock(payable(address(flags + 0x20000000000000000000000000000000)));
+        deployCodeTo(
+            "src/mocks/general/ReHypothecationNativeMock.sol:ReHypothecationNativeMock",
+            abi.encode(address(manager), address(ys0), address(ys1)),
+            address(h)
+        );
+        (key,) = initPool(Currency.wrap(address(0)), currency1, IHooks(address(h)), fee, SQRT_PRICE_1_1);
+
+        IERC20(Currency.unwrap(currency1)).approve(address(h), type(uint256).max);
+        h.seedLiquidity{value: 1e18}(1e18, 1e18);
+    }
+
+    function test_native_partialMaxWithdraw_swapSucceeds() public {
+        (ReHypothecationNativeMock h, CappedERC4626Mock ys1) = _deployCappedNativeHook();
+
+        // Cap the ERC-4626 side well below its backing. Sized by the full backing, this swap would owe more
+        // currency1 than the vault lets the hook withdraw.
+        uint256 cap = 1e15;
+        ys1.setCap(cap);
+        assertEq(h.getMaxWithdrawFromYieldSource(currency1), cap, "erc4626 side should be sized by maxWithdraw");
+
+        uint256 balanceBefore = currency1.balanceOf(address(this));
+        swapNativeInput(key, true, -1e17, ZERO_BYTES, 1e17);
+        uint256 received = currency1.balanceOf(address(this)) - balanceBefore;
+        assertGt(received, 0, "swap should deliver currency1");
+        assertLe(received, cap, "swap should not take more than the vault can return");
+    }
+
+    function test_native_zeroMaxWithdraw_swapReverts() public {
+        (ReHypothecationNativeMock h, CappedERC4626Mock ys1) = _deployCappedNativeHook();
+
+        ys1.setCap(0);
+        assertEq(h.getMaxWithdrawFromYieldSource(currency1), 0, "erc4626 side should report no withdrawable amount");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(h),
+                IHooks.beforeSwap.selector,
+                abi.encodeWithSelector(ReHypothecationHook.NoUsableLiquidity.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        swapNativeInput(key, true, -1e17, ZERO_BYTES, 1e17);
     }
 }

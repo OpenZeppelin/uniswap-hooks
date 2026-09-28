@@ -8,9 +8,7 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 // Internal
 import {BaseOracleHook} from "../BaseOracleHook.sol";
 
-/// @title V3TruncatedOracleAdapter
-/// @notice Adapter contract that provides a Uniswap V3-compatible oracle interface for BaseOracleHook.
-/// @dev This adapter exposes the truncated tickCumulative values from BaseOracleHook.
+/// @dev Uniswap V3-compatible oracle interface for a pool's truncated observations recorded by a {BaseOracleHook}.
 ///
 /// WARNING: This adapter serves tick data only. `secondsPerLiquidityCumulativeX128` is not recorded and is
 /// always returned as zero, so a V3 consumer that derives liquidity from it divides by a zero delta and
@@ -18,19 +16,19 @@ import {BaseOracleHook} from "../BaseOracleHook.sol";
 contract V3TruncatedOracleAdapter {
     using StateLibrary for IPoolManager;
 
-    /// @notice Thrown when `observations(uint256)` is called with an index that does not fit in `uint16`.
+    /// @dev Thrown when `observations(uint256)` is called with an index that does not fit in `uint16`.
     error V3TruncatedOracleAdapterIndexOutOfRange();
 
-    /// @notice The BaseOracleHook contract this adapter interacts with.
+    /// @dev The BaseOracleHook contract this adapter interacts with.
     BaseOracleHook public immutable baseOracleHook;
 
-    /// @notice The canonical Uniswap V4 pool manager.
+    /// @dev The canonical Uniswap V4 pool manager.
     IPoolManager public immutable manager;
 
-    /// @notice The pool ID of the underlying V4 pool.
+    /// @dev The pool ID of the underlying V4 pool.
     PoolId public immutable poolId;
 
-    /// @notice Initializes the adapter with the BaseOracleHook contract and pool ID.
+    /// @dev Initializes the adapter with the BaseOracleHook contract and pool ID.
     /// @param _manager The canonical Uniswap V4 pool manager
     /// @param _baseOracleHook The BaseOracleHook contract
     /// @param _poolId The pool ID of the underlying V4 pool
@@ -40,7 +38,7 @@ contract V3TruncatedOracleAdapter {
         poolId = _poolId;
     }
 
-    /// @notice Emulates the behavior of the exposed zeroth slot of a Uniswap V3 pool.
+    /// @dev Emulates the behavior of the exposed zeroth slot of a Uniswap V3 pool.
     ///
     /// NOTE: `unlocked` is always `true` and must not gate a reentrancy check.
     ///
@@ -76,7 +74,7 @@ contract V3TruncatedOracleAdapter {
         unlocked = true;
     }
 
-    /// @notice Returns data about a specific observation index.
+    /// @dev Returns data about a specific observation index.
     /// @param index The element of the observations array to fetch
     /// @return blockTimestamp The timestamp of the observation
     /// @return tickCumulativeTruncated The truncated tick multiplied by seconds elapsed for the life of the pool as of the observation timestamp.
@@ -102,7 +100,7 @@ contract V3TruncatedOracleAdapter {
         secondsPerLiquidityCumulativeX128 = 0;
     }
 
-    /// @notice Returns the truncated cumulative tick values as of each timestamp `secondsAgo` from the current block timestamp.
+    /// @dev Returns the truncated cumulative tick values as of each timestamp `secondsAgo` from the current block timestamp.
     /// @param secondsAgos From how long ago each cumulative tick and liquidity value should be returned
     /// @return tickCumulativesTruncated Truncated cumulative tick values as of each `secondsAgos` from the current block timestamp
     /// @return secondsPerLiquidityCumulativeX128s Cumulative seconds per liquidity-in-range value (not recorded, zero-filled)
@@ -116,7 +114,7 @@ contract V3TruncatedOracleAdapter {
         secondsPerLiquidityCumulativeX128s = new uint160[](secondsAgos.length);
     }
 
-    /// @notice Increase the maximum number of price observations that this oracle will store.
+    /// @dev Increases the maximum number of price observations that this oracle will store.
     /// @param observationCardinalityNext The desired minimum number of observations for the oracle to store
     function increaseObservationCardinalityNext(uint16 observationCardinalityNext) external {
         baseOracleHook.increaseObservationCardinalityNext(observationCardinalityNext, poolId);

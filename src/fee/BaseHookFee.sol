@@ -12,6 +12,7 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 
 // Internal imports
 import {IHookEvents} from "../interfaces/IHookEvents.sol";
@@ -72,15 +73,13 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
 
         if (unspecifiedAmount == 0) return (this.afterSwap.selector, 0);
 
-        if (unspecifiedAmount < 0) unspecifiedAmount = -unspecifiedAmount;
-
         uint24 hookFee = _getHookFee(sender, key, params, delta, hookData);
 
         if (hookFee == 0) return (this.afterSwap.selector, 0);
 
         if (hookFee > MAX_HOOK_FEE) revert HookFeeTooLarge();
 
-        uint256 feeAmount = FullMath.mulDiv(uint256(unspecifiedAmount.toUint128()), hookFee, MAX_HOOK_FEE);
+        uint256 feeAmount = FullMath.mulDiv(SignedMath.abs(unspecifiedAmount), hookFee, MAX_HOOK_FEE);
 
         // Take the fee amount to the hook as ERC-6909 claims in order to save gas,
         // which can be redeemed back for tokens with the PoolManager at any point.

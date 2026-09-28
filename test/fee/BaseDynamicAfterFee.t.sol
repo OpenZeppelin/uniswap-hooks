@@ -31,9 +31,7 @@ contract BaseDynamicAfterFeeTest is HookTest {
         deployFreshManagerAndRouters();
 
         dynamicFeesHook = BaseDynamicAfterFeeMock(
-            payable(address(
-                    uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG)
-                ))
+            payable(address(uint160(Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG)))
         );
         deployCodeTo(
             "src/mocks/fee/BaseDynamicAfterFeeMock.sol:BaseDynamicAfterFeeMock",

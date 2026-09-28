@@ -91,7 +91,6 @@
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
 :xref-BaseHook-NotPoolManager--: xref:base.adoc#BaseHook-NotPoolManager--
 :xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
-:BaseHook-_beforeSwap: pass:normal[xref:base.adoc#BaseHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-[`BaseHook._beforeSwap`]]
 = Fee
 
 [.readme-notice]
@@ -464,7 +463,4 @@ Customizable handler called after `_afterSwap` to handle or distribute the fees.
 ==== `[.contract-item-name]#++getHookPermissions++#++() → struct Hooks.Permissions permissions++` [.item-kind]#public#
 
 Set the hook permissions, specifically {afterSwap} and {afterSwapReturnDelta}.
-
-NOTE: `beforeSwap` is not requested. A hook that needs it must enable it here and implement
-{BaseHook-_beforeSwap}, which reverts otherwise.
 

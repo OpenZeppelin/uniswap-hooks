@@ -79,6 +79,7 @@
 :xref-BaseHook-InvalidPool--: xref:base.adoc#BaseHook-InvalidPool--
 :BaseDynamicAfterFee-_afterSwap: pass:normal[xref:fee.adoc#BaseDynamicAfterFee-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`BaseDynamicAfterFee._afterSwap`]]
 :xref-LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-: xref:general.adoc#LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-
+:xref-LimitOrderHook-_recordTickLowerLast-struct-PoolKey-: xref:general.adoc#LimitOrderHook-_recordTickLowerLast-struct-PoolKey-
 :xref-LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:general.adoc#LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-LimitOrderHook-placeOrder-struct-PoolKey-int24-bool-uint128-: xref:general.adoc#LimitOrderHook-placeOrder-struct-PoolKey-int24-bool-uint128-
 :xref-LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-: xref:general.adoc#LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-
@@ -87,13 +88,14 @@
 :xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-: xref:general.adoc#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-
 :xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-: xref:general.adoc#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-
 :xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-: xref:general.adoc#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-
-:xref-LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-: xref:general.adoc#LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-
+:xref-LimitOrderHook-_fillCrossedOrders-struct-PoolKey-: xref:general.adoc#LimitOrderHook-_fillCrossedOrders-struct-PoolKey-
 :xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-
 :xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-: xref:general.adoc#LimitOrderHook-_getCrossedTicks-PoolId-int24-
 :xref-LimitOrderHook-_getTickLower-int24-int24-: xref:general.adoc#LimitOrderHook-_getTickLower-int24-int24-
 :xref-LimitOrderHook-_getCurrentTick-PoolId-: xref:general.adoc#LimitOrderHook-_getCurrentTick-PoolId-
 :xref-LimitOrderHook-_getPositionSalt-bool-: xref:general.adoc#LimitOrderHook-_getPositionSalt-bool-
 :xref-LimitOrderHook-getTickLowerLast-PoolId-: xref:general.adoc#LimitOrderHook-getTickLowerLast-PoolId-
+:xref-LimitOrderHook-_hasOrderAtTick-PoolId-int24-int24-bool-: xref:general.adoc#LimitOrderHook-_hasOrderAtTick-PoolId-int24-int24-bool-
 :xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-: xref:general.adoc#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-
 :xref-LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-: xref:general.adoc#LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-
 :xref-LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-: xref:general.adoc#LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-
@@ -465,14 +467,14 @@ https://www.umbraresearch.xyz/writings/sandwich-resistant-amm[here]. Specificall
 this hook guarantees that no swaps get filled at a price better than the price at
 the beginning of the slot window (i.e. one block), up to rounding.
 
-That price is recorded at the block's first swap, and any excess a later swap gains over it is taken as a
+That price is recorded before the block's first swap, and any excess a later swap gains over it is taken as a
 hook fee. A sandwich therefore closes no better than the price its opening leg moved away from, so it cannot
 turn a profit.
 
 In order to use this hook, the inheriting contract must implement the {_afterSwapHandler} function
 to determine how to handle the collected fees from the anti-sandwich mechanism.
 
-NOTE: The price is read at the block's first swap, which is the price the block opened with: in Uniswap v4
+NOTE: The price is read before the block's first swap, which is the price the block opened with: in Uniswap v4
 only a swap moves it, so liquidity changes and donations landing earlier in the block cannot.
 
 NOTE: A block whose price moved far is expensive for everyone trading in it afterwards, since they are all
@@ -601,7 +603,7 @@ _Available since v1.1.0_
 [[AntiSandwichHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-]]
 ==== `[.contract-item-name]#++_beforeSwap++#++(address, struct PoolKey key, struct SwapParams, bytes) → bytes4, BeforeSwapDelta, uint24++` [.item-kind]#internal#
 
-Records the pool price at the block's first swap. Later swaps in the block leave it untouched.
+Records the pool price before the block's first swap. Later swaps in the block leave it untouched.
 
 [.contract-item]
 [[AntiSandwichHook-_getBlockNumber--]]
@@ -629,12 +631,10 @@ The unspecified side carries the target, so an exact input reads it as a ceiling
 and an exact output as a floor on what it pays. {BaseDynamicAfterFee-_afterSwap} takes the difference
 either way.
 
-Every rounding favors the swapper, so a swap that did not beat the recorded price is never charged. In
-return the target is loose by the conversion's resolution, which grows with the price but never with a
-swap's size, while the slippage a sandwich pays to open does.
+The conversion rounds once, toward the hook. A swap that did not beat the recorded price is still never
+charged, since the pool rounds every step of it against the swapper.
 
-NOTE: Where the target passes what a `BalanceDelta` carries, a ceiling is dropped and a floor
-reverts.
+NOTE: An exact output whose floor passes what a `BalanceDelta` carries reverts with {TargetOutOfRange}.
 
 [.contract-item]
 [[AntiSandwichHook-getHookPermissions--]]
@@ -674,6 +674,7 @@ The swap would owe more than a `BalanceDelta` holds, so the amount cannot be cha
 :Cancel: pass:normal[xref:#LimitOrderHook-Cancel-address-OrderIdLibrary-OrderId-struct-PoolKey-int24-bool-uint128-[`++Cancel++`]]
 :Withdraw: pass:normal[xref:#LimitOrderHook-Withdraw-address-OrderIdLibrary-OrderId-uint128-[`++Withdraw++`]]
 :_afterInitialize: pass:normal[xref:#LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-[`++_afterInitialize++`]]
+:_recordTickLowerLast: pass:normal[xref:#LimitOrderHook-_recordTickLowerLast-struct-PoolKey-[`++_recordTickLowerLast++`]]
 :_afterSwap: pass:normal[xref:#LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`++_afterSwap++`]]
 :placeOrder: pass:normal[xref:#LimitOrderHook-placeOrder-struct-PoolKey-int24-bool-uint128-[`++placeOrder++`]]
 :cancelOrder: pass:normal[xref:#LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-[`++cancelOrder++`]]
@@ -682,13 +683,14 @@ The swap would owe more than a `BalanceDelta` holds, so the amount cannot be cha
 :_handlePlaceCallback: pass:normal[xref:#LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-[`++_handlePlaceCallback++`]]
 :_handleCancelCallback: pass:normal[xref:#LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-[`++_handleCancelCallback++`]]
 :_handleWithdrawCallback: pass:normal[xref:#LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-[`++_handleWithdrawCallback++`]]
-:_fillCrossedOrders: pass:normal[xref:#LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-[`++_fillCrossedOrders++`]]
+:_fillCrossedOrders: pass:normal[xref:#LimitOrderHook-_fillCrossedOrders-struct-PoolKey-[`++_fillCrossedOrders++`]]
 :_fillOrder: pass:normal[xref:#LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-[`++_fillOrder++`]]
 :_getCrossedTicks: pass:normal[xref:#LimitOrderHook-_getCrossedTicks-PoolId-int24-[`++_getCrossedTicks++`]]
 :_getTickLower: pass:normal[xref:#LimitOrderHook-_getTickLower-int24-int24-[`++_getTickLower++`]]
 :_getCurrentTick: pass:normal[xref:#LimitOrderHook-_getCurrentTick-PoolId-[`++_getCurrentTick++`]]
 :_getPositionSalt: pass:normal[xref:#LimitOrderHook-_getPositionSalt-bool-[`++_getPositionSalt++`]]
 :getTickLowerLast: pass:normal[xref:#LimitOrderHook-getTickLowerLast-PoolId-[`++getTickLowerLast++`]]
+:_hasOrderAtTick: pass:normal[xref:#LimitOrderHook-_hasOrderAtTick-PoolId-int24-int24-bool-[`++_hasOrderAtTick++`]]
 :getOrderId: pass:normal[xref:#LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-[`++getOrderId++`]]
 :getOrderInfo: pass:normal[xref:#LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-[`++getOrderInfo++`]]
 :getUserInfo: pass:normal[xref:#LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-[`++getUserInfo++`]]
@@ -718,12 +720,20 @@ NOTE: Fees accrued by an order are credited per unit of liquidity, so each owner
 fees earned while its liquidity was in the order and to none of those earned before it. Amounts are truncated
 in the order's favour, so a negligible residual can remain in the hook.
 
+NOTE: Principal withdrawals are floor-rounded against the liquidity remaining at the time of withdrawal, so
+an early withdrawer can lose a negligible residual to whichever owner withdraws last.
+
 NOTE: Native currency orders are not supported.
 
 IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
 does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
 {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next
-crossing is measured from it.
+crossing is measured from it. For the same reason {_afterInitialize} does not run for a pool this hook
+initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
+tick-zero baseline and the first swap can leave the orders it crosses unfilled.
+
+NOTE: Filling the orders a swap crosses adds to the swap's gas cost, so a large swap may need to be split
+into smaller ones.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -734,8 +744,9 @@ _Available since v1.1.0_
 [.contract-index]
 .Functions
 --
-* {xref-LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-}[`++_afterInitialize(, key, , tick)++`]
-* {xref-LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(, key, params, , )++`]
+* {xref-LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-}[`++_afterInitialize(, key, , )++`]
+* {xref-LimitOrderHook-_recordTickLowerLast-struct-PoolKey-}[`++_recordTickLowerLast(key)++`]
+* {xref-LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(, key, , , )++`]
 * {xref-LimitOrderHook-placeOrder-struct-PoolKey-int24-bool-uint128-}[`++placeOrder(key, tick, zeroForOne, liquidity)++`]
 * {xref-LimitOrderHook-cancelOrder-struct-PoolKey-int24-bool-address-}[`++cancelOrder(key, tickLower, zeroForOne, to)++`]
 * {xref-LimitOrderHook-withdraw-OrderIdLibrary-OrderId-address-}[`++withdraw(orderId, to)++`]
@@ -743,13 +754,14 @@ _Available since v1.1.0_
 * {xref-LimitOrderHook-_handlePlaceCallback-struct-LimitOrderHook-PlaceCallbackData-}[`++_handlePlaceCallback(placeData)++`]
 * {xref-LimitOrderHook-_handleCancelCallback-struct-LimitOrderHook-CancelCallbackData-}[`++_handleCancelCallback(cancelData)++`]
 * {xref-LimitOrderHook-_handleWithdrawCallback-struct-LimitOrderHook-WithdrawCallbackData-}[`++_handleWithdrawCallback(withdrawData)++`]
-* {xref-LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-}[`++_fillCrossedOrders(key, swapZeroForOne)++`]
+* {xref-LimitOrderHook-_fillCrossedOrders-struct-PoolKey-}[`++_fillCrossedOrders(key)++`]
 * {xref-LimitOrderHook-_fillOrder-struct-PoolKey-int24-bool-}[`++_fillOrder(key, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-_getCrossedTicks-PoolId-int24-}[`++_getCrossedTicks(poolId, tickSpacing)++`]
 * {xref-LimitOrderHook-_getTickLower-int24-int24-}[`++_getTickLower(tick, tickSpacing)++`]
 * {xref-LimitOrderHook-_getCurrentTick-PoolId-}[`++_getCurrentTick(poolId)++`]
 * {xref-LimitOrderHook-_getPositionSalt-bool-}[`++_getPositionSalt(zeroForOne)++`]
 * {xref-LimitOrderHook-getTickLowerLast-PoolId-}[`++getTickLowerLast(poolId)++`]
+* {xref-LimitOrderHook-_hasOrderAtTick-PoolId-int24-int24-bool-}[`++_hasOrderAtTick(poolId, tickSpacing, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-}[`++getOrderId(key, tickLower, zeroForOne)++`]
 * {xref-LimitOrderHook-getOrderInfo-OrderIdLibrary-OrderId-}[`++getOrderInfo(orderId)++`]
 * {xref-LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-}[`++getUserInfo(orderId, owner)++`]
@@ -848,13 +860,23 @@ _Available since v1.1.0_
 
 [.contract-item]
 [[LimitOrderHook-_afterInitialize-address-struct-PoolKey-uint160-int24-]]
-==== `[.contract-item-name]#++_afterInitialize++#++(address, struct PoolKey key, uint160, int24 tick) → bytes4++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_afterInitialize++#++(address, struct PoolKey key, uint160, int24) → bytes4++` [.item-kind]#internal#
 
 Hooks into the `afterInitialize` hook to set the last tick lower for the pool.
 
 [.contract-item]
+[[LimitOrderHook-_recordTickLowerLast-struct-PoolKey-]]
+==== `[.contract-item-name]#++_recordTickLowerLast++#++(struct PoolKey key)++` [.item-kind]#internal#
+
+Records the tick `key` currently sits at as the baseline the next crossing is measured from,
+without filling anything.
+
+IMPORTANT: {_afterInitialize} calls this, but does not run for a pool this hook initializes itself.
+A subclass that does so must call it right after.
+
+[.contract-item]
 [[LimitOrderHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-]]
-==== `[.contract-item-name]#++_afterSwap++#++(address, struct PoolKey key, struct SwapParams params, BalanceDelta, bytes) → bytes4, int128++` [.item-kind]#internal#
+==== `[.contract-item-name]#++_afterSwap++#++(address, struct PoolKey key, struct SwapParams, BalanceDelta, bytes) → bytes4, int128++` [.item-kind]#internal#
 
 Hooks into the `afterSwap` hook to fill the orders the swap crossed.
 
@@ -870,6 +892,7 @@ via the `unlock` function, which will trigger the `{unlockCallback}` function.
 Requirements:
 
 - `key` must identify a pool configured with this hook, otherwise the order could never be filled.
+- `key` must not use the native currency, otherwise it reverts {NativeCurrencyUnsupported}.
 - The placement must require only the currency being sold, otherwise it reverts {InRange}.
 
 [.contract-item]
@@ -936,11 +959,11 @@ The order is filled, so its liquidity was already removed from the pool and the 
 the hook holds.
 
 [.contract-item]
-[[LimitOrderHook-_fillCrossedOrders-struct-PoolKey-bool-]]
-==== `[.contract-item-name]#++_fillCrossedOrders++#++(struct PoolKey key, bool swapZeroForOne)++` [.item-kind]#internal#
+[[LimitOrderHook-_fillCrossedOrders-struct-PoolKey-]]
+==== `[.contract-item-name]#++_fillCrossedOrders++#++(struct PoolKey key)++` [.item-kind]#internal#
 
 Fills the orders the price crossed since the tick last recorded for `key`, and records the tick
-it reached. `swapZeroForOne` is the swap's direction, not the filled orders'.
+it reached. The direction filled follows the price, not the swap.
 
 IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
 pool does not report such a swap.
@@ -993,6 +1016,12 @@ Returns the last recorded lower tick for a given pool. Takes a `PoolId` `poolId`
 stored `tickLowerLast` value.
 
 [.contract-item]
+[[LimitOrderHook-_hasOrderAtTick-PoolId-int24-int24-bool-]]
+==== `[.contract-item-name]#++_hasOrderAtTick++#++(PoolId poolId, int24 tickSpacing, int24 tickLower, bool zeroForOne) → bool++` [.item-kind]#internal#
+
+Returns whether `tickLower` is recorded as holding a live order in direction `zeroForOne`.
+
+[.contract-item]
 [[LimitOrderHook-getOrderId-struct-PoolKey-int24-bool-]]
 ==== `[.contract-item-name]#++getOrderId++#++(struct PoolKey key, int24 tickLower, bool zeroForOne) → OrderIdLibrary.OrderId++` [.item-kind]#public#
 
@@ -1007,7 +1036,7 @@ position, or the default order id if no order exists.
 Get the order info for a given order id. Takes an {OrderId} `orderId` and returns the order info.
 
 `accFee0PerLiqX128` and `accFee1PerLiqX128` are the fees credited to the order per unit of liquidity, as
-`X128` fixed point values. Both only ever increase, and an owner's checkpoints are never above them.
+`X128` fixed point values. Both wrap on overflow, so only their difference against a checkpoint is meaningful.
 
 [.contract-item]
 [[LimitOrderHook-getUserInfo-OrderIdLibrary-OrderId-address-]]

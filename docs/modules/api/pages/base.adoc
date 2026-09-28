@@ -9,6 +9,7 @@
 :xref-BaseCustomAccounting-removeLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-: xref:base.adoc#BaseCustomAccounting-removeLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-
 :xref-BaseCustomAccounting-_modifyLiquidity-bytes-: xref:base.adoc#BaseCustomAccounting-_modifyLiquidity-bytes-
 :xref-BaseCustomAccounting-unlockCallback-bytes-: xref:base.adoc#BaseCustomAccounting-unlockCallback-bytes-
+:xref-BaseCustomAccounting-_getPositionSalt-address-bytes32-: xref:base.adoc#BaseCustomAccounting-_getPositionSalt-address-bytes32-
 :xref-BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-: xref:base.adoc#BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-
 :xref-BaseCustomAccounting-_beforeInitialize-address-struct-PoolKey-uint160-: xref:base.adoc#BaseCustomAccounting-_beforeInitialize-address-struct-PoolKey-uint160-
 :xref-BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:base.adoc#BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
@@ -64,6 +65,7 @@
 :xref-BaseCustomAccounting-poolKey--: xref:base.adoc#BaseCustomAccounting-poolKey--
 :xref-BaseCustomAccounting-addLiquidity-struct-BaseCustomAccounting-AddLiquidityParams-: xref:base.adoc#BaseCustomAccounting-addLiquidity-struct-BaseCustomAccounting-AddLiquidityParams-
 :xref-BaseCustomAccounting-removeLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-: xref:base.adoc#BaseCustomAccounting-removeLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-
+:xref-BaseCustomAccounting-_getPositionSalt-address-bytes32-: xref:base.adoc#BaseCustomAccounting-_getPositionSalt-address-bytes32-
 :xref-BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-: xref:base.adoc#BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-
 :xref-BaseCustomAccounting-_beforeInitialize-address-struct-PoolKey-uint160-: xref:base.adoc#BaseCustomAccounting-_beforeInitialize-address-struct-PoolKey-uint160-
 :xref-BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-: xref:base.adoc#BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-
@@ -190,6 +192,7 @@ Base contracts for building secure and modular Uniswap hooks, providing core fun
 :removeLiquidity: pass:normal[xref:#BaseCustomAccounting-removeLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-[`++removeLiquidity++`]]
 :_modifyLiquidity: pass:normal[xref:#BaseCustomAccounting-_modifyLiquidity-bytes-[`++_modifyLiquidity++`]]
 :unlockCallback: pass:normal[xref:#BaseCustomAccounting-unlockCallback-bytes-[`++unlockCallback++`]]
+:_getPositionSalt: pass:normal[xref:#BaseCustomAccounting-_getPositionSalt-address-bytes32-[`++_getPositionSalt++`]]
 :_handleAccruedFees: pass:normal[xref:#BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-[`++_handleAccruedFees++`]]
 :_beforeInitialize: pass:normal[xref:#BaseCustomAccounting-_beforeInitialize-address-struct-PoolKey-uint160-[`++_beforeInitialize++`]]
 :_beforeAddLiquidity: pass:normal[xref:#BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-[`++_beforeAddLiquidity++`]]
@@ -222,6 +225,13 @@ NOTE: This base hook is designed to work with a single pool key. If you want to 
 accounting hook for multiple pools, you must have multiple storage instances of this contract and
 initialize them via the `PoolManager` with their respective pool keys.
 
+WARNING: The share supply is stale for the length of a liquidity modification, since {_mint} and {_burn} run
+once {unlockCallback} returns. Account for it wherever the shares enter a computation, in this hook or in a
+contract that reads them.
+
+WARNING: By default each position belongs to the caller that created it, so shares minted as a receipt must
+not be transferable. To make them transferable, override {_getPositionSalt} to share the position.
+
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
 base.
@@ -242,6 +252,7 @@ _Available since v0.1.0_
 * {xref-BaseCustomAccounting-removeLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-}[`++removeLiquidity(params)++`]
 * {xref-BaseCustomAccounting-_modifyLiquidity-bytes-}[`++_modifyLiquidity(params)++`]
 * {xref-BaseCustomAccounting-unlockCallback-bytes-}[`++unlockCallback(rawData)++`]
+* {xref-BaseCustomAccounting-_getPositionSalt-address-bytes32-}[`++_getPositionSalt(sender, salt)++`]
 * {xref-BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-}[`++_handleAccruedFees(data, callerDelta, feesAccrued)++`]
 * {xref-BaseCustomAccounting-_beforeInitialize-address-struct-PoolKey-uint160-}[`++_beforeInitialize(, key, )++`]
 * {xref-BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++_beforeAddLiquidity(, , , )++`]
@@ -372,6 +383,16 @@ Calls the `PoolManager` to unlock and call back the hook's `unlockCallback` func
 Callback from the `PoolManager` when liquidity is modified, either adding or removing.
 
 [.contract-item]
+[[BaseCustomAccounting-_getPositionSalt-address-bytes32-]]
+==== `[.contract-item-name]#++_getPositionSalt++#++(address sender, bytes32 salt) → bytes32++` [.item-kind]#internal#
+
+Returns the salt of the position a liquidity modification applies to. Defaults to the hash of
+`sender` and `salt`, so each caller owns its positions.
+
+IMPORTANT: A salt independent of `sender` shares the position between callers. Such an implementation must
+fix the salt and tick range, and override {_handleAccruedFees}, which by default pays all fees to the caller.
+
+[.contract-item]
 [[BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-]]
 ==== `[.contract-item-name]#++_handleAccruedFees++#++(struct BaseCustomAccounting.CallbackData data, BalanceDelta callerDelta, BalanceDelta feesAccrued)++` [.item-kind]#internal#
 
@@ -385,6 +406,10 @@ or any other desired logic.
 
 Initialize the hook's pool key. The stored key should act immutably so that
 it can safely be used across the hook's functions.
+
+WARNING: Pool initialization is permissionless and permanently binds the hook to the first key it sees,
+so a third party can front-run it with an unintended pool. Initialize the pool atomically with the hook's
+deployment, or override this function to reject an unexpected key.
 
 [.contract-item]
 [[BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-]]
@@ -491,11 +516,15 @@ Base implementation for custom curves, inheriting from {BaseCustomAccounting}.
 
 This hook allows to implement a custom curve (or any logic) for swaps, which overrides the default v3-like
 concentrated liquidity implementation of the `PoolManager`. During a swap, the hook calls the
-{_getUnspecifiedAmount} function to get the amount of tokens to be sent to the receiver. The return delta
-created from this calculation is then consumed and applied by the `PoolManager`.
+{_getUnspecifiedAmount} function to get the amount of the unspecified currency to take from or send to the
+swapper. The return delta created from this calculation is then consumed and applied by the `PoolManager`.
 
 NOTE: This hook by default does not include fee or salt mechanisms, which can be implemented by inheriting
 contracts if needed.
+
+WARNING: The share supply is stale for the length of a liquidity modification, since {_mint} and {_burn} run
+once {unlockCallback} returns. Account for it wherever the shares enter a computation, in this hook or in a
+contract that reads them.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
@@ -522,6 +551,7 @@ _Available since v0.1.0_
 * {xref-BaseCustomAccounting-poolKey--}[`++poolKey()++`]
 * {xref-BaseCustomAccounting-addLiquidity-struct-BaseCustomAccounting-AddLiquidityParams-}[`++addLiquidity(params)++`]
 * {xref-BaseCustomAccounting-removeLiquidity-struct-BaseCustomAccounting-RemoveLiquidityParams-}[`++removeLiquidity(params)++`]
+* {xref-BaseCustomAccounting-_getPositionSalt-address-bytes32-}[`++_getPositionSalt(sender, salt)++`]
 * {xref-BaseCustomAccounting-_handleAccruedFees-struct-BaseCustomAccounting-CallbackData-BalanceDelta-BalanceDelta-}[`++_handleAccruedFees(data, callerDelta, feesAccrued)++`]
 * {xref-BaseCustomAccounting-_beforeInitialize-address-struct-PoolKey-uint160-}[`++_beforeInitialize(, key, )++`]
 * {xref-BaseCustomAccounting-_beforeAddLiquidity-address-struct-PoolKey-struct-ModifyLiquidityParams-bytes-}[`++_beforeAddLiquidity(, , , )++`]
@@ -635,7 +665,7 @@ for a remove liquidity request.
 ==== `[.contract-item-name]#++_beforeSwap++#++(address sender, struct PoolKey key, struct SwapParams params, bytes) → bytes4, BeforeSwapDelta returnDelta, uint24++` [.item-kind]#internal#
 
 Overrides the default swap logic of the `PoolManager` and calls the {_getUnspecifiedAmount}
-to get the amount of tokens to be sent to the receiver.
+to get the amount of the unspecified currency to take from or send to the swapper.
 
 NOTE: In order to take and settle tokens from the pool, the hook must hold the liquidity added
 via the {addLiquidity} function.
@@ -665,6 +695,13 @@ direction and the fee amount to be paid to LPs.
 ==== `[.contract-item-name]#++_getSwapFeeAmount++#++(struct SwapParams params, uint256 unspecifiedAmount) → uint256 swapFeeAmount++` [.item-kind]#internal#
 
 Calculate the amount of fees to be paid to LPs in a swap.
+
+The fee is denominated in the unspecified currency, which is the output currency on exact input swaps and the
+input currency on exact output swaps. On an exact input swap the hook takes the full specified input from the
+pool, so the fee can only be realized as output that the hook retains.
+
+NOTE: The returned amount is only reported in the `HookSwap` event and is not applied to the settlement.
+The amount returned by {_getUnspecifiedAmount} must therefore already account for the fee.
 
 [.contract-item]
 [[BaseCustomCurve-_getAmountOut-struct-BaseCustomAccounting-RemoveLiquidityParams-]]
@@ -732,6 +769,10 @@ Based on the https://github.com/Uniswap/v4-periphery/blob/main/src/base/hooks/Ba
 NOTE: Hook entry points must be overridden and implemented by the inheriting hook to be used. Their respective
 flags must be set to true in the `getHookPermissions` function as well.
 
+NOTE: When two inherited contracts implement the same hook function or {getHookPermissions}, the final contract
+must override it, call each parent by name, and merge their results. A parent implementation may not call
+`super`, so relying on it can skip another parent's logic.
+
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code
 base.
@@ -794,6 +835,8 @@ _Available since v0.1.0_
 [[BaseHook-onlyPoolManager--]]
 ==== `[.contract-item-name]#++onlyPoolManager++#++()++` [.item-kind]#modifier#
 
+Only allow calls from the {poolManager}.
+
 [.contract-item]
 [[BaseHook-onlyValidPools-contract-IHooks-]]
 ==== `[.contract-item-name]#++onlyValidPools++#++(contract IHooks hooks)++` [.item-kind]#modifier#
@@ -802,6 +845,9 @@ Only allow calls for a pool whose `hooks` is this contract.
 
 Functions that take a `PoolKey` from the caller should use this modifier, since the `poolManager` accepts any
 initialized pool and a pool configured with a different hook never calls into this contract.
+
+NOTE: Every pool configured with this hook passes, whichever pool it is. Hooks that serve a single pool or keep
+per-pool state must check the pool id themselves.
 
 [.contract-item]
 [[BaseHook-constructor-contract-IPoolManager-]]
@@ -937,6 +983,8 @@ flag must be set to true in the `getHookPermissions` function.
 [[BaseHook-poolManager-contract-IPoolManager]]
 ==== `[.contract-item-name]#++poolManager++#++() → contract IPoolManager++` [.item-kind]#public#
 
+The pool manager singleton contract.
+
 [.contract-item]
 [[BaseHook-HookNotImplemented--]]
 ==== `[.contract-item-name]#++HookNotImplemented++#++()++` [.item-kind]#error#
@@ -946,6 +994,8 @@ The hook function is not implemented.
 [.contract-item]
 [[BaseHook-NotPoolManager--]]
 ==== `[.contract-item-name]#++NotPoolManager++#++()++` [.item-kind]#error#
+
+The caller is not the {poolManager}.
 
 [.contract-item]
 [[BaseHook-InvalidPool--]]
@@ -973,12 +1023,19 @@ This base hook allows developers to implement arbitrary logic to handle swaps, i
 asynchronous swaps and custom swap-ordering. However, given this flexibility, developers should ensure
 that any logic implemented interacts safely with the `PoolManager` and works correctly.
 
-In order to handle async swaps, the hook mints ERC-6909 claim tokens for the specified currency and amount.
-Inheriting contracts are free to handle these claim tokens as necessary, which can be redeemed for the
-underlying currency by using the `settle` function from the `CurrencySettler` library.
+In order to handle async swaps, the hook mints ERC-6909 claim tokens to itself for the specified currency and
+amount. Inheriting contracts are free to handle these claim tokens as necessary. To redeem them for the
+underlying currency, burn them with the `settle` function from the `CurrencySettler` library, passing `burn`
+as true, and withdraw with `take`, passing `claims` as false, within the same unlock callback.
 
-IMPORTANT: If the hook is used for multiple pools, the ERC-6909 tokens must be separated and managed
-independently for each pool in order to prevent draining of ERC-6909 tokens from one pool to another.
+WARNING: Pool initialization is permissionless, so any pool can be created with this hook. The claim tokens
+the hook holds are keyed by currency with no pool component, so a hook serving multiple pools must key its own
+accounting by `PoolId` to prevent draining of ERC-6909 tokens from one pool to another. To serve a single pool
+instead, enable `beforeInitialize` in `getHookPermissions` and override `_beforeInitialize` to reject any other key.
+
+IMPORTANT: The fee returned by {_calculateSwapFee} is only reported in the {HookSwap} event. The base contract
+holds the full input as claim tokens and charges no fee, so inheriting contracts must deduct it when they settle
+the swap.
 
 NOTE: The hook only supports async exact-input swaps. Exact-output swaps will be processed normally
 by the `PoolManager`.
@@ -1077,6 +1134,9 @@ specified amount to 0 to enable asynchronous swaps.
 ==== `[.contract-item-name]#++_calculateSwapFee++#++(struct PoolKey key, uint256 specifiedAmount) → uint256 feeAmount++` [.item-kind]#internal#
 
 Calculate the fee amount for the swap.
+
+NOTE: The fee is denominated in the specified currency. It is reported in {HookSwap} but not charged, see the
+contract-level documentation.
 
 [.contract-item]
 [[BaseAsyncSwap-getHookPermissions--]]

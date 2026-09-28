@@ -1267,13 +1267,13 @@ contract AntiSandwichHookAdversarialTest is HookTest {
         );
     }
 
-    /// @notice NOT BROKEN, and the abstention on an exact input cannot be reached by a swap it would have
-    /// bound. The ceiling caps the unspecified amount, which comes out of a `BalanceDelta`. For the ceiling
-    /// to bind, the swap must be filling better than the checkpoint, which makes the unspecified amount
+    /// @notice NOT BROKEN, and an exact-input ceiling past `MAX_BALANCE_DELTA` cannot be reached by a swap it
+    /// would have bound. The ceiling caps the unspecified amount, which comes out of a `BalanceDelta`. For the
+    /// ceiling to bind, the swap must be filling better than the checkpoint, which makes the unspecified amount
     /// larger than the ceiling; a ceiling past `MAX_BALANCE_DELTA` therefore implies an unspecified amount past it
     /// too, and no such swap can settle. Below, every size that sells above its checkpoint is charged, and
-    /// the sizes that would reach the abstention cannot be executed at all.
-    function test_A_theExactInputAbstentionCannotBeReachedByABindingSwap() public {
+    /// the sizes that would reach such a ceiling cannot be executed at all.
+    function test_A_anExactInputCeilingPastTheMaximumCannotBeReachedByABindingSwap() public {
         int256[5] memory sells = [int256(1e12), 1e14, 1e16, 1e18, 1e20];
 
         for (uint256 i; i < sells.length; ++i) {
@@ -1315,8 +1315,8 @@ contract AntiSandwichHookAdversarialTest is HookTest {
         }
     }
 
-    /// @notice NOT BROKEN. Abstaining on an exact input whose ceiling passes `MAX_BALANCE_DELTA` gives nothing
-    /// away, because the amount the ceiling caps came out of a `BalanceDelta` and can never reach it. A
+    /// @notice NOT BROKEN. An exact-input ceiling past `MAX_BALANCE_DELTA` gives nothing away, because the
+    /// amount it caps came out of a `BalanceDelta` and can never reach it. A
     /// closing leg placed just under, just over and far over the boundary buys the attacker nothing.
     function test_A_straddlingTheBoundaryBuysNothing() public {
         // Under the crossing the attacker is charged and loses. Over it the closing leg cannot be held to the

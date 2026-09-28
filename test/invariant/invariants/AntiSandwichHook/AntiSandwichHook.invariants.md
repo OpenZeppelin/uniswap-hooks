@@ -4,7 +4,7 @@
 - **Campaign:** `AntiSandwichHookInvariants.t.sol`
 - **Prefix:** `INV`
 
-The hook records the pool price at each block's first swap and holds every later swap in that block to it:
+The hook records the pool price before each block's first swap and holds every later swap in that block to it:
 valued at that price, a swap may not receive more than it paid, and the difference is taken as a hook fee.
 "The bound" below is that limit, returned to {BaseDynamicAfterFee} as `targetUnspecifiedAmount`.
 

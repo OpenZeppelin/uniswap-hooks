@@ -74,7 +74,7 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
     /// @dev The swap would owe more than a `BalanceDelta` holds, so the amount cannot be charged.
     error TargetOutOfRange();
 
-    /// @dev The pool price at a block's first swap, and the block it was recorded in.
+    /// @dev The pool price before a block's first swap, and the block it was recorded in.
     struct Checkpoint {
         uint160 sqrtPriceX96;
         uint48 blockNumber;
@@ -154,7 +154,8 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
         Math.Rounding rounding = exactInput ? Math.Rounding.Floor : Math.Rounding.Ceil;
         targetUnspecifiedAmount = _convert(specifiedAmount, sqrtPriceX96, unspecifiedIsCurrency1, rounding);
 
-        // A ceiling past that limit never binds, since the amount it caps came out of a `BalanceDelta`.
+        // No `BalanceDelta` can pay a floor above its maximum. A ceiling above it never binds, since the amount
+        // it caps came out of a `BalanceDelta`.
         if (!exactInput && targetUnspecifiedAmount > MAX_BALANCE_DELTA) revert TargetOutOfRange();
 
         return (targetUnspecifiedAmount, true);

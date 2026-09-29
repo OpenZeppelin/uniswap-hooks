@@ -867,6 +867,51 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
             IERC20(Currency.unwrap(currency1)).balanceOf(address(this)), balanceBefore, "swap should deliver output"
         );
     }
+
+    function testFuzz_getLiquidityToUse_anyPriceInRange(
+        bool nearUpper,
+        uint256 distance,
+        uint256 amount0,
+        uint256 amount1
+    ) public {
+        address hookAddr = _flagAddr(0x80000000000000000000000000000000);
+        deployCodeTo(
+            "src/mocks/general/ReHypothecationERC4626Mock.sol:ReHypothecationERC4626Mock",
+            abi.encode(
+                address(manager),
+                address(new CappedERC4626Mock(IERC20(Currency.unwrap(currency0)))),
+                address(new CappedERC4626Mock(IERC20(Currency.unwrap(currency1))))
+            ),
+            hookAddr
+        );
+        ReHypothecationERC4626Mock h = ReHypothecationERC4626Mock(payable(hookAddr));
+
+        // Initialize at any price strictly inside the full range, including one unit from either edge.
+        uint160 sqrtPriceLower = TickMath.getSqrtPriceAtTick(TickMath.minUsableTick(key.tickSpacing));
+        uint160 sqrtPriceUpper = TickMath.getSqrtPriceAtTick(TickMath.maxUsableTick(key.tickSpacing));
+        distance = bound(distance, 1, sqrtPriceUpper - sqrtPriceLower - 1);
+        uint160 sqrtPrice = nearUpper ? sqrtPriceUpper - uint160(distance) : sqrtPriceLower + uint160(distance);
+        (PoolKey memory k,) = initPool(currency0, currency1, IHooks(hookAddr), fee, sqrtPrice);
+
+        amount0 = bound(amount0, 1, 1e28);
+        amount1 = bound(amount1, 1, 1e28);
+        vm.assume(Math.sqrt(amount0 * amount1) >= 1e8);
+        IERC20(Currency.unwrap(currency0)).approve(hookAddr, type(uint256).max);
+        IERC20(Currency.unwrap(currency1)).approve(hookAddr, type(uint256).max);
+        h.seedLiquidity(amount0, amount1);
+
+        // The sizing must not revert, whatever the price and backing.
+        uint256 liquidity = h.getLiquidityToUse();
+        assertLe(liquidity, Pool.tickSpacingToMaxLiquidityPerTick(k.tickSpacing), "JIT liquidity above the limit");
+        if (liquidity == 0) return;
+
+        // A pool that reports usable liquidity must serve swaps in both directions.
+        uint256 snapshot = vm.snapshotState();
+        swap(k, true, -1e15, ZERO_BYTES);
+        vm.revertToState(snapshot);
+        swap(k, false, -1e15, ZERO_BYTES);
+    }
+
     // -- SWAP REQUIRES USABLE JIT LIQUIDITY -- //
 
     function test_swap_revertsWhenJITLiquidityZero_cappedVault() public {

@@ -24,6 +24,7 @@ import {BalanceDelta, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDe
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
@@ -532,19 +533,52 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * @param tickUpper The upper tick of the position the liquidity is sized for.
      */
     function _getLiquidityToUse(int24 tickLower, int24 tickUpper) internal view virtual returns (uint256) {
-        (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
-        uint256 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            currentSqrtPriceX96,
-            TickMath.getSqrtPriceAtTick(tickLower),
-            TickMath.getSqrtPriceAtTick(tickUpper),
-            _getMaxWithdrawFromYieldSource(_poolKey.currency0),
-            _getMaxWithdrawFromYieldSource(_poolKey.currency1)
-        );
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(tickLower);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(tickUpper);
+        uint256 amount0 = _getMaxWithdrawFromYieldSource(_poolKey.currency0);
+        uint256 amount1 = _getMaxWithdrawFromYieldSource(_poolKey.currency1);
 
-        // A position cannot take either boundary tick past the pool's per-tick gross-liquidity limit, so cap
-        // the liquidity there and leave any excess backing idle.
-        uint256 maxLiquidityPerTick = Pool.tickSpacingToMaxLiquidityPerTick(_poolKey.tickSpacing);
-        return liquidity < maxLiquidityPerTick ? liquidity : maxLiquidityPerTick;
+        // A position cannot take either boundary tick past the pool's per-tick gross-liquidity limit. Cap each
+        // currency's liquidity there before taking the minimum, so a large backing leaves its excess idle
+        // instead of overflowing the conversion.
+        uint128 maxLiquidityPerTick = Pool.tickSpacingToMaxLiquidityPerTick(_poolKey.tickSpacing);
+        if (sqrtPriceX96 <= sqrtPriceLowerX96) {
+            return _getCappedLiquidityForAmount0(sqrtPriceLowerX96, sqrtPriceUpperX96, amount0, maxLiquidityPerTick);
+        }
+        if (sqrtPriceX96 >= sqrtPriceUpperX96) {
+            return _getCappedLiquidityForAmount1(sqrtPriceLowerX96, sqrtPriceUpperX96, amount1, maxLiquidityPerTick);
+        }
+        return Math.min(
+            _getCappedLiquidityForAmount0(sqrtPriceX96, sqrtPriceUpperX96, amount0, maxLiquidityPerTick),
+            _getCappedLiquidityForAmount1(sqrtPriceLowerX96, sqrtPriceX96, amount1, maxLiquidityPerTick)
+        );
+    }
+
+    /// @dev Returns the liquidity `amount0` backs between the two prices, capped at `maxLiquidity`.
+    function _getCappedLiquidityForAmount0(
+        uint160 sqrtPriceAX96,
+        uint160 sqrtPriceBX96,
+        uint256 amount0,
+        uint128 maxLiquidity
+    ) private pure returns (uint256) {
+        if (amount0 >= SqrtPriceMath.getAmount0Delta(sqrtPriceAX96, sqrtPriceBX96, maxLiquidity, true)) {
+            return maxLiquidity;
+        }
+        return LiquidityAmounts.getLiquidityForAmount0(sqrtPriceAX96, sqrtPriceBX96, amount0);
+    }
+
+    /// @dev Returns the liquidity `amount1` backs between the two prices, capped at `maxLiquidity`.
+    function _getCappedLiquidityForAmount1(
+        uint160 sqrtPriceAX96,
+        uint160 sqrtPriceBX96,
+        uint256 amount1,
+        uint128 maxLiquidity
+    ) private pure returns (uint256) {
+        if (amount1 >= SqrtPriceMath.getAmount1Delta(sqrtPriceAX96, sqrtPriceBX96, maxLiquidity, true)) {
+            return maxLiquidity;
+        }
+        return LiquidityAmounts.getLiquidityForAmount1(sqrtPriceAX96, sqrtPriceBX96, amount1);
     }
 
     /**

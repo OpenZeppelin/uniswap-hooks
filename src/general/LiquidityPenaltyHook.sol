@@ -133,6 +133,9 @@ abstract contract LiquidityPenaltyHook is BaseHook {
      *
      * IMPORTANT: The penalty is donated to the pool's liquidity providers in range at the time of liquidity removal,
      * which may be different from the liquidity providers in range at the time of liquidity addition.
+     *
+     * NOTE: Fresh and withheld fees are returned in a single `int128` delta. In the unlikely case that they sum above
+     * `type(int128).max` in one currency, the removal reverts.
      */
     function _afterRemoveLiquidity(
         address sender,

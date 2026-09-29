@@ -14,6 +14,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
+import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 
 // Internal imports
 import {HookTest} from "../utils/HookTest.sol";
@@ -534,5 +537,44 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
         // penalties are applied
         assertEq(deltaHook1, deltaNoHook1 - noHookFeesKey1, "applied penalty over JIT");
         assertEq(deltaHook2, deltaNoHook2 - noHookFeesKey2, "applied penalty over JIT");
+    }
+
+    // Acknowledged limitation: fresh plus withheld fees above `type(int128).max` cannot be returned in one delta.
+    function test_expiredRemoval_withheldFeesNearInt128Max_reverts() public {
+        vm.roll(100);
+        modifyPoolLiquidity(key, TICK_LOWER, TICK_UPPER, LIQUIDITY_AMOUNT_1E18, 0);
+
+        // Withhold `type(int128).max - 1` of currency1, backed by hook claims and pool manager reserves.
+        int128 withheld = type(int128).max - 1;
+        bytes32 positionKey =
+            Position.calculatePositionKey(address(modifyLiquidityRouter), TICK_LOWER, TICK_UPPER, bytes32(0));
+        bytes32 withheldSlot =
+            keccak256(abi.encode(positionKey, keccak256(abi.encode(PoolId.unwrap(key.toId()), uint256(1)))));
+        vm.store(address(hook), withheldSlot, bytes32(uint256(BalanceDelta.unwrap(toBalanceDelta(0, withheld)))));
+        bytes32 claimsSlot = keccak256(
+            abi.encode(uint256(uint160(Currency.unwrap(currency1))), keccak256(abi.encode(address(hook), uint256(4))))
+        );
+        vm.store(address(manager), claimsSlot, bytes32(uint256(uint128(withheld))));
+        MockERC20(Currency.unwrap(currency1)).mint(address(manager), uint128(withheld));
+
+        // After the offset, accrue fresh currency1 fees so fresh plus withheld fees exceed `type(int128).max`.
+        vm.roll(200);
+        swapRouter.swap(
+            key,
+            SwapParams({zeroForOne: false, amountSpecified: -1e15, sqrtPriceLimitX96: MAX_PRICE_LIMIT}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ""
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CustomRevert.WrappedError.selector,
+                address(hook),
+                IHooks.afterRemoveLiquidity.selector,
+                abi.encodeWithSelector(SafeCast.SafeCastOverflow.selector),
+                abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+            )
+        );
+        modifyPoolLiquidity(key, TICK_LOWER, TICK_UPPER, -LIQUIDITY_AMOUNT_1E18, 0);
     }
 }

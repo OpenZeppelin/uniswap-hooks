@@ -469,6 +469,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * The fees the position accrued before this placement are credited to the owners already in the order, so
      * that the placer is not entitled to them.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _handlePlaceCallback(PlaceCallbackData memory placeData) internal virtual {
         OrderInfo storage orderInfo = _orderInfos[placeData.orderId];
         UserInfo storage userInfo = orderInfo.userInfo[placeData.owner];
@@ -533,6 +534,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * The fees the position accrued up to the removal are credited over the liquidity that earned them, which
      * still includes the cancelling owner's, so that owner is paid its share of them and nothing is left behind.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _handleCancelCallback(CancelCallbackData memory cancelData) internal virtual {
         OrderInfo storage orderInfo = _orderInfos[cancelData.orderId];
 
@@ -618,6 +620,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * IMPORTANT: A subclass that swaps inside its own unlock callback must call this afterwards, since the
      * pool does not report such a swap.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _fillCrossedOrders(PoolKey memory key) internal virtual {
         PoolId poolId = key.toId();
         (int24 tickLower, int24 lower, int24 upper) = _getCrossedTicks(poolId, key.tickSpacing);
@@ -708,6 +711,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * The accumulators wrap on overflow, as Uniswap's fee growth does, since only their difference
      * against a checkpoint is read and that stays exact across a wrap.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _collectFees(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
         uint128 liquidityTotal = orderInfo.liquidityTotal;
         if (liquidityTotal == 0) return;
@@ -729,6 +733,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * @dev Collects `amount0` and `amount1` of principal owed by the pool into the hook and credits them to
      * `orderInfo`, to be shared pro-rata by its owners. Only a fill credits principal.
      */
+    // slither-disable-next-line reentrancy-no-eth
     function _collectPrincipal(OrderInfo storage orderInfo, uint256 amount0, uint256 amount1) private {
         if (amount0 > 0) {
             orderInfo.principalCredited0 += amount0;
@@ -758,6 +763,7 @@ abstract contract LimitOrderHook is BaseHook, IUnlockCallback {
      * Nothing is sent when `amount` is zero, since the transfer it would otherwise make reverts for tokens
      * that reject zero-value transfers, and for recipients that cannot receive the native currency.
      */
+    // slither-disable-next-line calls-loop
     function _sendFromClaims(Currency currency, address to, uint256 amount) private {
         uint256 id = currency.toId();
 

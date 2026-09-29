@@ -351,6 +351,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         // Get the liquidity to be used from the amounts currently deposited in the yield sources. The hook
         // is the pool's only liquidity, so a swap it cannot back must revert.
         uint256 liquidityToUse = _getLiquidityToUse(_activeTickLower(), _activeTickUpper());
+        // slither-disable-next-line incorrect-equality
         if (liquidityToUse == 0) revert NoUsableLiquidity();
         _modifyLiquidity(liquidityToUse.toInt256());
 

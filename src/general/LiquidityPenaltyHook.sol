@@ -185,6 +185,8 @@ abstract contract LiquidityPenaltyHook is BaseHook {
 
     /**
      * @dev Returns the current block number.
+     *
+     * NOTE: Consider overriding this function on chains where `block.number` does not advance once per block.
      */
     function _getBlockNumber() internal view virtual returns (uint48) {
         return uint48(block.number);

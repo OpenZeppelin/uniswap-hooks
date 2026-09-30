@@ -91,6 +91,10 @@ abstract contract BaseOracleHook is BaseHook {
 
     /// @dev The hook called after the state of a pool is initialized
     ///
+    /// NOTE: The initial tick, chosen by the pool initializer, anchors the truncated series. An initial tick far from
+    /// the fair price takes many swaps to correct. Override this function to restrict the ticks a pool can be
+    /// initialized at.
+    ///
     /// @param key The key for the pool being initialized
     /// @return bytes4 The function selector for the hook
     function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick)

@@ -36,6 +36,9 @@ Based on the https://github.com/Uniswap/v4-core/blob/main/test/utils/CurrencySet
 
 NOTE: Deltas are synced before any ERC-20 transfers in {settle} function.
 
+NOTE: Amounts are nominal. Tokens that charge a fee on transfer are not supported: {take} does not measure
+what the recipient receives, so a minimum-received check against the delta can pass for a smaller amount.
+
 IMPORTANT: Moving an underlying token hands execution to code the hook does not control: {take} calls the
 recipient for the native currency, and both {take} and {settle} call the token contract for an ERC-20. The
 `PoolManager` is unlocked there, so that code can reach the hook partway through an operation, when the state

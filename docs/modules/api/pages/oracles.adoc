@@ -225,6 +225,10 @@ Used at deployment to validate the address correctly represents the expected per
 
 The hook called after the state of a pool is initialized
 
+NOTE: The initial tick, chosen by the pool initializer, anchors the truncated series. An initial tick far from
+the fair price takes many swaps to correct. Override this function to restrict the ticks a pool can be
+initialized at.
+
 [.contract-item]
 [[BaseOracleHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-]]
 ==== `[.contract-item-name]#++_beforeSwap++#++(address, struct PoolKey key, struct SwapParams, bytes) → bytes4, BeforeSwapDelta, uint24++` [.item-kind]#internal#

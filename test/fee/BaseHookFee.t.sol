@@ -8,8 +8,8 @@ import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 // Internal imports
 import {BaseHookFeeMock} from "../../src/mocks/fee/BaseHookFeeMock.sol";
@@ -65,7 +65,7 @@ contract BaseHookFeeTest is HookTest {
         uint256 hookCurrency1Claims = manager.balanceOf(address(hook), currency1.toId());
 
         uint256 deltaUnspecifiedNoHook = deltaNoHook.amount1().toUint256();
-        uint256 expectedFee = FullMath.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE);
+        uint256 expectedFee = Math.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE, Math.Rounding.Ceil);
 
         assertEq(hookCurrency0Claims, 0);
         assertEq(hookCurrency1Claims, expectedFee);
@@ -86,7 +86,7 @@ contract BaseHookFeeTest is HookTest {
         uint256 hookCurrency1Claims = manager.balanceOf(address(hook), currency1.toId());
 
         uint256 deltaUnspecifiedNoHook = (-deltaNoHook.amount0()).toUint256();
-        uint256 expectedFee = FullMath.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE);
+        uint256 expectedFee = Math.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE, Math.Rounding.Ceil);
 
         assertEq(hookCurrency0Claims, expectedFee);
         assertEq(hookCurrency1Claims, 0);
@@ -107,7 +107,7 @@ contract BaseHookFeeTest is HookTest {
         uint256 hookCurrency1Claims = manager.balanceOf(address(hook), currency1.toId());
 
         uint256 deltaUnspecifiedNoHook = (deltaNoHook.amount0()).toUint256();
-        uint256 expectedFee = FullMath.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE);
+        uint256 expectedFee = Math.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE, Math.Rounding.Ceil);
 
         assertEq(hookCurrency0Claims, expectedFee);
         assertEq(hookCurrency1Claims, 0);
@@ -128,10 +128,23 @@ contract BaseHookFeeTest is HookTest {
         uint256 hookCurrency1Claims = manager.balanceOf(address(hook), currency1.toId());
 
         uint256 deltaUnspecifiedNoHook = (-deltaNoHook.amount1()).toUint256();
-        uint256 expectedFee = FullMath.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE);
+        uint256 expectedFee = Math.mulDiv(deltaUnspecifiedNoHook, hookFee, MAX_HOOK_FEE, Math.Rounding.Ceil);
 
         assertEq(hookCurrency0Claims, 0);
         assertEq(hookCurrency1Claims, expectedFee);
+    }
+
+    function test_swap_feeBelowOneUnit_roundsUp() public {
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: true, amountSpecified: -100, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
+
+        BalanceDelta deltaNoHook = swapRouter.swap(noHookKey, swapParams, testSettings, "");
+        uint256 unspecified = deltaNoHook.amount1().toUint256();
+        assertLt(unspecified * hookFee, MAX_HOOK_FEE);
+
+        swapRouter.swap(key, swapParams, testSettings, "");
+
+        assertEq(manager.balanceOf(address(hook), currency1.toId()), 1);
     }
 
     /// @dev `BaseHookFee` emits `HookFee` on the unspecified currency of the swap (the side the hook charges

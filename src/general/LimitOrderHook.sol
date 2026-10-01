@@ -63,6 +63,9 @@ library OrderIdLibrary {
  *
  * NOTE: Native currency orders are not supported.
  *
+ * NOTE: Order amounts, including accrued fees, are assumed to fit in an `int128`, as the `PoolManager` accounts them.
+ * Tokens whose supply approaches `type(int128).max` are not supported.
+ *
  * IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
  * does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
  * {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next

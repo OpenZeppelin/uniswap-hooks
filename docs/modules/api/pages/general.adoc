@@ -361,6 +361,8 @@ NOTE: Fresh and withheld fees are returned in a single `int128` delta. In the un
 
 Returns the current block number.
 
+NOTE: Consider overriding this function on chains where `block.number` does not advance once per block.
+
 [.contract-item]
 [[LiquidityPenaltyHook-_updateLastAddedLiquidityBlock-PoolId-bytes32-]]
 ==== `[.contract-item-name]#++_updateLastAddedLiquidityBlock++#++(PoolId poolId, bytes32 positionKey)++` [.item-kind]#internal#
@@ -615,6 +617,8 @@ Returns the block a swap belongs to.
 IMPORTANT: An override must return one value per block and a different one in the next. A value that
 moves within a block re-records the price on every swap, which removes the protection. One that never
 moves anchors the pool to a single price. Both fail silently.
+
+NOTE: Consider overriding this function on chains where `block.number` does not advance once per block.
 
 [.contract-item]
 [[AntiSandwichHook-getLastCheckpoint-PoolId-]]

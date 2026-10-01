@@ -68,10 +68,21 @@ contract BaseOverrideFeeTest is HookTest {
         PoolSwapTest.TestSettings memory testSettings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        vm.expectRevert(abi.encodeWithSelector(LPFeeLibrary.LPFeeTooLarge.selector, fee));
+        vm.expectRevert(_wrappedFeeTooLarge(fee));
         swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
 
         assertEq(_fetchPoolLPFee(key), 0);
+    }
+
+    function test_swap_feeWithOverrideFlagSet_reverts() public {
+        uint24 fee = LPFeeLibrary.OVERRIDE_FEE_FLAG | 1;
+        dynamicFeesHooks.setFee(fee);
+
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+
+        vm.expectRevert(_wrappedFeeTooLarge(fee));
+        swapRouter.swap(key, SWAP_PARAMS, testSettings, ZERO_BYTES);
     }
 
     function test_swap_100PercentLPFeeExactInput_succeeds() public {
@@ -264,6 +275,16 @@ contract BaseOverrideFeeTest is HookTest {
             )
         );
         manager.initialize(key, SQRT_PRICE_1_1);
+    }
+
+    function _wrappedFeeTooLarge(uint24 fee) internal view returns (bytes memory) {
+        return abi.encodeWithSelector(
+            CustomRevert.WrappedError.selector,
+            address(dynamicFeesHooks),
+            IHooks.beforeSwap.selector,
+            abi.encodeWithSelector(LPFeeLibrary.LPFeeTooLarge.selector, fee),
+            abi.encodeWithSelector(Hooks.HookCallFailed.selector)
+        );
     }
 
     function _fetchPoolLPFee(PoolKey memory _key) internal view returns (uint256 lpFee) {

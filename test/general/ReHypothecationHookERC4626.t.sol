@@ -806,11 +806,12 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         );
 
         // -- Add liquidity --
-        // Unhooked
-        BalanceDelta noHookAddDelta =
-            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), int256(liquidity), 0);
         // Hooked
         (uint256 seedShares, BalanceDelta hookedAddDelta) = hook.seedLiquidity(amount0, amount1);
+        // Unhooked, at the liquidity the hook provides, which rounding can leave an atom below `liquidity`
+        uint256 hookedLiquidity = hook.getLiquidityToUse();
+        BalanceDelta noHookAddDelta =
+            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), int256(hookedLiquidity), 0);
         assertApproxEqAbs(hookedAddDelta, noHookAddDelta, 1, "hookedAddDelta !~= noHookAddDelta");
 
         // -- Swap --
@@ -823,7 +824,7 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         // -- Remove liquidity --
         // Unhooked
         BalanceDelta noHookRemoveDelta =
-            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(liquidity), 0);
+            modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(hookedLiquidity), 0);
         // Hooked
         BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares);
         assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, TOL, "hookedRemoveDelta !~= noHookRemoveDelta");

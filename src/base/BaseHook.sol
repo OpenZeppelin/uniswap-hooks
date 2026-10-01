@@ -25,6 +25,9 @@ import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/Pool
  * must override it, call each parent by name, and merge their results. A parent implementation may not call
  * `super`, so relying on it can skip another parent's logic.
  *
+ * IMPORTANT: When composing hooks, consider that an `afterSwap` fee or bound does not apply to the amount consumed by
+ * a `BeforeSwapDelta`, because `afterSwap` receives only the pool's own execution.
+ *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code
  * base.

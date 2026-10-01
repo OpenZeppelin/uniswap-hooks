@@ -248,14 +248,11 @@ NOTE: If a long term liquidity provider adds liquidity continuously, a pause of 
 before removing will be needed if `feesAccrued` collection is intended, in order to avoid getting
 penalized by the JIT protection mechanism.
 
-WARNING: Altrough this hook achieves it's objective of protecting long term LP's in most scenarios,
-low liquidity pools and long-tail assets may still be vulnerable depending on the configured `blockNumberOffset`.
-Larger values of such are recommended in those cases in order to decrease the profitability of the attack.
-
-WARNING: In low liquidity pools, this hook may be vulnerable to multi-account strategies: attackers may bypass JIT protection
-by using a secondary account to add minimal liquidity at a target tick with no other liquidity, then moving the price there after a JIT attack.
-This allows penalty fees to be redirected to the attacker's secondary account. While technically feasible, this attack is rarely profitable in practice,
-due to the cost associated with moving the price to the target tick.
+WARNING: The penalty is donated to all liquidity in range at removal, including liquidity the remover controls,
+such as the rest of the same position after a partial removal, other positions, or a secondary account. That
+liquidity receives its pro-rata share and can collect it without penalty once `blockNumberOffset` has passed.
+The share grows as the pool gets thinner, so low liquidity pools and long-tail assets may still be vulnerable.
+Larger values of `blockNumberOffset` are recommended in those cases to decrease the profitability of the attack.
 
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
 not give any warranties and will not be liable for any losses incurred through any use of this code

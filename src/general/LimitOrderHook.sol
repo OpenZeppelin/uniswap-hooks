@@ -70,8 +70,8 @@ library OrderIdLibrary {
  * initializes itself, so such a subclass MUST call {_recordTickLowerLast} afterwards, or the pool keeps a
  * tick-zero baseline and the first swap can leave the orders it crosses unfilled.
  *
- * NOTE: Filling the orders a swap crosses adds to the swap's gas cost, so a large swap may need to be split
- * into smaller ones.
+ * NOTE: Each order a swap crosses adds to the swap's gas cost, and anyone can place orders, so a swap crossing many
+ * of them may need to be split into smaller ones sent in separate transactions.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis. We do
  * not give any warranties and will not be liable for any losses incurred through any use of this code

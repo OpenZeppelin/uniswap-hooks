@@ -112,6 +112,8 @@ abstract contract AntiSandwichHook is BaseDynamicAfterFee {
      * IMPORTANT: An override must return one value per block and a different one in the next. A value that
      * moves within a block re-records the price on every swap, which removes the protection. One that never
      * moves anchors the pool to a single price. Both fail silently.
+     *
+     * NOTE: Consider overriding this function on chains where `block.number` does not advance once per block.
      */
     function _getBlockNumber() internal view virtual returns (uint48) {
         return uint48(block.number);

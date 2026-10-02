@@ -10,8 +10,8 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 
 // Internal imports
@@ -58,7 +58,7 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
     /**
      * @dev Hooks into the `afterSwap` hook to apply the hook fee to the unspecified currency.
      *
-     * NOTE: The fee is calculated as a percentage of the unspecified amount and taken as ERC-6909 claims.
+     * NOTE: The fee is calculated as a percentage of the unspecified amount, rounded up, and taken as ERC-6909 claims.
      */
     function _afterSwap(
         address sender,
@@ -79,7 +79,7 @@ abstract contract BaseHookFee is BaseHook, IHookEvents {
 
         if (hookFee > MAX_HOOK_FEE) revert HookFeeTooLarge();
 
-        uint256 feeAmount = FullMath.mulDiv(SignedMath.abs(unspecifiedAmount), hookFee, MAX_HOOK_FEE);
+        uint256 feeAmount = Math.mulDiv(SignedMath.abs(unspecifiedAmount), hookFee, MAX_HOOK_FEE, Math.Rounding.Ceil);
 
         // Take the fee amount to the hook as ERC-6909 claims in order to save gas,
         // which can be redeemed back for tokens with the PoolManager at any point.

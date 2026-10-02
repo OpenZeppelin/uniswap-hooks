@@ -762,30 +762,44 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         assertEq(hook.totalSupply(), 0);
     }
 
-    function test_remove_finalExit_leavesNoResidualBacking() public {
+    function test_remove_finalExit_leavesVirtualResidual() public {
         _seed();
 
         uint256 backing0 = hook.getAmountInYieldSource(currency0);
-        uint256 backing1 = hook.getAmountInYieldSource(currency1);
         uint256 before0 = IERC20(Currency.unwrap(currency0)).balanceOf(address(this));
-        uint256 before1 = IERC20(Currency.unwrap(currency1)).balanceOf(address(this));
 
-        // the sole holder redeems every share
         hook.removeReHypothecatedLiquidity(hook.balanceOf(address(this)));
 
+        uint256 received0 = IERC20(Currency.unwrap(currency0)).balanceOf(address(this)) - before0;
         assertEq(hook.totalSupply(), 0, "all shares should be redeemed");
-        assertEq(hook.getAmountInYieldSource(currency0), 0, "no residual currency0 backing should remain");
-        assertEq(hook.getAmountInYieldSource(currency1), 0, "no residual currency1 backing should remain");
-        assertEq(
-            IERC20(Currency.unwrap(currency0)).balanceOf(address(this)) - before0,
-            backing0,
-            "should receive all currency0"
-        );
-        assertEq(
-            IERC20(Currency.unwrap(currency1)).balanceOf(address(this)) - before1,
-            backing1,
-            "should receive all currency1"
-        );
+        assertGt(hook.getAmountInYieldSource(currency0), 0, "virtual shares keep a residual");
+        assertEq(received0 + hook.getAmountInYieldSource(currency0), backing0, "residual is the unpaid remainder");
+    }
+
+    function test_remove_oneShareMint_doesNotBenefitAttacker() public {
+        _seedBy(lp1);
+
+        IERC20 token0 = IERC20(Currency.unwrap(currency0));
+        IERC20 token1 = IERC20(Currency.unwrap(currency1));
+        uint256 attacker0Before = token0.balanceOf(lp2);
+        uint256 attacker1Before = token1.balanceOf(lp2);
+
+        vm.prank(lp2);
+        hook.addReHypothecatedLiquidity(1);
+
+        uint256 lp1Before0 = token0.balanceOf(lp1);
+        vm.prank(lp1);
+        hook.removeReHypothecatedLiquidity(SEED_SHARES);
+        uint256 lp1Received0 = token0.balanceOf(lp1) - lp1Before0;
+
+        vm.prank(lp2);
+        hook.removeReHypothecatedLiquidity(1);
+
+        assertLe(token0.balanceOf(lp2), attacker0Before, "attacker profited in currency0");
+        assertLe(token1.balanceOf(lp2), attacker1Before, "attacker profited in currency1");
+
+        // the victim gets the same payout it would get without the attacker, up to the one-share dilution
+        assertApproxEqAbs(lp1Received0, SEED * SEED / (SEED + 1e6), 1e6, "victim payout changed");
     }
 
     // -- DIFFERENTIAL -- //

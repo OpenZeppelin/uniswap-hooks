@@ -730,6 +730,9 @@ an early withdrawer can lose a negligible residual to whichever owner withdraws 
 
 NOTE: Native currency orders are not supported.
 
+WARNING: Tokens with a very large supply are not supported, since an order's principal plus accrued fees, and its
+redemptions, must fit in an `int128`.
+
 IMPORTANT: Uniswap V4 does not call a hook's own callbacks when that hook is the caller, so {_afterSwap}
 does not run for a swap this hook makes itself. A subclass that swaps internally MUST call
 {_fillCrossedOrders} afterwards, or the tick recorded for the pool falls behind the price and the next

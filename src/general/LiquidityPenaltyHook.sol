@@ -9,12 +9,12 @@ import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 import {SafeCast} from "@uniswap/v4-core/src/libraries/SafeCast.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BalanceDelta, BalanceDeltaLibrary, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
 import {CurrencySettler} from "../utils/CurrencySettler.sol";
@@ -243,6 +243,8 @@ abstract contract LiquidityPenaltyHook is BaseHook {
      *
      * As a result, the penalty is 100% at the same block where liquidity was last added and zero after the `blockNumberOffset` block time window.
      *
+     * NOTE: The penalty rounds up, so any nonzero fee within the window bears at least one unit of penalty.
+     *
      * NOTE: Won't overflow if `currentBlockNumber - lastAddedLiquidityBlock < blockNumberOffset` is verified prior to calling this function.
      */
     function _calculateLiquidityPenalty(BalanceDelta feeDelta, uint48 lastAddedLiquidityBlock)
@@ -253,15 +255,17 @@ abstract contract LiquidityPenaltyHook is BaseHook {
         uint48 currentBlockNumber = _getBlockNumber();
 
         unchecked {
-            uint256 amount0LiquidityPenalty = FullMath.mulDiv(
+            uint256 amount0LiquidityPenalty = Math.mulDiv(
                 SafeCast.toUint128(feeDelta.amount0()),
                 blockNumberOffset - (currentBlockNumber - lastAddedLiquidityBlock), // won't overflow.
-                blockNumberOffset
+                blockNumberOffset,
+                Math.Rounding.Ceil
             );
-            uint256 amount1LiquidityPenalty = FullMath.mulDiv(
+            uint256 amount1LiquidityPenalty = Math.mulDiv(
                 SafeCast.toUint128(feeDelta.amount1()),
                 blockNumberOffset - (currentBlockNumber - lastAddedLiquidityBlock), // won't overflow.
-                blockNumberOffset
+                blockNumberOffset,
+                Math.Rounding.Ceil
             );
 
             // Although the amounts are returned as uint256, they must fit in int128, since they are fee rewards.

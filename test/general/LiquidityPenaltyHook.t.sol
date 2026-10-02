@@ -17,6 +17,7 @@ import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {Position} from "@uniswap/v4-core/src/libraries/Position.sol";
 import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 // Internal imports
 import {HookTest} from "../utils/HookTest.sol";
@@ -28,6 +29,7 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
     int24 constant TICK_LOWER = -600;
     int24 constant TICK_UPPER = 600;
     int256 constant LIQUIDITY_AMOUNT_1E18 = 1e18;
+    int256 constant SWAP_AMOUNT = 10_000;
 
     LiquidityPenaltyHookMock hook;
     PoolKey noHookKey;
@@ -428,10 +430,12 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
         (int128 feesExpected0, int128 feesExpected1) =
             calculateFees(manager, noHookKey.toId(), address(modifyLiquidityRouter), TICK_LOWER, TICK_UPPER, bytes32(0));
 
-        int128 feeDonation0 =
-            SafeCast.toInt128(FullMath.mulDiv(SafeCast.toUint128(feesExpected0), offset - removeBlockQuantity, offset));
-        int128 feeDonation1 =
-            SafeCast.toInt128(FullMath.mulDiv(SafeCast.toUint128(feesExpected1), offset - removeBlockQuantity, offset));
+        int128 feeDonation0 = SafeCast.toInt128(
+            Math.mulDiv(SafeCast.toUint128(feesExpected0), offset - removeBlockQuantity, offset, Math.Rounding.Ceil)
+        );
+        int128 feeDonation1 = SafeCast.toInt128(
+            Math.mulDiv(SafeCast.toUint128(feesExpected1), offset - removeBlockQuantity, offset, Math.Rounding.Ceil)
+        );
 
         // remove liquidity
         vm.roll(block.number + removeBlockQuantity);
@@ -440,6 +444,46 @@ contract LiquidityPenaltyHookTest is HookTest, BalanceDeltaAssertions {
 
         assertEq(BalanceDeltaLibrary.amount0(deltaHook), BalanceDeltaLibrary.amount0(deltaNoHook) - feeDonation0);
         assertEq(BalanceDeltaLibrary.amount1(deltaHook), BalanceDeltaLibrary.amount1(deltaNoHook) - feeDonation1);
+    }
+
+    function test_JIT_penaltyBelowOneUnit_roundsUp() public {
+        uint48 offset = 100;
+        LiquidityPenaltyHookMock newHook = LiquidityPenaltyHookMock(
+            address(
+                uint160(
+                    Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
+                        | Hooks.AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA_FLAG | Hooks.AFTER_ADD_LIQUIDITY_RETURNS_DELTA_FLAG
+                ) + 2 ** 96
+            )
+        );
+        deployCodeTo(
+            "src/mocks/general/LiquidityPenaltyHookMock.sol:LiquidityPenaltyHookMock",
+            abi.encode(address(manager), offset),
+            address(newHook)
+        );
+        (PoolKey memory poolKey,) = initPool(currency0, currency1, IHooks(address(newHook)), fee, SQRT_PRICE_1_1);
+
+        modifyPoolLiquidity(poolKey, TICK_LOWER, TICK_UPPER, LIQUIDITY_AMOUNT_1E18, 0);
+        modifyPoolLiquidity(noHookKey, TICK_LOWER, TICK_UPPER, LIQUIDITY_AMOUNT_1E18, 0);
+
+        PoolSwapTest.TestSettings memory testSettings =
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
+        SwapParams memory swapParams =
+            SwapParams({zeroForOne: true, amountSpecified: -SWAP_AMOUNT, sqrtPriceLimitX96: MIN_PRICE_LIMIT});
+        swapRouter.swap(poolKey, swapParams, testSettings, "");
+        swapRouter.swap(noHookKey, swapParams, testSettings, "");
+
+        (int128 fees0,) =
+            calculateFees(manager, noHookKey.toId(), address(modifyLiquidityRouter), TICK_LOWER, TICK_UPPER, bytes32(0));
+        // one block remains in the window, so the floored penalty is zero for any fee below `offset`
+        assertGt(fees0, 0);
+        assertEq(FullMath.mulDiv(SafeCast.toUint128(fees0), 1, offset), 0);
+
+        vm.roll(block.number + offset - 1);
+        BalanceDelta deltaHook = modifyPoolLiquidity(poolKey, TICK_LOWER, TICK_UPPER, -1e17, 0);
+        BalanceDelta deltaNoHook = modifyPoolLiquidity(noHookKey, TICK_LOWER, TICK_UPPER, -1e17, 0);
+
+        assertEq(BalanceDeltaLibrary.amount0(deltaHook), BalanceDeltaLibrary.amount0(deltaNoHook) - 1);
     }
 
     function testFuzz_BlockNumberOffset_RemoveAfterSwap(uint24 offset, uint24 removeBlockQuantity) public {

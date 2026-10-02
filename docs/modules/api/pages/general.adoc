@@ -395,6 +395,8 @@ liquidityPenalty = feeDelta * ( 1 - (currentBlockNumber - lastAddedLiquidityBloc
 
 As a result, the penalty is 100% at the same block where liquidity was last added and zero after the `blockNumberOffset` block time window.
 
+NOTE: The penalty rounds up, so any nonzero fee within the window bears at least one unit of penalty.
+
 NOTE: Won't overflow if `currentBlockNumber - lastAddedLiquidityBlock < blockNumberOffset` is verified prior to calling this function.
 
 [.contract-item]

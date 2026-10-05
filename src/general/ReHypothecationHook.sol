@@ -197,6 +197,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      *
      * Returns the `shares` minted and a balance `delta` representing the assets deposited into the hook.
      *
+     * NOTE: After a full withdrawal, the virtual shares' residual stays in the yield sources and the next seeder
+     * can redeem it. Consider overriding this function to restrict the caller.
+     *
      * NOTE: The amounts should be provided close to the pool's current price, otherwise part of the seeded
      * liquidity may sit idle until swaps rebalance it. See {_getLiquidityToUse}.
      *
@@ -450,14 +453,10 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
     /**
      * @dev Preview the amounts of currency0 and currency1 to be received for redeeming a specific amount of shares.
      *
-     * NOTE: Rounds down, benefiting current liquidity providers. Redeeming every outstanding share returns the
-     * full backing.
+     * NOTE: Rounds down, benefiting current liquidity providers. Redeeming every share leaves the virtual shares'
+     * residual in the yield sources.
      */
     function previewRedeem(uint256 shares) public view virtual returns (uint256 amount0, uint256 amount1) {
-        // A redemption of all shares pays out the full backing to the sole remaining holder.
-        if (shares != 0 && shares == totalSupply()) {
-            return (_getAmountInYieldSource(_poolKey.currency0), _getAmountInYieldSource(_poolKey.currency1));
-        }
         return _sharesToAmounts(shares, Math.Rounding.Floor);
     }
 

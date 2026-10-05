@@ -75,10 +75,6 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * Although it is very unlikely to happen, note that direct liquidity provision to the pool is disabled, so the hook is the sole
  * liquidity provider for its pool.
  *
- * WARNING: Swaps change the hook's balances, so the amounts of an addition or removal depend on the preceding
- * transactions. Set the amount bounds of {addReHypothecatedLiquidity} and {removeReHypothecatedLiquidity} to
- * protect against sandwiching.
- *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis.
  * We do not give any warranties and will not be liable for any losses incurred through any use of
  * this code base.

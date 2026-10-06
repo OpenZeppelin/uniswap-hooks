@@ -42,38 +42,30 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * - the user-facing ERC20 share token (representing rehypothecated liquidity).
  * - the underlying relationship between yield sources deposits and the pool's liquidity.
  *
- * Since the hook must own the liquidity positions in both the external yield sources and the pool in order to transfer it
- * between the two, a single hook-owned liquidity position is shared between all the liquidity providers, defaulting to a
- * UniswapV2 like full-range position.
+ * Since the hook owns the liquidity positions in both the external yield sources and the pool in order to transfer it
+ * between the two, a single hook-owned liquidity position is shared between all the liquidity providers. Liquidity must
+ * therefore be added and removed in the same ratio as the balances in the yield sources.
  *
- * NOTE: Since the hook owns the single liquidity position, liquidity must be added and removed in the same ratio as the
- * balances in the yield sources.
+ * A pool must be seeded via {seedLiquidity} before liquidity can be added through {addReHypothecatedLiquidity}. Seeding
+ * is allowed whenever the pool has no outstanding shares, i.e. at genesis or to revive the pool after a full
+ * withdrawal.
  *
- * NOTE: Since the hook owns the single liquidity position, it is possible to perform "leveraged liquidity" strategies,
- * which would give better pricing to swappers at the cost of the profitability of LP's and increased risks. See {_getLiquidityToUse}
+ * The hook's position defaults to a UniswapV2 like full-range position, and its range can be customized by overriding
+ * {getTickLower} and {getTickUpper}.
  *
- * NOTE: A pool must be seeded via {seedLiquidity} before liquidity can be added through {addReHypothecatedLiquidity}.
- * Seeding is allowed whenever the pool has no outstanding shares, i.e. at genesis or to revive the pool after a full
- * withdrawal. The seed sets the ratio and mints shares as `sqrt(amount0 * amount1)`, in a UniswapV2 like fashion.
- * From there, a share represents a proportional claim over the hook's balances in the yield sources.
+ * WARNING: When customizing the position range, consider the associated risks. For example, a range that follows the
+ * current price lets a swap that moves the price cheaply force the hook to deploy liquidity at an unfavorable price.
  *
- * WARNING: As the assets are rehypothecated into external yield sources, there is direct exposure to their risks,
- * such as variations in the yield rates, rebalances, impermanent loss, and other risks associated.
- *
- * WARNING: Every deposit to and withdrawal from a yield source must change {_getAmountInYieldSource} by the amount
- * moved, apart from rounding. Sources that charge fees or lose value on these calls are not supported, since liquidity
- * providers would bear that cost on every addition, removal and swap.
- *
- * WARNING: Every swap deposits into and withdraws from the yield sources, so a source that rejects either call, for
- * example because it is paused, capped or gated, reverts the swap. A permissionless deposit cap lets a third party
- * block swaps by filling it.
+ * WARNING: Since assets are rehypothecated into external yield sources, liquidity providers are exposed to their risks,
+ * such as yield variations and losses. Every addition, removal and swap moves assets into or out of the sources, so a
+ * source must change {_getAmountInYieldSource} by the amount moved, apart from rounding, and accept every call. Sources
+ * that charge fees on these calls are not supported, and a paused, capped or gated source reverts swaps. A third party
+ * can cause this by filling a permissionless deposit cap.
  *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
  * As a consequence, the PoolManager singleton may lack sufficient reserves for illiquid tokens in the instants between the swap
  * executed and the posterior payment from the user, preventing swaps from being executed until the PoolManager accumulates enough tokens.
- * Although it is very unlikely to happen, note that direct liquidity provision to the pool is disabled, so the hook is the sole
- * liquidity provider for its pool.
  *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis.
  * We do not give any warranties and will not be liable for any losses incurred through any use of
@@ -176,8 +168,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * Note that the hook supports only one pool key.
      *
      * WARNING: Pool initialization is permissionless and permanently binds the hook to the first key it sees,
-     * so a third party can front-run it with an unintended pool. Initialize the pool atomically with the hook's
-     * deployment, or override this function to reject an unexpected key.
+     * so a third party can front-run it with an unintended pool. Consider initializing the pool atomically with the
+     * hook's deployment, or overriding this function to reject an unexpected key.
      */
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal virtual override returns (bytes4) {
         if (address(_poolKey.hooks) != address(0)) revert AlreadyInitialized();
@@ -203,10 +195,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * NOTE: The amounts should be provided close to the pool's current price, otherwise part of the seeded
      * liquidity may sit idle until swaps rebalance it. See {_getLiquidityToUse}.
      *
-     * WARNING: A third party can front-run the intended seed with a heavily skewed ratio. Since
-     * {_getLiquidityToUse} is bounded by the scarcer side, the hook is then left with negligible usable liquidity
-     * and cannot serve swaps. Deposited assets stay redeemable, and seeding reopens once the supply returns to
-     * zero. Consider seeding atomically with pool initialization, or overriding this function to restrict the caller.
+     * WARNING: A third party can front-run the seed with a skewed ratio that leaves the hook with negligible usable
+     * liquidity. Consider seeding atomically with pool initialization, or overriding this function to restrict the
+     * caller.
      *
      * Requirements:
      * - Pool must be initialized

@@ -24,7 +24,9 @@ import {BalanceDelta, toBalanceDelta} from "@uniswap/v4-core/src/types/BalanceDe
 import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import {FullMath} from "@uniswap/v4-core/src/libraries/FullMath.sol";
+import {FixedPoint96} from "@uniswap/v4-core/src/libraries/FixedPoint96.sol";
 // Internal imports
 import {BaseHook} from "../base/BaseHook.sol";
 import {CurrencySettler} from "../utils/CurrencySettler.sol";
@@ -540,19 +542,39 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * @param tickUpper The upper tick of the position the liquidity is sized for.
      */
     function _getLiquidityToUse(int24 tickLower, int24 tickUpper) internal view virtual returns (uint256) {
-        (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
-        uint256 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            currentSqrtPriceX96,
-            TickMath.getSqrtPriceAtTick(tickLower),
-            TickMath.getSqrtPriceAtTick(tickUpper),
-            _getMaxWithdrawFromYieldSource(_poolKey.currency0),
-            _getMaxWithdrawFromYieldSource(_poolKey.currency1)
-        );
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(_poolKey.toId());
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(tickLower);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(tickUpper);
 
         // A position cannot take either boundary tick past the pool's per-tick gross-liquidity limit, so cap
         // the liquidity there and leave any excess backing idle.
-        uint256 maxLiquidityPerTick = Pool.tickSpacingToMaxLiquidityPerTick(_poolKey.tickSpacing);
-        return liquidity < maxLiquidityPerTick ? liquidity : maxLiquidityPerTick;
+        uint128 maxLiquidity = Pool.tickSpacingToMaxLiquidityPerTick(_poolKey.tickSpacing);
+
+        // Each currency limits the liquidity over its side of the price. A side is capped before its liquidity is
+        // computed, so a currency that does not limit the position cannot overflow the calculation.
+        uint256 liquidity0 = maxLiquidity;
+        if (sqrtPriceX96 < sqrtPriceUpperX96) {
+            uint160 sqrtPriceAX96 = sqrtPriceX96 > sqrtPriceLowerX96 ? sqrtPriceX96 : sqrtPriceLowerX96;
+            uint256 amount0 = _getMaxWithdrawFromYieldSource(_poolKey.currency0);
+            if (amount0 < SqrtPriceMath.getAmount0Delta(sqrtPriceAX96, sqrtPriceUpperX96, maxLiquidity, true)) {
+                liquidity0 = FullMath.mulDiv(
+                    amount0,
+                    FullMath.mulDiv(sqrtPriceAX96, sqrtPriceUpperX96, FixedPoint96.Q96),
+                    sqrtPriceUpperX96 - sqrtPriceAX96
+                );
+            }
+        }
+
+        uint256 liquidity1 = maxLiquidity;
+        if (sqrtPriceX96 > sqrtPriceLowerX96) {
+            uint160 sqrtPriceBX96 = sqrtPriceX96 < sqrtPriceUpperX96 ? sqrtPriceX96 : sqrtPriceUpperX96;
+            uint256 amount1 = _getMaxWithdrawFromYieldSource(_poolKey.currency1);
+            if (amount1 < SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceBX96, maxLiquidity, true)) {
+                liquidity1 = FullMath.mulDiv(amount1, FixedPoint96.Q96, sqrtPriceBX96 - sqrtPriceLowerX96);
+            }
+        }
+
+        return Math.min(Math.min(liquidity0, liquidity1), maxLiquidity);
     }
 
     /**

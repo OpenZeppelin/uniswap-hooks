@@ -138,8 +138,8 @@
 :xref-ReHypothecationHook-getPoolKey--: xref:general.adoc#ReHypothecationHook-getPoolKey--
 :xref-ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-: xref:general.adoc#ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-
 :xref-ReHypothecationHook-seedLiquidity-uint256-uint256-: xref:general.adoc#ReHypothecationHook-seedLiquidity-uint256-uint256-
-:xref-ReHypothecationHook-addReHypothecatedLiquidity-uint256-: xref:general.adoc#ReHypothecationHook-addReHypothecatedLiquidity-uint256-
-:xref-ReHypothecationHook-removeReHypothecatedLiquidity-uint256-: xref:general.adoc#ReHypothecationHook-removeReHypothecatedLiquidity-uint256-
+:xref-ReHypothecationHook-addReHypothecatedLiquidity-uint256-uint256-uint256-: xref:general.adoc#ReHypothecationHook-addReHypothecatedLiquidity-uint256-uint256-uint256-
+:xref-ReHypothecationHook-removeReHypothecatedLiquidity-uint256-uint256-uint256-: xref:general.adoc#ReHypothecationHook-removeReHypothecatedLiquidity-uint256-uint256-uint256-
 :xref-ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-: xref:general.adoc#ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-
 :xref-ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-: xref:general.adoc#ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-
 :xref-ReHypothecationHook-_resolveHookDelta-Currency-: xref:general.adoc#ReHypothecationHook-_resolveHookDelta-Currency-
@@ -192,6 +192,7 @@
 :xref-ReHypothecationHook-NotSeeded--: xref:general.adoc#ReHypothecationHook-NotSeeded--
 :xref-ReHypothecationHook-AlreadySeeded--: xref:general.adoc#ReHypothecationHook-AlreadySeeded--
 :xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-: xref:general.adoc#ReHypothecationHook-InsufficientSeed-uint256-uint256-
+:xref-ReHypothecationHook-TooMuchSlippage--: xref:general.adoc#ReHypothecationHook-TooMuchSlippage--
 :xref-ReHypothecationHook-JITLocked--: xref:general.adoc#ReHypothecationHook-JITLocked--
 :xref-ReHypothecationHook-NoUsableLiquidity--: xref:general.adoc#ReHypothecationHook-NoUsableLiquidity--
 :xref-BaseHook-HookNotImplemented--: xref:base.adoc#BaseHook-HookNotImplemented--
@@ -1152,6 +1153,7 @@ The default order id, used to indicate that an order is not yet initialized.
 :NotSeeded: pass:normal[xref:#ReHypothecationHook-NotSeeded--[`++NotSeeded++`]]
 :AlreadySeeded: pass:normal[xref:#ReHypothecationHook-AlreadySeeded--[`++AlreadySeeded++`]]
 :InsufficientSeed: pass:normal[xref:#ReHypothecationHook-InsufficientSeed-uint256-uint256-[`++InsufficientSeed++`]]
+:TooMuchSlippage: pass:normal[xref:#ReHypothecationHook-TooMuchSlippage--[`++TooMuchSlippage++`]]
 :JITLocked: pass:normal[xref:#ReHypothecationHook-JITLocked--[`++JITLocked++`]]
 :NoUsableLiquidity: pass:normal[xref:#ReHypothecationHook-NoUsableLiquidity--[`++NoUsableLiquidity++`]]
 :ReHypothecatedLiquidityAdded: pass:normal[xref:#ReHypothecationHook-ReHypothecatedLiquidityAdded-address-struct-PoolKey-uint256-uint256-uint256-[`++ReHypothecatedLiquidityAdded++`]]
@@ -1159,8 +1161,8 @@ The default order id, used to indicate that an order is not yet initialized.
 :getPoolKey: pass:normal[xref:#ReHypothecationHook-getPoolKey--[`++getPoolKey++`]]
 :_beforeInitialize: pass:normal[xref:#ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-[`++_beforeInitialize++`]]
 :seedLiquidity: pass:normal[xref:#ReHypothecationHook-seedLiquidity-uint256-uint256-[`++seedLiquidity++`]]
-:addReHypothecatedLiquidity: pass:normal[xref:#ReHypothecationHook-addReHypothecatedLiquidity-uint256-[`++addReHypothecatedLiquidity++`]]
-:removeReHypothecatedLiquidity: pass:normal[xref:#ReHypothecationHook-removeReHypothecatedLiquidity-uint256-[`++removeReHypothecatedLiquidity++`]]
+:addReHypothecatedLiquidity: pass:normal[xref:#ReHypothecationHook-addReHypothecatedLiquidity-uint256-uint256-uint256-[`++addReHypothecatedLiquidity++`]]
+:removeReHypothecatedLiquidity: pass:normal[xref:#ReHypothecationHook-removeReHypothecatedLiquidity-uint256-uint256-uint256-[`++removeReHypothecatedLiquidity++`]]
 :_beforeSwap: pass:normal[xref:#ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-[`++_beforeSwap++`]]
 :_afterSwap: pass:normal[xref:#ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-[`++_afterSwap++`]]
 :_resolveHookDelta: pass:normal[xref:#ReHypothecationHook-_resolveHookDelta-Currency-[`++_resolveHookDelta++`]]
@@ -1240,9 +1242,6 @@ executed and the posterior payment from the user, preventing swaps from being ex
 Although it is very unlikely to happen, note that direct liquidity provision to the pool is disabled, so the hook is the sole
 liquidity provider for its pool.
 
-WARNING: Liquidity additions and removals may be affected by slippage. Users can protect against unexpected slippage
-in general by verifying the amount received is as expected, using a wrapper that performs these checks.
-
 WARNING: This is experimental software and is provided on an "as is" and "as available" basis.
 We do not give any warranties and will not be liable for any losses incurred through any use of
 this code base.
@@ -1254,8 +1253,8 @@ _Available since v1.2.0_
 * {xref-ReHypothecationHook-getPoolKey--}[`++getPoolKey()++`]
 * {xref-ReHypothecationHook-_beforeInitialize-address-struct-PoolKey-uint160-}[`++_beforeInitialize(, key, )++`]
 * {xref-ReHypothecationHook-seedLiquidity-uint256-uint256-}[`++seedLiquidity(amount0, amount1)++`]
-* {xref-ReHypothecationHook-addReHypothecatedLiquidity-uint256-}[`++addReHypothecatedLiquidity(shares)++`]
-* {xref-ReHypothecationHook-removeReHypothecatedLiquidity-uint256-}[`++removeReHypothecatedLiquidity(shares)++`]
+* {xref-ReHypothecationHook-addReHypothecatedLiquidity-uint256-uint256-uint256-}[`++addReHypothecatedLiquidity(shares, amount0Max, amount1Max)++`]
+* {xref-ReHypothecationHook-removeReHypothecatedLiquidity-uint256-uint256-uint256-}[`++removeReHypothecatedLiquidity(shares, amount0Min, amount1Min)++`]
 * {xref-ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-}[`++_beforeSwap(, , , )++`]
 * {xref-ReHypothecationHook-_afterSwap-address-struct-PoolKey-struct-SwapParams-BalanceDelta-bytes-}[`++_afterSwap(, key, , , )++`]
 * {xref-ReHypothecationHook-_resolveHookDelta-Currency-}[`++_resolveHookDelta(currency)++`]
@@ -1382,6 +1381,7 @@ _Available since v1.2.0_
 * {xref-ReHypothecationHook-NotSeeded--}[`++NotSeeded()++`]
 * {xref-ReHypothecationHook-AlreadySeeded--}[`++AlreadySeeded()++`]
 * {xref-ReHypothecationHook-InsufficientSeed-uint256-uint256-}[`++InsufficientSeed(shares, minShares)++`]
+* {xref-ReHypothecationHook-TooMuchSlippage--}[`++TooMuchSlippage()++`]
 * {xref-ReHypothecationHook-JITLocked--}[`++JITLocked()++`]
 * {xref-ReHypothecationHook-NoUsableLiquidity--}[`++NoUsableLiquidity()++`]
 
@@ -1469,8 +1469,8 @@ Requirements:
 - Sender must have approved the hook to spend the required tokens
 
 [.contract-item]
-[[ReHypothecationHook-addReHypothecatedLiquidity-uint256-]]
-==== `[.contract-item-name]#++addReHypothecatedLiquidity++#++(uint256 shares) → BalanceDelta delta++` [.item-kind]#public#
+[[ReHypothecationHook-addReHypothecatedLiquidity-uint256-uint256-uint256-]]
+==== `[.contract-item-name]#++addReHypothecatedLiquidity++#++(uint256 shares, uint256 amount0Max, uint256 amount1Max) → BalanceDelta delta++` [.item-kind]#public#
 
 Adds rehypothecated liquidity to their corresponding yield sources and mints `shares` to the `receiver`.
 
@@ -1485,10 +1485,11 @@ Requirements:
 - Pool must have been seeded (see {seedLiquidity})
 - Sender must have sufficient token balances
 - Sender must have approved the hook to spend the required tokens
+- Amounts required must not exceed `amount0Max` of `currency0` and `amount1Max` of `currency1`
 
 [.contract-item]
-[[ReHypothecationHook-removeReHypothecatedLiquidity-uint256-]]
-==== `[.contract-item-name]#++removeReHypothecatedLiquidity++#++(uint256 shares) → BalanceDelta delta++` [.item-kind]#public#
+[[ReHypothecationHook-removeReHypothecatedLiquidity-uint256-uint256-uint256-]]
+==== `[.contract-item-name]#++removeReHypothecatedLiquidity++#++(uint256 shares, uint256 amount0Min, uint256 amount1Min) → BalanceDelta delta++` [.item-kind]#public#
 
 Removes rehypothecated liquidity from their corresponding yield sources and burns `shares` from the caller.
 
@@ -1501,6 +1502,7 @@ Returns a balance `delta` representing the assets withdrawn from the hook.
 Requirements:
 - Pool must be initialized
 - Sender must have sufficient shares for the desired liquidity withdrawal
+- Amounts received must be at least `amount0Min` of `currency0` and `amount1Min` of `currency1`
 
 [.contract-item]
 [[ReHypothecationHook-_beforeSwap-address-struct-PoolKey-struct-SwapParams-bytes-]]
@@ -1798,6 +1800,12 @@ Error thrown when seeding a pool that still has outstanding shares.
 ==== `[.contract-item-name]#++InsufficientSeed++#++(uint256 shares, uint256 minShares)++` [.item-kind]#error#
 
 Error thrown when a seed would mint fewer than the minimum safe initial `shares`, given `minShares`.
+
+[.contract-item]
+[[ReHypothecationHook-TooMuchSlippage--]]
+==== `[.contract-item-name]#++TooMuchSlippage++#++()++` [.item-kind]#error#
+
+Error thrown when the amounts of an addition or removal exceed the caller's bounds.
 
 [.contract-item]
 [[ReHypothecationHook-JITLocked--]]

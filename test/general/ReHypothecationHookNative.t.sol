@@ -25,6 +25,32 @@ import {CappedERC4626Mock} from "./ReHypothecationHookERC4626.t.sol";
 import {HookTest} from "../utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
 
+/// @dev A liquidity provider that records the hook's redemption preview when it receives a native payment, to
+/// test what the hook's views report while control is handed to the receiver.
+contract PreviewReader {
+    ReHypothecationHook private immutable _hook;
+    uint256 private immutable _probe;
+    uint256 public seen0;
+    uint256 public seen1;
+
+    constructor(ReHypothecationHook hook_, uint256 probe_) {
+        _hook = hook_;
+        _probe = probe_;
+    }
+
+    function add(uint256 shares, uint256 value) external {
+        _hook.addReHypothecatedLiquidity{value: value}(shares, type(uint256).max, type(uint256).max);
+    }
+
+    function remove(uint256 shares) external {
+        _hook.removeReHypothecatedLiquidity(shares, 0, 0);
+    }
+
+    receive() external payable {
+        (seen0, seen1) = _hook.previewRedeem(_probe);
+    }
+}
+
 contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
     using StateLibrary for IPoolManager;
     using SafeCast for *;
@@ -170,6 +196,41 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
             modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(liquidity), 0);
         BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares, 0, 0);
         assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 1e9, "hookedRemoveDelta !~= noHookRemoveDelta");
+    }
+
+    // -- VIEWS DURING NATIVE PAYMENTS -- //
+
+    function test_remove_nativePayment_seesSettledPreview() public {
+        hook.seedLiquidity{value: 1e18}(1e18, 1e18);
+        uint256 keep = 1e6;
+        PreviewReader reader = new PreviewReader(ReHypothecationHook(payable(address(hook))), keep);
+        uint256 shares = hook.balanceOf(address(this));
+        hook.transfer(address(reader), shares);
+
+        // The native payment hands control to the receiver, which reads the preview of the shares it keeps.
+        reader.remove(shares - keep);
+
+        (uint256 settled0, uint256 settled1) = hook.previewRedeem(keep);
+        assertEq(reader.seen0(), settled0, "currency0 preview during payment");
+        assertEq(reader.seen1(), settled1, "currency1 preview during payment");
+    }
+
+    function test_add_nativeRefund_seesUnchangedPreview() public {
+        hook.seedLiquidity{value: 1e18}(1e18, 1e18);
+        uint256 shares = 1e17;
+        PreviewReader reader = new PreviewReader(ReHypothecationHook(payable(address(hook))), shares);
+        (uint256 amount0, uint256 amount1) = hook.previewMint(shares);
+        deal(address(reader), 2 * amount0);
+        deal(Currency.unwrap(currency1), address(reader), amount1);
+        vm.prank(address(reader));
+        IERC20(Currency.unwrap(currency1)).approve(address(hook), amount1);
+        (uint256 before0, uint256 before1) = hook.previewRedeem(shares);
+
+        // Sending more than required refunds the excess to the sender, before any deposit or mint.
+        reader.add(shares, 2 * amount0);
+
+        assertEq(reader.seen0(), before0, "currency0 preview during refund");
+        assertEq(reader.seen1(), before1, "currency1 preview during refund");
     }
 
     // -- NATIVE YIELD SOURCE -- //

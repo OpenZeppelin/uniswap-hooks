@@ -1029,6 +1029,40 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
         swap(k, true, -1e15, ZERO_BYTES);
     }
 
+    function test_getLiquidityToUse_atLowerEdgeUsesCurrency0() public {
+        (FixedRangeReHypothecationMock h, PoolKey memory k) = _deployFixedRange(-600, 600, SQRT_PRICE_1_1, SEED, SEED);
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(-600);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(600);
+
+        // At the lower edge the position holds only currency0, so only its backing sizes the liquidity.
+        _swapToPrice(k, true, sqrtPriceLowerX96);
+        assertEq(
+            h.getLiquidityToUse(),
+            LiquidityAmounts.getLiquidityForAmount0(
+                sqrtPriceLowerX96, sqrtPriceUpperX96, h.getMaxWithdrawFromYieldSource(currency0)
+            )
+        );
+
+        swap(k, false, -1e15, ZERO_BYTES);
+    }
+
+    function test_getLiquidityToUse_atUpperEdgeUsesCurrency1() public {
+        (FixedRangeReHypothecationMock h, PoolKey memory k) = _deployFixedRange(-600, 600, SQRT_PRICE_1_1, SEED, SEED);
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(-600);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(600);
+
+        // At the upper edge the position holds only currency1, so only its backing sizes the liquidity.
+        _swapToPrice(k, false, sqrtPriceUpperX96);
+        assertEq(
+            h.getLiquidityToUse(),
+            LiquidityAmounts.getLiquidityForAmount1(
+                sqrtPriceLowerX96, sqrtPriceUpperX96, h.getMaxWithdrawFromYieldSource(currency1)
+            )
+        );
+
+        swap(k, true, -1e15, ZERO_BYTES);
+    }
+
     function testFuzz_getLiquidityToUse_fitsBackingNearEdge(uint256 amount0, uint256 amount1, uint8 offsetBits) public {
         amount0 = bound(amount0, SEED, 1e27);
         amount1 = bound(amount1, SEED, 1e27);

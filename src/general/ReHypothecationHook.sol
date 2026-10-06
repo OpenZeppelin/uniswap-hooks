@@ -75,9 +75,6 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * Although it is very unlikely to happen, note that direct liquidity provision to the pool is disabled, so the hook is the sole
  * liquidity provider for its pool.
  *
- * WARNING: Liquidity additions and removals may be affected by slippage. Users can protect against unexpected slippage
- * in general by verifying the amount received is as expected, using a wrapper that performs these checks.
- *
  * WARNING: This is experimental software and is provided on an "as is" and "as available" basis.
  * We do not give any warranties and will not be liable for any losses incurred through any use of
  * this code base.
@@ -138,6 +135,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
 
     /// @dev Error thrown when a seed would mint fewer than the minimum safe initial `shares`, given `minShares`.
     error InsufficientSeed(uint256 shares, uint256 minShares);
+
+    /// @dev Error thrown when the amounts of an addition or removal exceed the caller's bounds.
+    error TooMuchSlippage();
 
     /// @dev Error thrown when a liquidity operation and the just-in-time settlement would overlap,
     /// to prevent reentrancy across the JIT lock.
@@ -256,8 +256,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * - Pool must have been seeded (see {seedLiquidity})
      * - Sender must have sufficient token balances
      * - Sender must have approved the hook to spend the required tokens
+     * - Amounts required must not exceed `amount0Max` of `currency0` and `amount1Max` of `currency1`
      */
-    function addReHypothecatedLiquidity(uint256 shares)
+    function addReHypothecatedLiquidity(uint256 shares, uint256 amount0Max, uint256 amount1Max)
         public
         payable
         virtual
@@ -270,6 +271,7 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
         if (shares == 0) revert ZeroShares();
 
         (uint256 amount0, uint256 amount1) = previewMint(shares);
+        if (amount0 > amount0Max || amount1 > amount1Max) revert TooMuchSlippage();
 
         _transferFromSenderToHook(_poolKey.currency0, amount0, msg.sender);
         _transferFromSenderToHook(_poolKey.currency1, amount1, msg.sender);
@@ -297,13 +299,20 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * Requirements:
      * - Pool must be initialized
      * - Sender must have sufficient shares for the desired liquidity withdrawal
+     * - Amounts received must be at least `amount0Min` of `currency0` and `amount1Min` of `currency1`
      */
-    function removeReHypothecatedLiquidity(uint256 shares) public virtual nonReentrant returns (BalanceDelta delta) {
+    function removeReHypothecatedLiquidity(uint256 shares, uint256 amount0Min, uint256 amount1Min)
+        public
+        virtual
+        nonReentrant
+        returns (BalanceDelta delta)
+    {
         if (address(_poolKey.hooks) == address(0)) revert NotInitialized();
         if (_isJITLocked()) revert JITLocked();
         if (shares == 0) revert ZeroShares();
 
         (uint256 amount0, uint256 amount1) = previewRedeem(shares);
+        if (amount0 < amount0Min || amount1 < amount1Min) revert TooMuchSlippage();
 
         _burn(msg.sender, shares);
 

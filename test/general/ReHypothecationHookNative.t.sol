@@ -168,7 +168,7 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
         // Remove liquidity
         BalanceDelta noHookRemoveDelta =
             modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(liquidity), 0);
-        BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares);
+        BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares, 0, 0);
         assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 1e9, "hookedRemoveDelta !~= noHookRemoveDelta");
     }
 

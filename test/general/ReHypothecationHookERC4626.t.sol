@@ -64,7 +64,8 @@ contract RevertOnZeroERC4626Mock is ERC4626YieldSourceMock {
 }
 
 /// @dev A rehypothecation hook whose position range tracks the current pool tick, so the range shifts as a swap
-/// moves the price. Used to test that the position's tick bounds are snapshotted across a swap.
+/// moves the price. Used to test that the position's tick bounds are snapshotted across a swap. Unsafe outside tests,
+/// since a swap can move the price it follows at no cost.
 contract DynamicTickReHypothecationMock is ReHypothecationERC4626Mock {
     using StateLibrary for IPoolManager;
 

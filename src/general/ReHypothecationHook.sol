@@ -602,6 +602,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * @dev Returns the lower tick boundary for the hook's liquidity position.
      *
      * Can be overridden to customize the tick boundary.
+     *
+     * WARNING: A swap can move the price outside the position at no cost. A boundary derived from the current pool
+     * price therefore lets anyone choose the price around which the next swap deploys the liquidity.
      */
     function getTickLower() public view virtual returns (int24) {
         return TickMath.minUsableTick(_poolKey.tickSpacing);
@@ -611,6 +614,9 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * @dev Returns the upper tick boundary for the hook's liquidity position.
      *
      * Can be overridden to customize the tick boundary.
+     *
+     * WARNING: A swap can move the price outside the position at no cost. A boundary derived from the current pool
+     * price therefore lets anyone choose the price around which the next swap deploys the liquidity.
      */
     function getTickUpper() public view virtual returns (int24) {
         return TickMath.maxUsableTick(_poolKey.tickSpacing);

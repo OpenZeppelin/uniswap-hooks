@@ -47,7 +47,8 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * therefore be added and removed in the same ratio as the balances in the yield sources.
  *
  * A pool must be seeded via {seedLiquidity} before liquidity can be added through {addReHypothecatedLiquidity}. Seeding
- * is allowed whenever the pool has no outstanding shares, i.e. at genesis or to revive the pool after a full withdrawal.
+ * is allowed whenever the pool has no outstanding shares, i.e. at genesis or to revive the pool after a full
+ * withdrawal.
  *
  * The hook's position defaults to a UniswapV2 like full-range position, and its range can be customized by overriding
  * {getTickLower} and {getTickUpper}.
@@ -58,8 +59,8 @@ import {CurrencySettler} from "../utils/CurrencySettler.sol";
  * WARNING: Since assets are rehypothecated into external yield sources, liquidity providers are exposed to their risks,
  * such as yield variations and losses. Every addition, removal and swap moves assets into or out of the sources, so a
  * source must change {_getAmountInYieldSource} by the amount moved, apart from rounding, and accept every call. Sources
- * that charge fees on these calls are not supported, and a paused, capped or gated source reverts swaps, which a third
- * party can cause by filling a permissionless deposit cap.
+ * that charge fees on these calls are not supported, and a paused, capped or gated source reverts swaps. A third party
+ * can cause this by filling a permissionless deposit cap.
  *
  * WARNING: This hook relies on the PoolManager singleton token reserves for flash accounting debts and credits during swaps.
  * During `afterSwap`, the hook briefly generates token debts to the PoolManager even before users transfer their swap tokens.
@@ -167,8 +168,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * Note that the hook supports only one pool key.
      *
      * WARNING: Pool initialization is permissionless and permanently binds the hook to the first key it sees,
-     * so a third party can front-run it with an unintended pool. It is recommended to initialize the pool atomically
-     * with the hook's deployment, or override this function to reject an unexpected key.
+     * so a third party can front-run it with an unintended pool. Consider initializing the pool atomically with the
+     * hook's deployment, or overriding this function to reject an unexpected key.
      */
     function _beforeInitialize(address, PoolKey calldata key, uint160) internal virtual override returns (bytes4) {
         if (address(_poolKey.hooks) != address(0)) revert AlreadyInitialized();
@@ -195,7 +196,8 @@ abstract contract ReHypothecationHook is BaseHook, ERC20, ReentrancyGuardTransie
      * liquidity may sit idle until swaps rebalance it. See {_getLiquidityToUse}.
      *
      * WARNING: A third party can front-run the seed with a skewed ratio that leaves the hook with negligible usable
-     * liquidity. Consider seeding atomically with pool initialization.
+     * liquidity. Consider seeding atomically with pool initialization, or overriding this function to restrict the
+     * caller.
      *
      * Requirements:
      * - Pool must be initialized

@@ -17,6 +17,9 @@ import {CustomRevert} from "@uniswap/v4-core/src/libraries/CustomRevert.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {Pool} from "@uniswap/v4-core/src/libraries/Pool.sol";
+import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
+import {SwapParams} from "@uniswap/v4-core/src/types/PoolOperation.sol";
+import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 // Internal imports
 import {
     ReHypothecationERC4626Mock,
@@ -83,6 +86,27 @@ contract DynamicTickReHypothecationMock is ReHypothecationERC4626Mock {
         (, int24 tick,,) = poolManager.getSlot0(getPoolKey().toId());
         int24 spacing = getPoolKey().tickSpacing;
         return (tick / spacing) * spacing;
+    }
+}
+
+/// @dev A rehypothecation hook whose position range is fixed at construction, to test JIT sizing on narrow ranges.
+contract FixedRangeReHypothecationMock is ReHypothecationERC4626Mock {
+    int24 private immutable _tickLower;
+    int24 private immutable _tickUpper;
+
+    constructor(IPoolManager pm, address ys0, address ys1, int24 tickLower_, int24 tickUpper_)
+        ReHypothecationERC4626Mock(pm, ys0, ys1)
+    {
+        _tickLower = tickLower_;
+        _tickUpper = tickUpper_;
+    }
+
+    function getTickLower() public view override returns (int24) {
+        return _tickLower;
+    }
+
+    function getTickUpper() public view override returns (int24) {
+        return _tickUpper;
     }
 }
 
@@ -939,6 +963,134 @@ contract ReHypothecationHookERC4626Test is HookTest, BalanceDeltaAssertions {
             IERC20(Currency.unwrap(currency1)).balanceOf(address(this)), balanceBefore, "swap should deliver output"
         );
     }
+
+    /// @dev Deploys a hook with a fixed `[tickLower, tickUpper]` range on a pool initialized at `sqrtPriceX96`,
+    /// seeded with `amount0` and `amount1`.
+    function _deployFixedRange(int24 tickLower, int24 tickUpper, uint160 sqrtPriceX96, uint256 amount0, uint256 amount1)
+        internal
+        returns (FixedRangeReHypothecationMock h, PoolKey memory k)
+    {
+        CappedERC4626Mock ys0 = new CappedERC4626Mock(IERC20(Currency.unwrap(currency0)));
+        CappedERC4626Mock ys1 = new CappedERC4626Mock(IERC20(Currency.unwrap(currency1)));
+        address hookAddr = _flagAddr(0x70000000000000000000000000000000);
+        deployCodeTo(
+            "test/general/ReHypothecationHookERC4626.t.sol:FixedRangeReHypothecationMock",
+            abi.encode(address(manager), address(ys0), address(ys1), tickLower, tickUpper),
+            hookAddr
+        );
+        h = FixedRangeReHypothecationMock(payable(hookAddr));
+        (k,) = initPool(currency0, currency1, IHooks(hookAddr), fee, sqrtPriceX96);
+        IERC20(Currency.unwrap(currency0)).approve(hookAddr, type(uint256).max);
+        IERC20(Currency.unwrap(currency1)).approve(hookAddr, type(uint256).max);
+        h.seedLiquidity(amount0, amount1);
+    }
+
+    /// @dev Swaps until the price reaches `sqrtPriceLimitX96`.
+    function _swapToPrice(PoolKey memory k, bool zeroForOne, uint160 sqrtPriceLimitX96) internal {
+        swapRouter.swap(
+            k,
+            SwapParams({zeroForOne: zeroForOne, amountSpecified: -1e30, sqrtPriceLimitX96: sqrtPriceLimitX96}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ZERO_BYTES
+        );
+    }
+
+    function test_swap_succeedsAtLowerEdgeWithIdleCurrency1() public {
+        (FixedRangeReHypothecationMock h, PoolKey memory k) =
+            _deployFixedRange(-600, 600, SQRT_PRICE_1_1, SEED, 2 * SEED);
+
+        // Park the price one unit inside the lower edge, where idle currency1 supports unbounded liquidity.
+        _swapToPrice(k, true, TickMath.getSqrtPriceAtTick(-600) + 1);
+        assertGt(h.getAmountInYieldSource(currency1), 0, "currency1 should remain idle");
+
+        swap(k, false, -1e15, ZERO_BYTES);
+        swap(k, true, -1e15, ZERO_BYTES);
+    }
+
+    function test_swap_succeedsAtUpperEdgeWithIdleCurrency0() public {
+        (FixedRangeReHypothecationMock h, PoolKey memory k) =
+            _deployFixedRange(-600, 600, SQRT_PRICE_1_1, 2 * SEED, SEED);
+
+        // Park the price one unit inside the upper edge, where idle currency0 supports unbounded liquidity.
+        _swapToPrice(k, false, TickMath.getSqrtPriceAtTick(600) - 1);
+        assertGt(h.getAmountInYieldSource(currency0), 0, "currency0 should remain idle");
+
+        swap(k, true, -1e15, ZERO_BYTES);
+        swap(k, false, -1e15, ZERO_BYTES);
+    }
+
+    function test_swap_succeedsAtUpperEdgeAtHighPrice() public {
+        // Near the maximum price, idle currency0 at the upper edge implies liquidity above `type(uint256).max`.
+        (FixedRangeReHypothecationMock h, PoolKey memory k) =
+            _deployFixedRange(886020, 887220, TickMath.getSqrtPriceAtTick(886620), SEED, SEED);
+
+        _swapToPrice(k, false, TickMath.getSqrtPriceAtTick(887220) - 1);
+        assertGt(h.getAmountInYieldSource(currency0), 0, "currency0 should remain idle");
+
+        swap(k, true, -1e15, ZERO_BYTES);
+    }
+
+    function test_getLiquidityToUse_atLowerEdgeUsesCurrency0() public {
+        (FixedRangeReHypothecationMock h, PoolKey memory k) = _deployFixedRange(-600, 600, SQRT_PRICE_1_1, SEED, SEED);
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(-600);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(600);
+
+        // At the lower edge the position holds only currency0, so only its backing sizes the liquidity.
+        _swapToPrice(k, true, sqrtPriceLowerX96);
+        assertEq(
+            h.getLiquidityToUse(),
+            LiquidityAmounts.getLiquidityForAmount0(
+                sqrtPriceLowerX96, sqrtPriceUpperX96, h.getMaxWithdrawFromYieldSource(currency0)
+            )
+        );
+
+        swap(k, false, -1e15, ZERO_BYTES);
+    }
+
+    function test_getLiquidityToUse_atUpperEdgeUsesCurrency1() public {
+        (FixedRangeReHypothecationMock h, PoolKey memory k) = _deployFixedRange(-600, 600, SQRT_PRICE_1_1, SEED, SEED);
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(-600);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(600);
+
+        // At the upper edge the position holds only currency1, so only its backing sizes the liquidity.
+        _swapToPrice(k, false, sqrtPriceUpperX96);
+        assertEq(
+            h.getLiquidityToUse(),
+            LiquidityAmounts.getLiquidityForAmount1(
+                sqrtPriceLowerX96, sqrtPriceUpperX96, h.getMaxWithdrawFromYieldSource(currency1)
+            )
+        );
+
+        swap(k, true, -1e15, ZERO_BYTES);
+    }
+
+    function testFuzz_getLiquidityToUse_fitsBackingNearEdge(uint256 amount0, uint256 amount1, uint8 offsetBits) public {
+        amount0 = bound(amount0, SEED, 1e27);
+        amount1 = bound(amount1, SEED, 1e27);
+        (FixedRangeReHypothecationMock h, PoolKey memory k) =
+            _deployFixedRange(-600, 600, SQRT_PRICE_1_1, amount0, amount1);
+
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(-600);
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(600);
+        // Sample the distance to the edge on a log scale, so that the overflowing region near it is reached.
+        _swapToPrice(k, true, sqrtPriceLowerX96 + uint160(1 << bound(offsetBits, 0, 90)));
+
+        uint256 liquidity = h.getLiquidityToUse();
+        assertLe(liquidity, Pool.tickSpacingToMaxLiquidityPerTick(k.tickSpacing), "liquidity above the per-tick limit");
+
+        (uint160 sqrtPriceX96,,,) = manager.getSlot0(k.toId());
+        assertLe(
+            SqrtPriceMath.getAmount0Delta(sqrtPriceX96, sqrtPriceUpperX96, uint128(liquidity), true),
+            h.getMaxWithdrawFromYieldSource(currency0) + 1,
+            "currency0 required above backing"
+        );
+        assertLe(
+            SqrtPriceMath.getAmount1Delta(sqrtPriceLowerX96, sqrtPriceX96, uint128(liquidity), true),
+            h.getMaxWithdrawFromYieldSource(currency1) + 1,
+            "currency1 required above backing"
+        );
+    }
+
     // -- SWAP REQUIRES USABLE JIT LIQUIDITY -- //
 
     function test_swap_revertsWhenJITLiquidityZero_cappedVault() public {

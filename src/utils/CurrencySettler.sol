@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Uniswap Hooks (last updated v0.1.0) (src/utils/CurrencySettler.sol)
+// OpenZeppelin Uniswap Hooks (last updated v1.3.0) (src/utils/CurrencySettler.sol)
 
 pragma solidity ^0.8.26;
 

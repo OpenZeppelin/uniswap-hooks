@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// OpenZeppelin Uniswap Hooks (last updated v1.2.0) (src/base/BaseHook.sol)
+// OpenZeppelin Uniswap Hooks (last updated v1.3.0) (src/base/BaseHook.sol)
 
 pragma solidity ^0.8.26;
 

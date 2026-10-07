@@ -25,6 +25,28 @@ import {CappedERC4626Mock} from "./ReHypothecationHookERC4626.t.sol";
 import {HookTest} from "../utils/HookTest.sol";
 import {BalanceDeltaAssertions} from "../utils/BalanceDeltaAssertions.sol";
 
+/// @dev A liquidity provider that records the hook's redemption preview of the shares it keeps when it receives a
+/// native payment.
+contract PreviewReader {
+    ReHypothecationHook private immutable _hook;
+    uint256 private _kept;
+    uint256 public seen0;
+    uint256 public seen1;
+
+    constructor(ReHypothecationHook hook_) {
+        _hook = hook_;
+    }
+
+    function removeAllBut(uint256 kept) external {
+        _kept = kept;
+        _hook.removeReHypothecatedLiquidity(_hook.balanceOf(address(this)) - kept, 0, 0);
+    }
+
+    receive() external payable {
+        (seen0, seen1) = _hook.previewRedeem(_kept);
+    }
+}
+
 contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
     using StateLibrary for IPoolManager;
     using SafeCast for *;
@@ -170,6 +192,21 @@ contract ReHypothecationHookNativeTest is HookTest, BalanceDeltaAssertions {
             modifyPoolLiquidity(noHookKey, hook.getTickLower(), hook.getTickUpper(), -int256(liquidity), 0);
         BalanceDelta hookedRemoveDelta = hook.removeReHypothecatedLiquidity(seedShares, 0, 0);
         assertApproxEqAbs(hookedRemoveDelta, noHookRemoveDelta, 1e9, "hookedRemoveDelta !~= noHookRemoveDelta");
+    }
+
+    // -- VIEWS DURING NATIVE PAYMENTS -- //
+
+    function test_remove_nativePayment_seesSettledPreview() public {
+        hook.seedLiquidity{value: 1e18}(1e18, 1e18);
+        PreviewReader reader = new PreviewReader(ReHypothecationHook(payable(address(hook))));
+        hook.transfer(address(reader), hook.balanceOf(address(this)));
+
+        // The native payment hands control to the receiver before currency1 is paid out.
+        reader.removeAllBut(1e6);
+
+        (uint256 settled0, uint256 settled1) = hook.previewRedeem(1e6);
+        assertEq(reader.seen0(), settled0, "currency0 preview during payment");
+        assertEq(reader.seen1(), settled1, "currency1 preview during payment");
     }
 
     // -- NATIVE YIELD SOURCE -- //

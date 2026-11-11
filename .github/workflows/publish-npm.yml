@@ -60,6 +60,8 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: `v${version}`,
+              target_commitish: context.sha,
+              prerelease: context.payload.inputs.tag !== 'latest',
               name: `v${version}`,
               body: `Release of @openzeppelin/uniswap-hooks v${version}`
             });

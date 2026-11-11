@@ -17,6 +17,7 @@ jobs:
   publish:
     name: Publish to npm
     runs-on: ubuntu-latest
+    environment: npm
     permissions:
       contents: write
       id-token: write
@@ -26,6 +27,11 @@ jobs:
       
       - name: Set up environment
         uses: ./.github/actions/setup
+
+      - name: Use Node 24 for trusted publishing
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
       
       - name: Pack
         id: pack
@@ -42,13 +48,7 @@ jobs:
       
       - name: Publish
         if: inputs.dry_run == false
-        run: |
-          echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
-          npm publish ${{ steps.pack.outputs.tarball }} --tag ${{ inputs.tag }} --access public
-          rm .npmrc
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
+        run: npm publish ${{ steps.pack.outputs.tarball }} --tag ${{ inputs.tag }} --access public
       
       - name: Create GitHub Release
         if: inputs.dry_run == false
@@ -60,6 +60,8 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag_name: `v${version}`,
+              target_commitish: context.sha,
+              prerelease: context.payload.inputs.tag !== 'latest',
               name: `v${version}`,
               body: `Release of @openzeppelin/uniswap-hooks v${version}`
             });
